@@ -1,0 +1,16 @@
+# Air config for live reloading during development
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/api ./cmd/api"
+  bin = "./tmp/api"
+  include_ext = ["go", "templ"]
+  exclude_dir = ["tmp", "vendor", "web/static"]
+  delay = 1000
+
+[log]
+  time = false
+
+[misc]
+  clean_on_exit = true

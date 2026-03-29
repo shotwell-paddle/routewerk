@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — Routewerk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="static/css/routewerk.css">
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <h1>Routewerk</h1>
+        <div class="brand-sub">LEF Boulder</div>
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-section">
+          <div class="nav-section-label">Setting</div>
+          <a href="#" class="nav-item active">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            Dashboard
+          </a>
+          <a href="#" class="nav-item">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20"/><path d="M5 20V8l7-5 7 5v12"/></svg>
+            Walls
+          </a>
+          <a href="preview-routes.html" class="nav-item">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            Routes
+          </a>
+          <a href="#" class="nav-item">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            Sessions
+          </a>
+        </div>
+        <div class="nav-section">
+          <div class="nav-section-label">Climb</div>
+          <a href="preview-routes.html" class="nav-item">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5"/></svg>
+            Browse Routes
+          </a>
+          <a href="#" class="nav-item">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Activity
+          </a>
+        </div>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-pill">
+          <div class="user-avatar">C</div>
+          <div class="user-info">
+            <div class="user-name">Chris S.</div>
+            <div class="user-role">Head Setter</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <div class="page-header">
+        <div class="flex items-center justify-between">
+          <div>
+            <h1>Dashboard</h1>
+            <p class="page-subtitle">LEF Boulder — Route overview</p>
+          </div>
+          <a href="#" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New Route
+          </a>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <div class="stats-grid mb-6">
+          <div class="stat-card" style="--stat-accent: var(--rw-green)">
+            <div class="stat-value">47</div>
+            <div class="stat-label">Active Routes</div>
+            <div class="stat-delta up">↑ 3 this week</div>
+          </div>
+          <div class="stat-card" style="--stat-accent: var(--rw-blue)">
+            <div class="stat-value">1,284</div>
+            <div class="stat-label">Total Sends</div>
+          </div>
+          <div class="stat-card" style="--stat-accent: var(--rw-orange)">
+            <div class="stat-value">3.8</div>
+            <div class="stat-label">Avg Rating</div>
+          </div>
+          <div class="stat-card" style="--stat-accent: var(--rw-purple)">
+            <div class="stat-value">5</div>
+            <div class="stat-label">Due for Strip</div>
+          </div>
+        </div>
+
+        <div class="layout-split">
+          <div class="layout-main">
+            <div class="flex items-center justify-between mb-4">
+              <h2>Routes by Wall</h2>
+              <div class="flex gap-2">
+                <button class="filter-chip active">Active</button>
+                <button class="filter-chip">All</button>
+              </div>
+            </div>
+
+            <!-- The Cave — circuit boulders -->
+            <div class="wall-section">
+              <div class="wall-header">
+                <div>
+                  <div class="wall-title">The Cave</div>
+                  <span class="wall-meta">boulder · 45° · 8 routes</span>
+                </div>
+                <a href="#" class="btn btn-ghost btn-sm">Manage</a>
+              </div>
+              <div class="wall-routes">
+                <div class="route-card card-interactive" style="--route-color: #e53935">
+                  <div class="route-color-bar"></div>
+                  <div class="route-card-body">
+                    <div class="circuit-badge" style="--circuit-color: #e53935">
+                      <div class="circuit-dot"></div>
+                      <span>Red</span>
+                    </div>
+                    <div class="route-info">
+                      <div class="route-name">Crimson Crush</div>
+                      <div class="route-meta">
+                        <span>The Cave</span>
+                        <span class="route-meta-dot">Chris S.</span>
+                        <span class="route-meta-dot">2d ago</span>
+                      </div>
+                      <div class="route-tags">
+                        <span class="tag-pill">Crimps</span>
+                        <span class="tag-pill">Dynamic</span>
+                      </div>
+                    </div>
+                    <div class="route-stats">
+                      <div class="route-stat"><div class="route-stat-value">23</div><div class="route-stat-label">sends</div></div>
+                      <div class="route-stat"><div class="route-stat-value">4.2</div><div class="route-stat-label">rating</div></div>
+                    </div>
+                    <div class="route-status active">active</div>
+                  </div>
+                </div>
+
+                <div class="route-card card-interactive" style="--route-color: #1565c0">
+                  <div class="route-color-bar"></div>
+                  <div class="route-card-body">
+                    <div class="circuit-badge" style="--circuit-color: #1565c0">
+                      <div class="circuit-dot"></div>
+                      <span>Blue</span>
+                    </div>
+                    <div class="route-info">
+                      <div class="route-name">Blue Monday</div>
+                      <div class="route-meta">
+                        <span>The Cave</span>
+                        <span class="route-meta-dot">Alex M.</span>
+                        <span class="route-meta-dot">3d ago</span>
+                      </div>
+                    </div>
+                    <div class="route-stats">
+                      <div class="route-stat"><div class="route-stat-value">45</div><div class="route-stat-label">sends</div></div>
+                      <div class="route-stat"><div class="route-stat-value">3.9</div><div class="route-stat-label">rating</div></div>
+                    </div>
+                    <div class="route-status active">active</div>
+                  </div>
+                </div>
+
+                <div class="route-card card-interactive" style="--route-color: #2e7d32">
+                  <div class="route-color-bar"></div>
+                  <div class="route-card-body">
+                    <div class="circuit-badge" style="--circuit-color: #2e7d32">
+                      <div class="circuit-dot"></div>
+                      <span>Green</span>
+                    </div>
+                    <div class="route-info">
+                      <div class="route-name">Boulder</div>
+                      <div class="route-meta">
+                        <span>The Cave</span>
+                        <span class="route-meta-dot">Chris S.</span>
+                        <span class="route-meta-dot">1d ago</span>
+                      </div>
+                    </div>
+                    <div class="route-stats">
+                      <div class="route-stat"><div class="route-stat-value">8</div><div class="route-stat-label">sends</div></div>
+                      <div class="route-stat"><div class="route-stat-value">4.5</div><div class="route-stat-label">rating</div></div>
+                    </div>
+                    <div class="route-status active">active</div>
+                  </div>
+                </div>
+
+                <div class="route-card card-interactive" style="--route-color: #ffffff">
+                  <div class="route-color-bar" style="border-right: 1px solid var(--rw-warm-gray)"></div>
+                  <div class="route-card-body">
+                    <div class="circuit-badge" style="--circuit-color: #ffffff">
+                      <div class="circuit-dot"></div>
+                      <span>White</span>
+                    </div>
+                    <div class="route-info">
+                      <div class="route-name">Ghost</div>
+                      <div class="route-meta">
+                        <span>The Cave</span>
+                        <span class="route-meta-dot">Alex M.</span>
+                        <span class="route-meta-dot">1d ago</span>
+                      </div>
+                    </div>
+                    <div class="route-stats">
+                      <div class="route-stat"><div class="route-stat-value">27</div><div class="route-stat-label">sends</div></div>
+                      <div class="route-stat"><div class="route-stat-value">3.4</div><div class="route-stat-label">rating</div></div>
+                    </div>
+                    <div class="route-status active">active</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Main Slab — graded sport -->
+            <div class="wall-section">
+              <div class="wall-header">
+                <div>
+                  <div class="wall-title">Main Slab</div>
+                  <span class="wall-meta">sport · 5° · 6 routes</span>
+                </div>
+                <a href="#" class="btn btn-ghost btn-sm">Manage</a>
+              </div>
+              <div class="wall-routes">
+                <div class="route-card card-interactive" style="--route-color: #7b1fa2">
+                  <div class="route-color-bar"></div>
+                  <div class="route-card-body">
+                    <div class="route-grade">5.11-</div>
+                    <div class="route-info">
+                      <div class="route-name">Purple Rain</div>
+                      <div class="route-meta">
+                        <span>Main Slab</span>
+                        <span class="route-meta-dot">Jordan K.</span>
+                        <span class="route-meta-dot">4d ago</span>
+                      </div>
+                    </div>
+                    <div class="route-stats">
+                      <div class="route-stat"><div class="route-stat-value">31</div><div class="route-stat-label">sends</div></div>
+                      <div class="route-stat"><div class="route-stat-value">4.0</div><div class="route-stat-label">rating</div></div>
+                    </div>
+                    <div class="route-status active">active</div>
+                  </div>
+                </div>
+
+                <div class="route-card card-interactive" style="--route-color: #f9a825">
+                  <div class="route-color-bar"></div>
+                  <div class="route-card-body">
+                    <div class="route-grade">5.10+</div>
+                    <div class="route-info">
+                      <div class="route-name">Gold Rush</div>
+                      <div class="route-meta">
+                        <span>Main Slab</span>
+                        <span class="route-meta-dot">Chris S.</span>
+                        <span class="route-meta-dot">5d ago</span>
+                      </div>
+                    </div>
+                    <div class="route-stats">
+                      <div class="route-stat"><div class="route-stat-value">52</div><div class="route-stat-label">sends</div></div>
+                      <div class="route-stat"><div class="route-stat-value">3.6</div><div class="route-stat-label">rating</div></div>
+                    </div>
+                    <div class="route-status active">active</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Overhang Alley — circuit boulders -->
+            <div class="wall-section">
+              <div class="wall-header">
+                <div>
+                  <div class="wall-title">Overhang Alley</div>
+                  <span class="wall-meta">boulder · 30° · 4 routes</span>
+                </div>
+                <a href="#" class="btn btn-ghost btn-sm">Manage</a>
+              </div>
+              <div class="wall-routes">
+                <div class="route-card card-interactive" style="--route-color: #e91e8a">
+                  <div class="route-color-bar"></div>
+                  <div class="route-card-body">
+                    <div class="circuit-badge" style="--circuit-color: #e91e8a">
+                      <div class="circuit-dot"></div>
+                      <span>Pink</span>
+                    </div>
+                    <div class="route-info">
+                      <div class="route-name">Pink Panther</div>
+                      <div class="route-meta">
+                        <span>Overhang Alley</span>
+                        <span class="route-meta-dot">Alex M.</span>
+                        <span class="route-meta-dot">1d ago</span>
+                      </div>
+                    </div>
+                    <div class="route-stats">
+                      <div class="route-stat"><div class="route-stat-value">18</div><div class="route-stat-label">sends</div></div>
+                      <div class="route-stat"><div class="route-stat-value">4.1</div><div class="route-stat-label">rating</div></div>
+                    </div>
+                    <div class="route-status active">active</div>
+                  </div>
+                </div>
+
+                <div class="route-card card-interactive" style="--route-color: #0a0a0a">
+                  <div class="route-color-bar"></div>
+                  <div class="route-card-body">
+                    <div class="circuit-badge" style="--circuit-color: #0a0a0a">
+                      <div class="circuit-dot"></div>
+                      <span>Black</span>
+                    </div>
+                    <div class="route-info">
+                      <div class="route-name">Dark Arts</div>
+                      <div class="route-meta">
+                        <span>Overhang Alley</span>
+                        <span class="route-meta-dot">Chris S.</span>
+                        <span class="route-meta-dot">18h ago</span>
+                      </div>
+                    </div>
+                    <div class="route-stats">
+                      <div class="route-stat"><div class="route-stat-value">5</div><div class="route-stat-label">sends</div></div>
+                      <div class="route-stat"><div class="route-stat-value">4.8</div><div class="route-stat-label">rating</div></div>
+                    </div>
+                    <div class="route-status active">active</div>
+                  </div>
+                </div>
+
+                <div class="route-card card-interactive" style="--route-color: #00897b">
+                  <div class="route-color-bar"></div>
+                  <div class="route-card-body">
+                    <div class="circuit-badge" style="--circuit-color: #00897b">
+                      <div class="circuit-dot"></div>
+                      <span>Teal</span>
+                    </div>
+                    <div class="route-info">
+                      <div class="route-name">Teal Deal</div>
+                      <div class="route-meta">
+                        <span>Overhang Alley</span>
+                        <span class="route-meta-dot">Chris S.</span>
+                        <span class="route-meta-dot">6h ago</span>
+                      </div>
+                    </div>
+                    <div class="route-stats">
+                      <div class="route-stat"><div class="route-stat-value">0</div><div class="route-stat-label">sends</div></div>
+                      <div class="route-stat"><div class="route-stat-value">0.0</div><div class="route-stat-label">rating</div></div>
+                    </div>
+                    <div class="route-status draft">draft</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Aside: Recent Activity -->
+          <aside class="layout-aside">
+            <h3 class="mb-4">Recent Activity</h3>
+            <div class="feed-list">
+              <div class="feed-item">
+                <div class="feed-avatar">S</div>
+                <div class="feed-body">
+                  <div class="feed-action"><strong>Sarah L.</strong> sent</div>
+                  <div class="feed-route-preview">
+                    <div class="feed-route-dot" style="background: #e53935"></div>
+                    <span>Red — Crimson Crush</span>
+                  </div>
+                  <div class="feed-time">15m ago</div>
+                </div>
+              </div>
+              <div class="feed-item">
+                <div class="feed-avatar">M</div>
+                <div class="feed-body">
+                  <div class="feed-action"><strong>Mike T.</strong> flashed</div>
+                  <div class="feed-route-preview">
+                    <div class="feed-route-dot" style="background: #1565c0"></div>
+                    <span>Blue — Blue Monday</span>
+                  </div>
+                  <div class="feed-time">42m ago</div>
+                </div>
+              </div>
+              <div class="feed-item">
+                <div class="feed-avatar">A</div>
+                <div class="feed-body">
+                  <div class="feed-action"><strong>Alex M.</strong> set a new route</div>
+                  <div class="feed-route-preview">
+                    <div class="feed-route-dot" style="background: #00897b"></div>
+                    <span>Teal — Teal Deal</span>
+                  </div>
+                  <div class="feed-time">2h ago</div>
+                </div>
+              </div>
+              <div class="feed-item">
+                <div class="feed-avatar">J</div>
+                <div class="feed-body">
+                  <div class="feed-action"><strong>Jordan K.</strong> voted <strong style="color: var(--rw-red)">Hard</strong></div>
+                  <div class="feed-route-preview">
+                    <div class="feed-route-dot" style="background: #2e7d32"></div>
+                    <span>Green</span>
+                  </div>
+                  <div class="feed-time">3h ago</div>
+                </div>
+              </div>
+              <div class="feed-item">
+                <div class="feed-avatar">C</div>
+                <div class="feed-body">
+                  <div class="feed-action"><strong>Chris S.</strong> archived 3 routes on The Cave</div>
+                  <div class="feed-time">5h ago</div>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    document.addEventListener('click', function(e) {
+      var chip = e.target.closest('.filter-chip');
+      if (!chip) return;
+      var siblings = chip.parentElement.querySelectorAll('.filter-chip');
+      siblings.forEach(function(s) { s.classList.remove('active'); });
+      chip.classList.add('active');
+    });
+  </script>
+</body>
+</html>

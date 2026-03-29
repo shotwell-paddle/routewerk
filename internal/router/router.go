@@ -1,6 +1,7 @@
 package router
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/shotwell-paddle/routewerk/internal/config"
 	"github.com/shotwell-paddle/routewerk/internal/handler"
+	webhandler "github.com/shotwell-paddle/routewerk/internal/handler/web"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
 	"github.com/shotwell-paddle/routewerk/internal/service"
@@ -90,6 +92,20 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 
 	// Health check
 	r.Get("/health", healthHandler.Check)
+
+	// ── Web Frontend (HTMX) ────────────────────────────────────
+	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo)
+
+	// Static assets
+	r.Handle("/static/*", webhandler.StaticHandler())
+
+	// Web pages — served as full HTML or HTMX partials
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/dashboard", http.StatusTemporaryRedirect)
+	})
+	r.Get("/dashboard", webHandler.Dashboard)
+	r.Get("/routes", webHandler.Routes)
+	r.Get("/routes/{routeID}", webHandler.RouteDetail)
 
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {

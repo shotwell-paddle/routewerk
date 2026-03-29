@@ -1,0 +1,187 @@
+{{define "title"}}{{if .Route.Name}}{{deref .Route.Name}}{{else}}{{.Route.DisplayGrade}}{{end}} — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header" style="border-bottom: none; padding-bottom: var(--sp-4);">
+  <a href="/routes" class="btn btn-ghost btn-sm mb-4"
+     hx-get="/routes" hx-target="#main-content" hx-push-url="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+      <path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>
+    </svg>
+    Back to routes
+  </a>
+</div>
+
+<div class="page-body" style="padding-top: 0;">
+  <!-- Route hero -->
+  <div class="card" style="overflow: hidden; margin-bottom: var(--sp-6);">
+    <div style="height: 6px; background: {{.Route.Color}};"></div>
+    <div style="padding: var(--sp-8);">
+      <div class="flex items-center gap-6">
+        {{if .Route.IsCircuit}}
+        <div class="circuit-badge lg" style="--circuit-color: {{.Route.Color}}">
+          <div class="circuit-dot"></div>
+          <span>{{.Route.DisplayGrade}}</span>
+        </div>
+        {{else}}
+        <div class="grade-badge lg" style="--route-color: {{.Route.Color}}">{{.Route.DisplayGrade}}</div>
+        {{end}}
+        <div style="flex: 1;">
+          <h1 style="font-size: var(--text-2xl); margin-bottom: var(--sp-1);">
+            {{if .Route.Name}}{{deref .Route.Name}}{{else}}{{.Route.RouteType | title}}{{if not .Route.IsCircuit}} — {{.Route.Grade}}{{end}}{{end}}
+          </h1>
+          <div class="route-meta" style="font-size: var(--text-base);">
+            <span>{{.WallName}}</span>
+            {{if .SetterName}}<span class="route-meta-dot">Set by {{.SetterName}}</span>{{end}}
+            <span class="route-meta-dot">{{.Route.DateSet | reltime}}</span>
+          </div>
+          {{if .Route.Tags}}
+          <div class="route-tags mt-2">
+            {{range .Route.Tags}}
+            <span class="tag-pill">{{.Name}}</span>
+            {{end}}
+          </div>
+          {{end}}
+        </div>
+        <div class="route-status {{.Route.Status}}" style="font-size: var(--text-sm);">{{.Route.Status}}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="layout-split">
+    <div class="layout-main">
+      <!-- Stats row -->
+      <div class="stats-grid mb-6" style="grid-template-columns: repeat(4, 1fr);">
+        <div class="stat-card" style="--stat-accent: var(--rw-green)">
+          <div class="stat-value">{{.Route.AscentCount}}</div>
+          <div class="stat-label">Sends</div>
+        </div>
+        <div class="stat-card" style="--stat-accent: var(--rw-yellow)">
+          <div class="stat-value">{{.Route.AttemptCount}}</div>
+          <div class="stat-label">Attempts</div>
+        </div>
+        <div class="stat-card" style="--stat-accent: var(--rw-orange)">
+          <div class="stat-value">{{printf "%.1f" .Route.AvgRating}}</div>
+          <div class="stat-label">Rating</div>
+        </div>
+        <div class="stat-card" style="--stat-accent: var(--rw-blue)">
+          <div class="stat-value">{{.Route.RatingCount}}</div>
+          <div class="stat-label">Reviews</div>
+        </div>
+      </div>
+
+      <!-- Consensus difficulty -->
+      <div class="card" style="padding: var(--sp-5); margin-bottom: var(--sp-6);" id="consensus-section">
+        <div class="flex items-center justify-between mb-4">
+          <h3>How does it feel?</h3>
+          {{if .Consensus}}
+          <span class="text-sm text-muted">{{.Consensus.TotalVotes}} votes</span>
+          {{end}}
+        </div>
+        {{if .Consensus}}
+        <div class="consensus-bar mb-2">
+          {{if gt .Consensus.EasyPct 0}}<div class="seg-easy" style="width: {{.Consensus.EasyPct}}%"></div>{{end}}
+          {{if gt .Consensus.RightPct 0}}<div class="seg-right" style="width: {{.Consensus.RightPct}}%"></div>{{end}}
+          {{if gt .Consensus.HardPct 0}}<div class="seg-hard" style="width: {{.Consensus.HardPct}}%"></div>{{end}}
+        </div>
+        {{end}}
+        <div class="consensus-votes"
+             hx-post="/routes/{{.Route.ID}}/difficulty" hx-target="#consensus-section" hx-swap="outerHTML">
+          <button type="button" name="vote" value="easy" class="consensus-vote-btn easy"
+                  hx-post="/routes/{{.Route.ID}}/difficulty?vote=easy" hx-target="#consensus-section" hx-swap="outerHTML">
+            <span class="vote-label">Easy</span>
+            <span class="vote-count">{{if .Consensus}}{{.Consensus.EasyCount}}{{else}}0{{end}}</span>
+          </button>
+          <button type="button" name="vote" value="right" class="consensus-vote-btn right"
+                  hx-post="/routes/{{.Route.ID}}/difficulty?vote=right" hx-target="#consensus-section" hx-swap="outerHTML">
+            <span class="vote-label">Right On</span>
+            <span class="vote-count">{{if .Consensus}}{{.Consensus.RightCount}}{{else}}0{{end}}</span>
+          </button>
+          <button type="button" name="vote" value="hard" class="consensus-vote-btn hard"
+                  hx-post="/routes/{{.Route.ID}}/difficulty?vote=hard" hx-target="#consensus-section" hx-swap="outerHTML">
+            <span class="vote-label">Hard</span>
+            <span class="vote-count">{{if .Consensus}}{{.Consensus.HardCount}}{{else}}0{{end}}</span>
+          </button>
+        </div>
+      </div>
+
+      {{if .Route.Description}}
+      <div class="card" style="padding: var(--sp-5); margin-bottom: var(--sp-6);">
+        <h3 class="mb-2">Description</h3>
+        <p style="color: var(--rw-dark-gray); line-height: 1.6;">{{deref .Route.Description}}</p>
+      </div>
+      {{end}}
+
+      <!-- Recent ascents -->
+      <h3 class="mb-4">Recent Sends</h3>
+      <div class="feed-list" id="route-ascents"
+           hx-get="/routes/{{.Route.ID}}/ascents-feed" hx-trigger="revealed">
+        {{range .RecentAscents}}
+        <div class="feed-item">
+          <div class="feed-avatar">{{.UserInitial}}</div>
+          <div class="feed-body">
+            <div class="feed-action">
+              <strong>{{.UserName}}</strong> {{.AscentType}}
+              {{if gt .Attempts 1}}<span class="text-muted">({{.Attempts}} attempts)</span>{{end}}
+            </div>
+            {{if .Notes}}<p class="text-sm text-muted mt-2">{{deref .Notes}}</p>{{end}}
+            <div class="feed-time">{{.ClimbedAt | reltime}}</div>
+          </div>
+        </div>
+        {{end}}
+        {{if not .RecentAscents}}
+        <div class="empty-state" style="padding: var(--sp-8);">
+          <p class="text-muted text-sm">No sends yet. Be the first!</p>
+        </div>
+        {{end}}
+      </div>
+    </div>
+
+    <!-- Aside: Log an ascent -->
+    <aside class="layout-aside">
+      <div class="card" style="padding: var(--sp-5);">
+        <h3 class="mb-4">Log a Send</h3>
+        <form hx-post="/routes/{{.Route.ID}}/ascent" hx-target="#route-ascents" hx-swap="afterbegin">
+          <div class="form-group">
+            <label class="form-label">Type</label>
+            <select class="form-select" name="ascent_type">
+              <option value="send">Send</option>
+              <option value="flash">Flash</option>
+              <option value="onsight">Onsight</option>
+              <option value="project">Project (attempt)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Attempts</label>
+            <input class="form-input" type="number" name="attempts" value="1" min="1">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Notes <span class="text-muted">(optional)</span></label>
+            <textarea class="form-input" name="notes" rows="2" placeholder="How'd it go?"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width: 100%;">Log Send</button>
+        </form>
+      </div>
+
+      <div class="card mt-4" style="padding: var(--sp-5);">
+        <h3 class="mb-4">Rate this Route</h3>
+        <form hx-post="/routes/{{.Route.ID}}/rate" hx-swap="outerHTML">
+          <div class="flex gap-2 mb-4" style="justify-content: center;">
+            {{range $i := seq 1 5}}
+            <label style="cursor: pointer;">
+              <input type="radio" name="rating" value="{{$i}}" style="display: none;" class="star-input">
+              <svg class="star-icon" viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="var(--rw-mid-gray)" stroke-width="1.5">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+              </svg>
+            </label>
+            {{end}}
+          </div>
+          <div class="form-group">
+            <textarea class="form-input" name="comment" rows="2" placeholder="Quick review..."></textarea>
+          </div>
+          <button type="submit" class="btn btn-secondary" style="width: 100%;">Submit Rating</button>
+        </form>
+      </div>
+    </aside>
+  </div>
+</div>
+{{end}}

@@ -1,0 +1,94 @@
+{{define "title"}}Browse Routes — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>Routes</h1>
+      <p class="page-subtitle">{{.TotalRoutes}} active at {{if .Location}}{{.Location.Name}}{{end}}</p>
+    </div>
+    <div class="flex gap-3">
+      <div class="filter-chip" style="border: none; padding: 0;">
+        <select class="form-select" style="width: auto; padding: 6px 12px; font-size: var(--text-sm);"
+                hx-get="/routes" hx-target="#route-list" hx-include="[name='filter']"
+                name="sort">
+          <option value="newest">Newest first</option>
+          <option value="popular">Most popular</option>
+          <option value="rating">Highest rated</option>
+          <option value="grade-asc">Grade ↑</option>
+          <option value="grade-desc">Grade ↓</option>
+        </select>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <!-- Filter chips — circuit colors + grade ranges -->
+  <div class="filter-bar">
+    <button class="filter-chip active"
+            hx-get="/routes" hx-target="#route-list" hx-include="[name='filter']"
+            name="filter" value="">
+      All
+    </button>
+    {{range .GradeGroups}}
+    <button class="filter-chip"
+            hx-get="/routes?grade={{.Value}}" hx-target="#route-list"
+            name="filter" value="{{.Value}}">
+      {{if .IsColor}}<span class="color-dot" style="background: {{.Color}}"></span>{{end}}
+      {{.Label}}
+      <span class="text-muted" style="font-size: 0.6875rem; margin-left: 2px;">({{.Count}})</span>
+    </button>
+    {{end}}
+  </div>
+
+  <!-- Type tabs -->
+  <div class="tabs mb-4">
+    <a href="/routes" class="tab {{if eq .RouteType ""}}active{{end}}"
+       hx-get="/routes" hx-target="#main-content" hx-push-url="true">
+      All
+    </a>
+    <a href="/routes?type=boulder" class="tab {{if eq .RouteType "boulder"}}active{{end}}"
+       hx-get="/routes?type=boulder" hx-target="#main-content" hx-push-url="true">
+      Boulder
+    </a>
+    <a href="/routes?type=sport" class="tab {{if eq .RouteType "sport"}}active{{end}}"
+       hx-get="/routes?type=sport" hx-target="#main-content" hx-push-url="true">
+      Sport
+    </a>
+    <a href="/routes?type=top_rope" class="tab {{if eq .RouteType "top_rope"}}active{{end}}"
+       hx-get="/routes?type=top_rope" hx-target="#main-content" hx-push-url="true">
+      Top Rope
+    </a>
+  </div>
+
+  <!-- Route list -->
+  <div id="route-list" class="flex flex-col gap-3">
+    {{range .Routes}}
+    {{template "route-card" .}}
+    {{end}}
+
+    {{if not .Routes}}
+    <div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5"/>
+      </svg>
+      <h3>No routes found</h3>
+      <p>Try adjusting your filters, or check back later for new routes.</p>
+    </div>
+    {{end}}
+
+    {{if .HasMore}}
+    <div class="flex items-center justify-center mt-4">
+      <button class="btn btn-ghost"
+              hx-get="/routes?offset={{.NextOffset}}&type={{.RouteType}}"
+              hx-target="#route-list"
+              hx-swap="beforeend"
+              hx-select=".route-card, .flex.items-center.justify-center">
+        Load more
+      </button>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}

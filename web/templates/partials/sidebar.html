@@ -1,0 +1,72 @@
+{{define "sidebar"}}
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <h1>Routewerk</h1>
+    <div class="brand-sub">{{if .Location}}{{.Location.Name}}{{else}}Route Management{{end}}</div>
+  </div>
+
+  <nav class="sidebar-nav">
+    {{if .IsSetter}}
+    <div class="nav-section">
+      <div class="nav-section-label">Setting</div>
+      <a href="/dashboard" class="nav-item {{if eq .ActiveNav "dashboard"}}active{{end}}"
+         hx-get="/dashboard" hx-target="#main-content" hx-push-url="true">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+        Dashboard
+      </a>
+      <a href="/walls" class="nav-item {{if eq .ActiveNav "walls"}}active{{end}}"
+         hx-get="/walls" hx-target="#main-content" hx-push-url="true">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 20h20"/><path d="M5 20V8l7-5 7 5v12"/>
+        </svg>
+        Walls
+      </a>
+      <a href="/routes/manage" class="nav-item {{if eq .ActiveNav "manage-routes"}}active{{end}}"
+         hx-get="/routes/manage" hx-target="#main-content" hx-push-url="true">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+        </svg>
+        Routes
+      </a>
+      <a href="/sessions" class="nav-item {{if eq .ActiveNav "sessions"}}active{{end}}"
+         hx-get="/sessions" hx-target="#main-content" hx-push-url="true">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        Sessions
+      </a>
+    </div>
+    {{end}}
+
+    <div class="nav-section">
+      <div class="nav-section-label">Climb</div>
+      <a href="/routes" class="nav-item {{if eq .ActiveNav "routes"}}active{{end}}"
+         hx-get="/routes" hx-target="#main-content" hx-push-url="true">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5"/>
+        </svg>
+        Browse Routes
+      </a>
+      <a href="/activity" class="nav-item {{if eq .ActiveNav "activity"}}active{{end}}"
+         hx-get="/activity" hx-target="#main-content" hx-push-url="true">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        Activity
+      </a>
+    </div>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="user-pill">
+      <div class="user-avatar">{{.UserInitial}}</div>
+      <div class="user-info">
+        <div class="user-name">{{.UserName}}</div>
+        <div class="user-role">{{.UserRole}}</div>
+      </div>
+    </div>
+  </div>
+</aside>
+{{end}}

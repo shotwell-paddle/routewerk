@@ -1,0 +1,43 @@
+{{define "route-card"}}
+<div class="route-card card-interactive"
+     hx-get="/routes/{{.ID}}" hx-target="#main-content" hx-push-url="true"
+     style="--route-color: {{.Color}}">
+  <div class="route-color-bar"></div>
+  <div class="route-card-body">
+    {{if .IsCircuit}}
+    <div class="circuit-badge" style="--circuit-color: {{.Color}}">
+      <div class="circuit-dot"></div>
+      <span>{{.DisplayGrade}}</span>
+    </div>
+    {{else}}
+    <div class="route-grade">{{.DisplayGrade}}</div>
+    {{end}}
+    <div class="route-info">
+      <div class="route-name">{{if .Name}}{{deref .Name}}{{else}}{{.RouteType | title}}{{if not .IsCircuit}} — {{.Grade}}{{end}}{{end}}</div>
+      <div class="route-meta">
+        <span>{{.WallName}}</span>
+        {{if .SetterName}}<span class="route-meta-dot">{{.SetterName}}</span>{{end}}
+        <span class="route-meta-dot">{{.DateSet | reltime}}</span>
+      </div>
+      {{if .Tags}}
+      <div class="route-tags">
+        {{range .Tags}}
+        <span class="tag-pill">{{.Name}}</span>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+    <div class="route-stats">
+      <div class="route-stat">
+        <div class="route-stat-value">{{.AscentCount}}</div>
+        <div class="route-stat-label">sends</div>
+      </div>
+      <div class="route-stat">
+        <div class="route-stat-value">{{printf "%.1f" .AvgRating}}</div>
+        <div class="route-stat-label">rating</div>
+      </div>
+    </div>
+    <div class="route-status {{.Status}}">{{.Status}}</div>
+  </div>
+</div>
+{{end}}

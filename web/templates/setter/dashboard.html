@@ -1,0 +1,128 @@
+{{define "title"}}Dashboard — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>Dashboard</h1>
+      <p class="page-subtitle">{{if .Location}}{{.Location.Name}}{{end}} — Route overview</p>
+    </div>
+    <a href="/routes/new" class="btn btn-primary"
+       hx-get="/routes/new" hx-target="#main-content" hx-push-url="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      New Route
+    </a>
+  </div>
+</div>
+
+<div class="page-body">
+  <!-- Stats -->
+  <div class="stats-grid mb-6">
+    <div class="stat-card" style="--stat-accent: var(--rw-green)">
+      <div class="stat-value">{{.Stats.ActiveRoutes}}</div>
+      <div class="stat-label">Active Routes</div>
+      {{if .Stats.ActiveDelta}}
+      <div class="stat-delta {{if gt .Stats.ActiveDelta 0}}up{{else}}down{{end}}">
+        {{if gt .Stats.ActiveDelta 0}}↑{{else}}↓{{end}} {{abs .Stats.ActiveDelta}} this week
+      </div>
+      {{end}}
+    </div>
+    <div class="stat-card" style="--stat-accent: var(--rw-blue)">
+      <div class="stat-value">{{.Stats.TotalSends}}</div>
+      <div class="stat-label">Total Sends</div>
+    </div>
+    <div class="stat-card" style="--stat-accent: var(--rw-orange)">
+      <div class="stat-value">{{printf "%.1f" .Stats.AvgRating}}</div>
+      <div class="stat-label">Avg Rating</div>
+    </div>
+    <div class="stat-card" style="--stat-accent: var(--rw-purple)">
+      <div class="stat-value">{{.Stats.DueForStrip}}</div>
+      <div class="stat-label">Due for Strip</div>
+    </div>
+  </div>
+
+  <div class="layout-split">
+    <!-- Main: Routes by Wall -->
+    <div class="layout-main">
+      <div class="flex items-center justify-between mb-4">
+        <h2>Routes by Wall</h2>
+        <div class="flex gap-2">
+          <button class="filter-chip active" hx-get="/dashboard/routes?status=active" hx-target="#wall-routes">Active</button>
+          <button class="filter-chip" hx-get="/dashboard/routes?status=all" hx-target="#wall-routes">All</button>
+        </div>
+      </div>
+
+      <div id="wall-routes">
+        {{range .Walls}}
+        <div class="wall-section">
+          <div class="wall-header">
+            <div>
+              <div class="wall-title">{{.Name}}</div>
+              <span class="wall-meta">{{.WallType}}{{if .Angle}} · {{.Angle}}{{end}} · {{.RouteCount}} routes</span>
+            </div>
+            <a href="/walls/{{.ID}}" class="btn btn-ghost btn-sm"
+               hx-get="/walls/{{.ID}}" hx-target="#main-content" hx-push-url="true">
+              Manage
+            </a>
+          </div>
+          <div class="wall-routes">
+            {{range .Routes}}
+            {{template "route-card" .}}
+            {{end}}
+            {{if not .Routes}}
+            <div class="empty-state" style="padding: var(--sp-8)">
+              <p class="text-muted text-sm">No active routes on this wall</p>
+            </div>
+            {{end}}
+          </div>
+        </div>
+        {{end}}
+
+        {{if not .Walls}}
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 20h20"/><path d="M5 20V8l7-5 7 5v12"/>
+          </svg>
+          <h3>No walls yet</h3>
+          <p>Create your first wall to start adding routes.</p>
+          <a href="/walls/new" class="btn btn-primary mt-4">Create Wall</a>
+        </div>
+        {{end}}
+      </div>
+    </div>
+
+    <!-- Aside: Recent Activity -->
+    <aside class="layout-aside">
+      <h3 class="mb-4">Recent Activity</h3>
+      <div class="feed-list" id="activity-feed"
+           hx-get="/dashboard/activity" hx-trigger="every 30s" hx-swap="innerHTML">
+        {{range .RecentActivity}}
+        <div class="feed-item">
+          <div class="feed-avatar">{{.UserInitial}}</div>
+          <div class="feed-body">
+            <div class="feed-action">
+              <strong>{{.UserName}}</strong> {{.ActionText}}
+            </div>
+            {{if .RoutePreview}}
+            <div class="feed-route-preview">
+              <div class="feed-route-dot" style="background: {{.RoutePreview.Color}}"></div>
+              <span>{{.RoutePreview.Grade}} {{if .RoutePreview.Name}}— {{.RoutePreview.Name}}{{end}}</span>
+            </div>
+            {{end}}
+            <div class="feed-time">{{.Time | reltime}}</div>
+          </div>
+        </div>
+        {{end}}
+
+        {{if not .RecentActivity}}
+        <div class="empty-state" style="padding: var(--sp-8)">
+          <p class="text-muted text-sm">No recent activity</p>
+        </div>
+        {{end}}
+      </div>
+    </aside>
+  </div>
+</div>
+{{end}}

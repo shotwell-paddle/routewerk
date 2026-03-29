@@ -9,6 +9,8 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/config"
 	"github.com/shotwell-paddle/routewerk/internal/handler"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
+	"github.com/shotwell-paddle/routewerk/internal/repository"
+	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
 func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
@@ -28,138 +30,97 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 		MaxAge:           300,
 	}))
 
+	// Repositories
+	userRepo := repository.NewUserRepo(db)
+	orgRepo := repository.NewOrgRepo(db)
+	locationRepo := repository.NewLocationRepo(db)
+	wallRepo := repository.NewWallRepo(db)
+	routeRepo := repository.NewRouteRepo(db)
+
+	// Services
+	authService := service.NewAuthService(userRepo, cfg)
+
+	// Handlers
+	healthHandler := handler.NewHealthHandler(db)
+	authHandler := handler.NewAuthHandler(authService)
+	orgHandler := handler.NewOrgHandler(orgRepo)
+	locationHandler := handler.NewLocationHandler(locationRepo)
+	wallHandler := handler.NewWallHandler(wallRepo)
+	routeHandler := handler.NewRouteHandler(routeRepo)
+
 	// Health check (unauthenticated)
-	health := handler.NewHealthHandler(db)
-	r.Get("/health", health.Check)
+	r.Get("/health", healthHandler.Check)
 
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
 		// --- Public routes ---
-		// r.Post("/auth/register", authHandler.Register)
-		// r.Post("/auth/login", authHandler.Login)
-		// r.Post("/auth/refresh", authHandler.Refresh)
+		r.Post("/auth/register", authHandler.Register)
+		r.Post("/auth/login", authHandler.Login)
 
 		// --- Authenticated routes ---
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Authenticate(cfg.JWTSecret))
 
+			// Auth
+			r.Post("/auth/refresh", authHandler.Refresh)
+			r.Get("/me", authHandler.Me)
+
 			// Organizations
-			// r.Route("/orgs", func(r chi.Router) {
-			// 	r.Post("/", orgHandler.Create)
-			// 	r.Get("/", orgHandler.List)
-			// 	r.Route("/{orgID}", func(r chi.Router) {
-			// 		r.Get("/", orgHandler.Get)
-			// 		r.Put("/", orgHandler.Update)
-			// 	})
-			// })
+			r.Route("/orgs", func(r chi.Router) {
+				r.Post("/", orgHandler.Create)
+				r.Get("/", orgHandler.List)
+				r.Route("/{orgID}", func(r chi.Router) {
+					r.Get("/", orgHandler.Get)
+					r.Put("/", orgHandler.Update)
 
-			// Locations
-			// r.Route("/orgs/{orgID}/locations", func(r chi.Router) {
-			// 	r.Post("/", locationHandler.Create)
-			// 	r.Get("/", locationHandler.List)
-			// 	r.Route("/{locationID}", func(r chi.Router) {
-			// 		r.Get("/", locationHandler.Get)
-			// 		r.Put("/", locationHandler.Update)
-			// 	})
-			// })
+					// Locations (nested under org)
+					r.Route("/locations", func(r chi.Router) {
+						r.Post("/", locationHandler.Create)
+						r.Get("/", locationHandler.List)
+					})
+				})
+			})
 
-			// Walls
-			// r.Route("/locations/{locationID}/walls", func(r chi.Router) {
-			// 	r.Post("/", wallHandler.Create)
-			// 	r.Get("/", wallHandler.List)
-			// 	r.Route("/{wallID}", func(r chi.Router) {
-			// 		r.Get("/", wallHandler.Get)
-			// 		r.Put("/", wallHandler.Update)
-			// 		r.Delete("/", wallHandler.Delete)
-			// 	})
-			// })
+			// Locations (direct access)
+			r.Route("/locations/{locationID}", func(r chi.Router) {
+				r.Get("/", locationHandler.Get)
+				r.Put("/", locationHandler.Update)
 
-			// Routes (climbs)
-			// r.Route("/locations/{locationID}/routes", func(r chi.Router) {
-			// 	r.Post("/", routeHandler.Create)
-			// 	r.Get("/", routeHandler.List)
-			// 	r.Route("/{routeID}", func(r chi.Router) {
-			// 		r.Get("/", routeHandler.Get)
-			// 		r.Put("/", routeHandler.Update)
-			// 		r.Patch("/status", routeHandler.UpdateStatus)
-			// 		r.Post("/rate", ratingHandler.Rate)
-			// 		r.Post("/ascent", ascentHandler.Log)
-			// 	})
-			// })
+				// Walls
+				r.Route("/walls", func(r chi.Router) {
+					r.Post("/", wallHandler.Create)
+					r.Get("/", wallHandler.List)
+					r.Route("/{wallID}", func(r chi.Router) {
+						r.Get("/", wallHandler.Get)
+						r.Put("/", wallHandler.Update)
+						r.Delete("/", wallHandler.Delete)
+					})
+				})
 
-			// Bulk operations
-			// r.Post("/locations/{locationID}/routes/bulk-archive", routeHandler.BulkArchive)
-			// r.Patch("/locations/{locationID}/routes/bulk-grade", routeHandler.BulkGradeUpdate)
+				// Routes (climbs)
+				r.Route("/routes", func(r chi.Router) {
+					r.Post("/", routeHandler.Create)
+					r.Get("/", routeHandler.List)
+					r.Post("/bulk-archive", routeHandler.BulkArchive)
+					r.Route("/{routeID}", func(r chi.Router) {
+						r.Get("/", routeHandler.Get)
+						r.Put("/", routeHandler.Update)
+						r.Patch("/status", routeHandler.UpdateStatus)
+					})
+				})
+			})
 
-			// Setting sessions
-			// r.Route("/locations/{locationID}/sessions", func(r chi.Router) {
-			// 	r.Post("/", sessionHandler.Create)
-			// 	r.Get("/", sessionHandler.List)
-			// 	r.Route("/{sessionID}", func(r chi.Router) {
-			// 		r.Get("/", sessionHandler.Get)
-			// 		r.Put("/", sessionHandler.Update)
-			// 		r.Post("/assignments", sessionHandler.Assign)
-			// 	})
-			// })
-
-			// Setter labor
-			// r.Route("/locations/{locationID}/labor", func(r chi.Router) {
-			// 	r.Post("/", laborHandler.Log)
-			// 	r.Get("/", laborHandler.List)
-			// })
-
-			// Tags
-			// r.Route("/orgs/{orgID}/tags", func(r chi.Router) {
-			// 	r.Post("/", tagHandler.Create)
-			// 	r.Get("/", tagHandler.List)
-			// 	r.Delete("/{tagID}", tagHandler.Delete)
-			// })
-
-			// Climber profile & activity
-			// r.Get("/me", userHandler.Me)
-			// r.Put("/me", userHandler.UpdateProfile)
-			// r.Get("/me/ascents", ascentHandler.MyAscents)
-			// r.Get("/me/stats", ascentHandler.MyStats)
-			// r.Get("/me/feed", feedHandler.ActivityFeed)
-
-			// Follows
-			// r.Post("/users/{userID}/follow", followHandler.Follow)
-			// r.Delete("/users/{userID}/follow", followHandler.Unfollow)
-			// r.Get("/users/{userID}/followers", followHandler.Followers)
-			// r.Get("/users/{userID}/following", followHandler.Following)
-
-			// Training / coaching
-			// r.Route("/locations/{locationID}/training-plans", func(r chi.Router) {
-			// 	r.Post("/", trainingHandler.Create)
-			// 	r.Get("/", trainingHandler.List)
-			// 	r.Route("/{planID}", func(r chi.Router) {
-			// 		r.Get("/", trainingHandler.Get)
-			// 		r.Put("/", trainingHandler.Update)
-			// 		r.Post("/items", trainingHandler.AddItem)
-			// 		r.Patch("/items/{itemID}", trainingHandler.UpdateItem)
-			// 	})
-			// })
-
-			// Partner matching
-			// r.Route("/locations/{locationID}/partners", func(r chi.Router) {
-			// 	r.Get("/", partnerHandler.Search)
-			// 	r.Put("/profile", partnerHandler.UpdateProfile)
-			// })
-
-			// Analytics (manager/head setter)
-			// r.Route("/locations/{locationID}/analytics", func(r chi.Router) {
-			// 	r.Get("/grade-distribution", analyticsHandler.GradeDistribution)
-			// 	r.Get("/route-lifecycle", analyticsHandler.RouteLifecycle)
-			// 	r.Get("/engagement", analyticsHandler.Engagement)
-			// 	r.Get("/setter-productivity", analyticsHandler.SetterProductivity)
-			// })
-
-			// Org-level analytics
-			// r.Get("/orgs/{orgID}/analytics/overview", analyticsHandler.OrgOverview)
-
-			// QR code generation
-			// r.Get("/routes/{routeID}/qr", qrHandler.Generate)
-			// r.Get("/routes/{routeID}/card", qrHandler.RouteCard)
+			// Future endpoints (stubbed in comments for reference):
+			// Setting sessions: POST/GET /locations/{id}/sessions
+			// Setter labor:     POST/GET /locations/{id}/labor
+			// Tags:             POST/GET/DELETE /orgs/{id}/tags
+			// Ascents:          POST /locations/{id}/routes/{id}/ascent
+			// Ratings:          POST /locations/{id}/routes/{id}/rate
+			// Follows:          POST/DELETE /users/{id}/follow
+			// Training plans:   POST/GET /locations/{id}/training-plans
+			// Partner matching: GET/PUT /locations/{id}/partners
+			// Analytics:        GET /locations/{id}/analytics/*
+			// QR codes:         GET /routes/{id}/qr, /routes/{id}/card
 		})
 	})
 

@@ -32,8 +32,7 @@ func (r *RatingRepo) Upsert(ctx context.Context, rating *model.RouteRating) erro
 		return fmt.Errorf("upsert rating: %w", err)
 	}
 
-	// Update denormalized avg on route
-	r.updateRouteAvg(ctx, rating.RouteID)
+	// Avg rating update handled by trg_rating_avg trigger (see migration 002)
 	return nil
 }
 
@@ -57,16 +56,21 @@ func (r *RatingRepo) GetByUserAndRoute(ctx context.Context, userID, routeID stri
 	return rating, nil
 }
 
-func (r *RatingRepo) ListByRoute(ctx context.Context, routeID string) ([]RatingWithUser, error) {
+func (r *RatingRepo) ListByRoute(ctx context.Context, routeID string, limit, offset int) ([]RatingWithUser, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
 	query := `
 		SELECT rr.id, rr.user_id, rr.route_id, rr.rating, rr.comment, rr.created_at, rr.updated_at,
 			u.display_name, u.avatar_url
 		FROM route_ratings rr
 		JOIN users u ON u.id = rr.user_id
 		WHERE rr.route_id = $1
-		ORDER BY rr.created_at DESC`
+		ORDER BY rr.created_at DESC
+		LIMIT $2 OFFSET $3`
 
-	rows, err := r.db.Query(ctx, query, routeID)
+	rows, err := r.db.Query(ctx, query, routeID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list ratings: %w", err)
 	}
@@ -84,14 +88,6 @@ func (r *RatingRepo) ListByRoute(ctx context.Context, routeID string) ([]RatingW
 		ratings = append(ratings, rr)
 	}
 	return ratings, nil
-}
-
-func (r *RatingRepo) updateRouteAvg(ctx context.Context, routeID string) {
-	query := `
-		UPDATE routes
-		SET avg_rating = COALESCE((SELECT AVG(rating)::numeric(3,2) FROM route_ratings WHERE route_id = $1), 0)
-		WHERE id = $1`
-	r.db.Exec(ctx, query, routeID)
 }
 
 type RatingWithUser struct {

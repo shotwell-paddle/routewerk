@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
@@ -54,8 +55,10 @@ func (h *RatingHandler) Rate(w http.ResponseWriter, r *http.Request) {
 
 func (h *RatingHandler) RouteRatings(w http.ResponseWriter, r *http.Request) {
 	routeID := chi.URLParam(r, "routeID")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 
-	ratings, err := h.ratings.ListByRoute(r.Context(), routeID)
+	ratings, err := h.ratings.ListByRoute(r.Context(), routeID, limit, offset)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "internal error")
 		return

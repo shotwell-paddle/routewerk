@@ -86,6 +86,7 @@ func (r *AnalyticsRepo) Engagement(ctx context.Context, locationID string, days 
 
 	stats := &EngagementStats{}
 
+	// Use integer interval to avoid string concatenation SQL injection surface
 	query := `
 		SELECT
 			COUNT(DISTINCT a.user_id) as active_climbers,
@@ -93,9 +94,9 @@ func (r *AnalyticsRepo) Engagement(ctx context.Context, locationID string, days 
 			COUNT(*) FILTER (WHERE a.ascent_type IN ('send', 'flash')) as total_sends
 		FROM ascents a
 		JOIN routes r ON r.id = a.route_id
-		WHERE r.location_id = $1 AND a.climbed_at >= NOW() - ($2 || ' days')::interval`
+		WHERE r.location_id = $1 AND a.climbed_at >= NOW() - make_interval(days => $2)`
 
-	if err := r.db.QueryRow(ctx, query, locationID, fmt.Sprintf("%d", days)).Scan(
+	if err := r.db.QueryRow(ctx, query, locationID, days).Scan(
 		&stats.ActiveClimbers, &stats.TotalAscents, &stats.TotalSends,
 	); err != nil {
 		return nil, fmt.Errorf("engagement: %w", err)
@@ -106,12 +107,12 @@ func (r *AnalyticsRepo) Engagement(ctx context.Context, locationID string, days 
 		SELECT r.id, r.grade, r.grading_system, r.color, r.name, COUNT(*) as ascent_count
 		FROM ascents a
 		JOIN routes r ON r.id = a.route_id
-		WHERE r.location_id = $1 AND a.climbed_at >= NOW() - ($2 || ' days')::interval
+		WHERE r.location_id = $1 AND a.climbed_at >= NOW() - make_interval(days => $2)
 		GROUP BY r.id, r.grade, r.grading_system, r.color, r.name
 		ORDER BY ascent_count DESC
 		LIMIT 10`
 
-	rows, err := r.db.Query(ctx, trendingQuery, locationID, fmt.Sprintf("%d", days))
+	rows, err := r.db.Query(ctx, trendingQuery, locationID, days)
 	if err != nil {
 		return nil, fmt.Errorf("trending: %w", err)
 	}
@@ -174,11 +175,16 @@ func (r *AnalyticsRepo) SetterProductivity(ctx context.Context, locationID strin
 func (r *AnalyticsRepo) OrgOverview(ctx context.Context, orgID string) ([]LocationOverview, error) {
 	query := `
 		SELECT l.id, l.name,
-			(SELECT COUNT(*) FROM routes r WHERE r.location_id = l.id AND r.status = 'active' AND r.deleted_at IS NULL) as active_routes,
-			(SELECT COUNT(DISTINCT a.user_id) FROM ascents a JOIN routes r ON r.id = a.route_id WHERE r.location_id = l.id AND a.climbed_at >= NOW() - interval '30 days') as active_climbers_30d,
-			(SELECT COUNT(*) FROM routes r WHERE r.location_id = l.id AND r.status = 'active' AND r.projected_strip_date <= CURRENT_DATE AND r.deleted_at IS NULL) as overdue_strips
+			COUNT(DISTINCT r.id) FILTER (WHERE r.status = 'active' AND r.deleted_at IS NULL) as active_routes,
+			COUNT(DISTINCT a.user_id) FILTER (WHERE a.climbed_at >= NOW() - interval '30 days') as active_climbers_30d,
+			COUNT(DISTINCT r2.id) as overdue_strips
 		FROM locations l
+		LEFT JOIN routes r ON r.location_id = l.id
+		LEFT JOIN ascents a ON a.route_id = r.id
+		LEFT JOIN routes r2 ON r2.location_id = l.id AND r2.status = 'active'
+			AND r2.projected_strip_date <= CURRENT_DATE AND r2.deleted_at IS NULL
 		WHERE l.org_id = $1 AND l.deleted_at IS NULL
+		GROUP BY l.id, l.name
 		ORDER BY l.name`
 
 	rows, err := r.db.Query(ctx, query, orgID)

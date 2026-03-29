@@ -91,17 +91,15 @@ func (h *RouteHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set tags if provided
+	// Set tags if provided, then reload only if tags were set
 	if len(req.TagIDs) > 0 {
 		if err := h.routes.SetTags(r.Context(), rt.ID, req.TagIDs); err != nil {
-			// Route created but tags failed — log but don't fail the request
 			Error(w, http.StatusInternalServerError, "route created but failed to set tags")
 			return
 		}
+		// Reload to include tags in response
+		rt, _ = h.routes.GetByID(r.Context(), rt.ID)
 	}
-
-	// Reload with tags
-	rt, _ = h.routes.GetByID(r.Context(), rt.ID)
 
 	JSON(w, http.StatusCreated, rt)
 }
@@ -225,7 +223,10 @@ func (h *RouteHandler) Update(w http.ResponseWriter, r *http.Request) {
 		h.routes.SetTags(r.Context(), rt.ID, req.TagIDs)
 	}
 
-	rt, _ = h.routes.GetByID(r.Context(), rt.ID)
+	// Only reload if tags changed; otherwise return what we have
+	if len(req.TagIDs) > 0 {
+		rt, _ = h.routes.GetByID(r.Context(), rt.ID)
+	}
 	JSON(w, http.StatusOK, rt)
 }
 

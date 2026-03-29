@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 )
@@ -24,45 +23,64 @@ func (r *RouteRepo) Create(ctx context.Context, rt *model.Route) error {
 			grading_system, grade, grade_low, grade_high, circuit_color,
 			name, color, description, photo_url, date_set, projected_strip_date)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-		RETURNING id, avg_rating, ascent_count, attempt_count, created_at, updated_at`
+		RETURNING id, avg_rating, rating_count, ascent_count, attempt_count, created_at, updated_at`
 
 	return r.db.QueryRow(ctx, query,
 		rt.LocationID, rt.WallID, rt.SetterID, rt.RouteType, rt.Status,
 		rt.GradingSystem, rt.Grade, rt.GradeLow, rt.GradeHigh, rt.CircuitColor,
 		rt.Name, rt.Color, rt.Description, rt.PhotoURL, rt.DateSet, rt.ProjectedStripDate,
-	).Scan(&rt.ID, &rt.AvgRating, &rt.AscentCount, &rt.AttemptCount, &rt.CreatedAt, &rt.UpdatedAt)
+	).Scan(&rt.ID, &rt.AvgRating, &rt.RatingCount, &rt.AscentCount, &rt.AttemptCount, &rt.CreatedAt, &rt.UpdatedAt)
 }
 
 func (r *RouteRepo) GetByID(ctx context.Context, id string) (*model.Route, error) {
+	// Single query with LEFT JOIN to load route + tags in one round trip
 	query := `
-		SELECT id, location_id, wall_id, setter_id, route_type, status,
-			grading_system, grade, grade_low, grade_high, circuit_color,
-			name, color, description, photo_url, date_set, projected_strip_date, date_stripped,
-			avg_rating, ascent_count, attempt_count, created_at, updated_at
-		FROM routes
-		WHERE id = $1 AND deleted_at IS NULL`
+		SELECT r.id, r.location_id, r.wall_id, r.setter_id, r.route_type, r.status,
+			r.grading_system, r.grade, r.grade_low, r.grade_high, r.circuit_color,
+			r.name, r.color, r.description, r.photo_url, r.date_set, r.projected_strip_date, r.date_stripped,
+			r.avg_rating, r.rating_count, r.ascent_count, r.attempt_count, r.created_at, r.updated_at,
+			t.id, t.org_id, t.category, t.name, t.color
+		FROM routes r
+		LEFT JOIN route_tags rt2 ON rt2.route_id = r.id
+		LEFT JOIN tags t ON t.id = rt2.tag_id
+		WHERE r.id = $1 AND r.deleted_at IS NULL`
 
-	rt := &model.Route{}
-	err := r.db.QueryRow(ctx, query, id).Scan(
-		&rt.ID, &rt.LocationID, &rt.WallID, &rt.SetterID, &rt.RouteType, &rt.Status,
-		&rt.GradingSystem, &rt.Grade, &rt.GradeLow, &rt.GradeHigh, &rt.CircuitColor,
-		&rt.Name, &rt.Color, &rt.Description, &rt.PhotoURL,
-		&rt.DateSet, &rt.ProjectedStripDate, &rt.DateStripped,
-		&rt.AvgRating, &rt.AscentCount, &rt.AttemptCount, &rt.CreatedAt, &rt.UpdatedAt,
-	)
-	if err == pgx.ErrNoRows {
-		return nil, nil
-	}
+	rows, err := r.db.Query(ctx, query, id)
 	if err != nil {
 		return nil, fmt.Errorf("get route by id: %w", err)
 	}
+	defer rows.Close()
 
-	// Load tags
-	tags, err := r.GetTags(ctx, rt.ID)
-	if err != nil {
-		return nil, err
+	var rt *model.Route
+	for rows.Next() {
+		var tagID, tagOrgID, tagCategory, tagName *string
+		var tagColor *string
+
+		if rt == nil {
+			rt = &model.Route{}
+		}
+
+		if err := rows.Scan(
+			&rt.ID, &rt.LocationID, &rt.WallID, &rt.SetterID, &rt.RouteType, &rt.Status,
+			&rt.GradingSystem, &rt.Grade, &rt.GradeLow, &rt.GradeHigh, &rt.CircuitColor,
+			&rt.Name, &rt.Color, &rt.Description, &rt.PhotoURL,
+			&rt.DateSet, &rt.ProjectedStripDate, &rt.DateStripped,
+			&rt.AvgRating, &rt.RatingCount, &rt.AscentCount, &rt.AttemptCount, &rt.CreatedAt, &rt.UpdatedAt,
+			&tagID, &tagOrgID, &tagCategory, &tagName, &tagColor,
+		); err != nil {
+			return nil, fmt.Errorf("scan route: %w", err)
+		}
+
+		if tagID != nil {
+			rt.Tags = append(rt.Tags, model.Tag{
+				ID:       *tagID,
+				OrgID:    *tagOrgID,
+				Category: *tagCategory,
+				Name:     *tagName,
+				Color:    tagColor,
+			})
+		}
 	}
-	rt.Tags = tags
 
 	return rt, nil
 }
@@ -133,7 +151,7 @@ func (r *RouteRepo) List(ctx context.Context, f RouteFilter) ([]model.Route, int
 			r.grading_system, r.grade, r.grade_low, r.grade_high, r.circuit_color,
 			r.name, r.color, r.description, r.photo_url,
 			r.date_set, r.projected_strip_date, r.date_stripped,
-			r.avg_rating, r.ascent_count, r.attempt_count, r.created_at, r.updated_at
+			r.avg_rating, r.rating_count, r.ascent_count, r.attempt_count, r.created_at, r.updated_at
 		FROM routes r
 		WHERE %s
 		ORDER BY r.date_set DESC, r.created_at DESC
@@ -156,7 +174,7 @@ func (r *RouteRepo) List(ctx context.Context, f RouteFilter) ([]model.Route, int
 			&rt.GradingSystem, &rt.Grade, &rt.GradeLow, &rt.GradeHigh, &rt.CircuitColor,
 			&rt.Name, &rt.Color, &rt.Description, &rt.PhotoURL,
 			&rt.DateSet, &rt.ProjectedStripDate, &rt.DateStripped,
-			&rt.AvgRating, &rt.AscentCount, &rt.AttemptCount, &rt.CreatedAt, &rt.UpdatedAt,
+			&rt.AvgRating, &rt.RatingCount, &rt.AscentCount, &rt.AttemptCount, &rt.CreatedAt, &rt.UpdatedAt,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan route: %w", err)
 		}

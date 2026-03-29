@@ -29,14 +29,7 @@ func (r *AscentRepo) Create(ctx context.Context, a *model.Ascent) error {
 		return fmt.Errorf("create ascent: %w", err)
 	}
 
-	// Update denormalized counts on route
-	updateQuery := `
-		UPDATE routes SET
-			ascent_count = (SELECT COUNT(*) FROM ascents WHERE route_id = $1 AND ascent_type != 'attempt'),
-			attempt_count = (SELECT COUNT(*) FROM ascents WHERE route_id = $1)
-		WHERE id = $1`
-	r.db.Exec(ctx, updateQuery, a.RouteID)
-
+	// Counter updates handled by trg_ascent_insert_counts trigger (see migration 002)
 	return nil
 }
 

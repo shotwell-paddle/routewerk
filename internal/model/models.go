@@ -104,6 +104,7 @@ type Route struct {
 	ProjectedStripDate *time.Time         `json:"projected_strip_date,omitempty"`
 	DateStripped       *time.Time         `json:"date_stripped,omitempty"`
 	AvgRating          float64            `json:"avg_rating"`
+	RatingCount        int                `json:"rating_count"`
 	AscentCount        int                `json:"ascent_count"`
 	AttemptCount       int                `json:"attempt_count"`
 	Tags               []Tag              `json:"tags,omitempty"`

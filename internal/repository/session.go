@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 )
@@ -29,28 +28,49 @@ func (r *SessionRepo) Create(ctx context.Context, s *model.SettingSession) error
 }
 
 func (r *SessionRepo) GetByID(ctx context.Context, id string) (*model.SettingSession, error) {
+	// Single query with LEFT JOIN to load session + assignments in one round trip
 	query := `
-		SELECT id, location_id, scheduled_date, notes, created_by, created_at, updated_at
-		FROM setting_sessions
-		WHERE id = $1`
+		SELECT s.id, s.location_id, s.scheduled_date, s.notes, s.created_by, s.created_at, s.updated_at,
+			a.id, a.session_id, a.setter_id, a.wall_id, a.target_grades, a.notes
+		FROM setting_sessions s
+		LEFT JOIN setting_session_assignments a ON a.session_id = s.id
+		WHERE s.id = $1`
 
-	s := &model.SettingSession{}
-	err := r.db.QueryRow(ctx, query, id).Scan(
-		&s.ID, &s.LocationID, &s.ScheduledDate, &s.Notes,
-		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt,
-	)
-	if err == pgx.ErrNoRows {
-		return nil, nil
-	}
+	rows, err := r.db.Query(ctx, query, id)
 	if err != nil {
 		return nil, fmt.Errorf("get session: %w", err)
 	}
+	defer rows.Close()
 
-	assignments, err := r.GetAssignments(ctx, s.ID)
-	if err != nil {
-		return nil, err
+	var s *model.SettingSession
+	for rows.Next() {
+		var aID, aSessionID, aSetterID *string
+		var aWallID, aNotes *string
+		var aTargetGrades []string
+
+		if s == nil {
+			s = &model.SettingSession{}
+		}
+
+		if err := rows.Scan(
+			&s.ID, &s.LocationID, &s.ScheduledDate, &s.Notes,
+			&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt,
+			&aID, &aSessionID, &aSetterID, &aWallID, &aTargetGrades, &aNotes,
+		); err != nil {
+			return nil, fmt.Errorf("scan session: %w", err)
+		}
+
+		if aID != nil {
+			s.Assignments = append(s.Assignments, model.SettingSessionAssignment{
+				ID:           *aID,
+				SessionID:    *aSessionID,
+				SetterID:     *aSetterID,
+				WallID:       aWallID,
+				TargetGrades: aTargetGrades,
+				Notes:        aNotes,
+			})
+		}
 	}
-	s.Assignments = assignments
 
 	return s, nil
 }

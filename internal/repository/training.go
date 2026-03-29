@@ -3,8 +3,8 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 )
@@ -29,28 +29,59 @@ func (r *TrainingRepo) Create(ctx context.Context, p *model.TrainingPlan) error 
 }
 
 func (r *TrainingRepo) GetByID(ctx context.Context, id string) (*model.TrainingPlan, error) {
+	// Single query with LEFT JOIN to load plan + items in one round trip
 	query := `
-		SELECT id, coach_id, climber_id, location_id, name, description, active, created_at, updated_at
-		FROM training_plans
-		WHERE id = $1`
+		SELECT p.id, p.coach_id, p.climber_id, p.location_id, p.name, p.description, p.active, p.created_at, p.updated_at,
+			i.id, i.plan_id, i.route_id, i.sort_order, i.title, i.notes, i.completed, i.completed_at, i.created_at
+		FROM training_plans p
+		LEFT JOIN training_plan_items i ON i.plan_id = p.id
+		WHERE p.id = $1
+		ORDER BY i.sort_order`
 
-	p := &model.TrainingPlan{}
-	err := r.db.QueryRow(ctx, query, id).Scan(
-		&p.ID, &p.CoachID, &p.ClimberID, &p.LocationID,
-		&p.Name, &p.Description, &p.Active, &p.CreatedAt, &p.UpdatedAt,
-	)
-	if err == pgx.ErrNoRows {
-		return nil, nil
-	}
+	rows, err := r.db.Query(ctx, query, id)
 	if err != nil {
 		return nil, fmt.Errorf("get training plan: %w", err)
 	}
+	defer rows.Close()
 
-	items, err := r.GetItems(ctx, p.ID)
-	if err != nil {
-		return nil, err
+	var p *model.TrainingPlan
+	for rows.Next() {
+		var itemID *string
+		var itemPlanID, itemTitle *string
+		var itemRouteID, itemNotes *string
+		var itemSortOrder *int
+		var itemCompleted *bool
+		var itemCompletedAt *time.Time
+		var itemCreatedAt *time.Time
+
+		if p == nil {
+			p = &model.TrainingPlan{}
+		}
+
+		if err := rows.Scan(
+			&p.ID, &p.CoachID, &p.ClimberID, &p.LocationID,
+			&p.Name, &p.Description, &p.Active, &p.CreatedAt, &p.UpdatedAt,
+			&itemID, &itemPlanID, &itemRouteID, &itemSortOrder, &itemTitle,
+			&itemNotes, &itemCompleted, &itemCompletedAt, &itemCreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan training plan: %w", err)
+		}
+
+		if itemID != nil {
+			item := model.TrainingPlanItem{
+				ID:          *itemID,
+				PlanID:      *itemPlanID,
+				RouteID:     itemRouteID,
+				SortOrder:   *itemSortOrder,
+				Title:       *itemTitle,
+				Notes:       itemNotes,
+				Completed:   *itemCompleted,
+				CompletedAt: itemCompletedAt,
+				CreatedAt:   *itemCreatedAt,
+			}
+			p.Items = append(p.Items, item)
+		}
 	}
-	p.Items = items
 
 	return p, nil
 }

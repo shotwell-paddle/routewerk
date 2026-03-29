@@ -48,8 +48,10 @@ func (h *FollowHandler) Unfollow(w http.ResponseWriter, r *http.Request) {
 
 func (h *FollowHandler) Followers(w http.ResponseWriter, r *http.Request) {
 	targetID := chi.URLParam(r, "userID")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 
-	users, err := h.follows.Followers(r.Context(), targetID)
+	users, err := h.follows.Followers(r.Context(), targetID, limit, offset)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "internal error")
 		return
@@ -60,8 +62,10 @@ func (h *FollowHandler) Followers(w http.ResponseWriter, r *http.Request) {
 
 func (h *FollowHandler) Following(w http.ResponseWriter, r *http.Request) {
 	targetID := chi.URLParam(r, "userID")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 
-	users, err := h.follows.Following(r.Context(), targetID)
+	users, err := h.follows.Following(r.Context(), targetID, limit, offset)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "internal error")
 		return

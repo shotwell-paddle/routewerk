@@ -37,26 +37,34 @@ func (r *FollowRepo) Unfollow(ctx context.Context, followerID, followingID strin
 	return nil
 }
 
-func (r *FollowRepo) Followers(ctx context.Context, userID string) ([]FollowUser, error) {
+func (r *FollowRepo) Followers(ctx context.Context, userID string, limit, offset int) ([]FollowUser, error) {
+	if limit <= 0 {
+		limit = 50
+	}
 	query := `
 		SELECT u.id, u.display_name, u.avatar_url, f.created_at
 		FROM follows f
 		JOIN users u ON u.id = f.follower_id
 		WHERE f.following_id = $1
-		ORDER BY f.created_at DESC`
+		ORDER BY f.created_at DESC
+		LIMIT $2 OFFSET $3`
 
-	return r.queryFollows(ctx, query, userID)
+	return r.queryFollows(ctx, query, userID, limit, offset)
 }
 
-func (r *FollowRepo) Following(ctx context.Context, userID string) ([]FollowUser, error) {
+func (r *FollowRepo) Following(ctx context.Context, userID string, limit, offset int) ([]FollowUser, error) {
+	if limit <= 0 {
+		limit = 50
+	}
 	query := `
 		SELECT u.id, u.display_name, u.avatar_url, f.created_at
 		FROM follows f
 		JOIN users u ON u.id = f.following_id
 		WHERE f.follower_id = $1
-		ORDER BY f.created_at DESC`
+		ORDER BY f.created_at DESC
+		LIMIT $2 OFFSET $3`
 
-	return r.queryFollows(ctx, query, userID)
+	return r.queryFollows(ctx, query, userID, limit, offset)
 }
 
 func (r *FollowRepo) IsFollowing(ctx context.Context, followerID, followingID string) (bool, error) {
@@ -107,8 +115,8 @@ func (r *FollowRepo) ActivityFeed(ctx context.Context, userID string, limit, off
 	return items, nil
 }
 
-func (r *FollowRepo) queryFollows(ctx context.Context, query, userID string) ([]FollowUser, error) {
-	rows, err := r.db.Query(ctx, query, userID)
+func (r *FollowRepo) queryFollows(ctx context.Context, query, userID string, limit, offset int) ([]FollowUser, error) {
+	rows, err := r.db.Query(ctx, query, userID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("query follows: %w", err)
 	}

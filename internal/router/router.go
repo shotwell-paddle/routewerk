@@ -22,7 +22,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 	r.Use(middleware.Logger)
 	r.Use(chimw.Recoverer)
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"}, // tighten in production
+		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		ExposedHeaders:   []string{"Link"},
@@ -36,6 +36,15 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 	locationRepo := repository.NewLocationRepo(db)
 	wallRepo := repository.NewWallRepo(db)
 	routeRepo := repository.NewRouteRepo(db)
+	ascentRepo := repository.NewAscentRepo(db)
+	ratingRepo := repository.NewRatingRepo(db)
+	sessionRepo := repository.NewSessionRepo(db)
+	laborRepo := repository.NewLaborRepo(db)
+	tagRepo := repository.NewTagRepo(db)
+	followRepo := repository.NewFollowRepo(db)
+	trainingRepo := repository.NewTrainingRepo(db)
+	partnerRepo := repository.NewPartnerRepo(db)
+	analyticsRepo := repository.NewAnalyticsRepo(db)
 
 	// Services
 	authService := service.NewAuthService(userRepo, cfg)
@@ -47,23 +56,38 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 	locationHandler := handler.NewLocationHandler(locationRepo)
 	wallHandler := handler.NewWallHandler(wallRepo)
 	routeHandler := handler.NewRouteHandler(routeRepo)
+	ascentHandler := handler.NewAscentHandler(ascentRepo)
+	ratingHandler := handler.NewRatingHandler(ratingRepo)
+	sessionHandler := handler.NewSessionHandler(sessionRepo)
+	laborHandler := handler.NewLaborHandler(laborRepo)
+	tagHandler := handler.NewTagHandler(tagRepo)
+	followHandler := handler.NewFollowHandler(followRepo)
+	trainingHandler := handler.NewTrainingHandler(trainingRepo)
+	partnerHandler := handler.NewPartnerHandler(partnerRepo)
+	analyticsHandler := handler.NewAnalyticsHandler(analyticsRepo)
 
-	// Health check (unauthenticated)
+	// Health check
 	r.Get("/health", healthHandler.Check)
 
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
-		// --- Public routes ---
+		// Public
 		r.Post("/auth/register", authHandler.Register)
 		r.Post("/auth/login", authHandler.Login)
 
-		// --- Authenticated routes ---
+		// Authenticated
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Authenticate(cfg.JWTSecret))
 
-			// Auth
+			// Auth & profile
 			r.Post("/auth/refresh", authHandler.Refresh)
 			r.Get("/me", authHandler.Me)
+			r.Get("/me/ascents", ascentHandler.MyAscents)
+			r.Get("/me/stats", ascentHandler.MyStats)
+			r.Get("/me/feed", followHandler.Feed)
+			r.Get("/me/labor", laborHandler.MyLabor)
+			r.Get("/me/training-plans", trainingHandler.MyPlans)
+			r.Get("/me/partner-profile", partnerHandler.MyProfile)
 
 			// Organizations
 			r.Route("/orgs", func(r chi.Router) {
@@ -72,11 +96,19 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 				r.Route("/{orgID}", func(r chi.Router) {
 					r.Get("/", orgHandler.Get)
 					r.Put("/", orgHandler.Update)
+					r.Get("/analytics/overview", analyticsHandler.OrgOverview)
 
-					// Locations (nested under org)
+					// Locations (nested under org for creation)
 					r.Route("/locations", func(r chi.Router) {
 						r.Post("/", locationHandler.Create)
 						r.Get("/", locationHandler.List)
+					})
+
+					// Tags (org-scoped)
+					r.Route("/tags", func(r chi.Router) {
+						r.Post("/", tagHandler.Create)
+						r.Get("/", tagHandler.List)
+						r.Delete("/{tagID}", tagHandler.Delete)
 					})
 				})
 			})
@@ -106,21 +138,64 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 						r.Get("/", routeHandler.Get)
 						r.Put("/", routeHandler.Update)
 						r.Patch("/status", routeHandler.UpdateStatus)
+						r.Post("/ascent", ascentHandler.Log)
+						r.Get("/ascents", ascentHandler.RouteAscents)
+						r.Post("/rate", ratingHandler.Rate)
+						r.Get("/ratings", ratingHandler.RouteRatings)
 					})
+				})
+
+				// Setting sessions
+				r.Route("/sessions", func(r chi.Router) {
+					r.Post("/", sessionHandler.Create)
+					r.Get("/", sessionHandler.List)
+					r.Route("/{sessionID}", func(r chi.Router) {
+						r.Get("/", sessionHandler.Get)
+						r.Put("/", sessionHandler.Update)
+						r.Post("/assignments", sessionHandler.Assign)
+					})
+				})
+
+				// Setter labor
+				r.Route("/labor", func(r chi.Router) {
+					r.Post("/", laborHandler.Log)
+					r.Get("/", laborHandler.ListByLocation)
+				})
+
+				// Training plans
+				r.Route("/training-plans", func(r chi.Router) {
+					r.Post("/", trainingHandler.Create)
+					r.Get("/", trainingHandler.List)
+					r.Route("/{planID}", func(r chi.Router) {
+						r.Get("/", trainingHandler.Get)
+						r.Put("/", trainingHandler.Update)
+						r.Post("/items", trainingHandler.AddItem)
+						r.Patch("/items/{itemID}", trainingHandler.UpdateItem)
+					})
+				})
+
+				// Partner matching
+				r.Route("/partners", func(r chi.Router) {
+					r.Get("/", partnerHandler.Search)
+					r.Put("/profile", partnerHandler.UpdateProfile)
+				})
+
+				// Analytics
+				r.Route("/analytics", func(r chi.Router) {
+					r.Get("/grade-distribution", analyticsHandler.GradeDistribution)
+					r.Get("/route-lifecycle", analyticsHandler.RouteLifecycle)
+					r.Get("/engagement", analyticsHandler.Engagement)
+					r.Get("/setter-productivity", analyticsHandler.SetterProductivity)
 				})
 			})
 
-			// Future endpoints (stubbed in comments for reference):
-			// Setting sessions: POST/GET /locations/{id}/sessions
-			// Setter labor:     POST/GET /locations/{id}/labor
-			// Tags:             POST/GET/DELETE /orgs/{id}/tags
-			// Ascents:          POST /locations/{id}/routes/{id}/ascent
-			// Ratings:          POST /locations/{id}/routes/{id}/rate
-			// Follows:          POST/DELETE /users/{id}/follow
-			// Training plans:   POST/GET /locations/{id}/training-plans
-			// Partner matching: GET/PUT /locations/{id}/partners
-			// Analytics:        GET /locations/{id}/analytics/*
-			// QR codes:         GET /routes/{id}/qr, /routes/{id}/card
+			// Social
+			r.Route("/users/{userID}", func(r chi.Router) {
+				r.Post("/follow", followHandler.Follow)
+				r.Delete("/follow", followHandler.Unfollow)
+				r.Get("/followers", followHandler.Followers)
+				r.Get("/following", followHandler.Following)
+			})
 		})
 	})
 

@@ -1,6 +1,8 @@
 package router
 
 import (
+	"time"
+
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -19,16 +21,28 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 	// Global middleware
 	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
+	r.Use(middleware.SecureHeaders)
 	r.Use(middleware.Logger)
 	r.Use(chimw.Recoverer)
+
+	// CORS: AllowedOrigins "*" with AllowCredentials true violates the spec and
+	// leaks cookies to any origin. In dev we allow all origins without credentials;
+	// in production, set CORS_ORIGINS to the real Flutter/web app domains.
+	allowedOrigins := []string{"http://localhost:3000", "http://localhost:8080"}
+	if cfg.IsDev() {
+		allowedOrigins = []string{"*"}
+	}
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: true,
+		AllowCredentials: !cfg.IsDev(), // credentials only when origins are explicit
 		MaxAge:           300,
 	}))
+
+	// Rate limiter for auth endpoints: 20 requests per minute per IP
+	authLimiter := middleware.NewRateLimiter(20, 1*time.Minute)
 
 	// Repositories
 	userRepo := repository.NewUserRepo(db)
@@ -71,9 +85,12 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
-		// Public
-		r.Post("/auth/register", authHandler.Register)
-		r.Post("/auth/login", authHandler.Login)
+		// Public — rate-limited auth endpoints
+		r.Group(func(r chi.Router) {
+			r.Use(authLimiter.Limit)
+			r.Post("/auth/register", authHandler.Register)
+			r.Post("/auth/login", authHandler.Login)
+		})
 
 		// Authenticated
 		r.Group(func(r chi.Router) {

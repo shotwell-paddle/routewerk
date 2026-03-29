@@ -3,10 +3,15 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"regexp"
+	"strings"
 
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/service"
 )
+
+// emailRegex is a basic email format check — not exhaustive, but filters garbage.
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
 
 type AuthHandler struct {
 	auth *service.AuthService
@@ -43,8 +48,33 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Normalize email
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
+	if !emailRegex.MatchString(req.Email) {
+		Error(w, http.StatusBadRequest, "invalid email format")
+		return
+	}
+
+	if len(req.Email) > 254 {
+		Error(w, http.StatusBadRequest, "email too long")
+		return
+	}
+
 	if len(req.Password) < 8 {
 		Error(w, http.StatusBadRequest, "password must be at least 8 characters")
+		return
+	}
+
+	// bcrypt silently truncates at 72 bytes — reject longer passwords so users
+	// aren't surprised that only the first 72 bytes matter.
+	if len(req.Password) > 72 {
+		Error(w, http.StatusBadRequest, "password must be at most 72 characters")
+		return
+	}
+
+	if len(req.DisplayName) > 100 {
+		Error(w, http.StatusBadRequest, "display name too long")
 		return
 	}
 
@@ -72,6 +102,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "email and password are required")
 		return
 	}
+
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
 	result, err := h.auth.Login(r.Context(), req.Email, req.Password)
 	if err != nil {

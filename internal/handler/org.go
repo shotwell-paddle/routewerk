@@ -2,79 +2,27 @@ package handler
 
 import (
 	"net/http"
-	"regexp"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
+	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
 type OrgHandler struct {
-	orgs *repository.OrgRepo
+	orgs  *repository.OrgRepo
+	audit *service.AuditService
 }
 
-func NewOrgHandler(orgs *repository.OrgRepo) *OrgHandler {
-	return &OrgHandler{orgs: orgs}
+func NewOrgHandler(orgs *repository.OrgRepo, audit *service.AuditService) *OrgHandler {
+	return &OrgHandler{orgs: orgs, audit: audit}
 }
 
-type createOrgRequest struct {
+type updateOrgRequest struct {
 	Name    string  `json:"name"`
 	Slug    string  `json:"slug"`
 	LogoURL *string `json:"logo_url,omitempty"`
-}
-
-func (h *OrgHandler) Create(w http.ResponseWriter, r *http.Request) {
-	var req createOrgRequest
-	if err := Decode(r, &req); err != nil {
-		Error(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	if req.Name == "" {
-		Error(w, http.StatusBadRequest, "name is required")
-		return
-	}
-
-	if req.Slug == "" {
-		req.Slug = slugify(req.Name)
-	}
-
-	// Check slug uniqueness
-	existing, err := h.orgs.GetBySlug(r.Context(), req.Slug)
-	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if existing != nil {
-		Error(w, http.StatusConflict, "organization slug already taken")
-		return
-	}
-
-	org := &model.Organization{
-		Name:    req.Name,
-		Slug:    req.Slug,
-		LogoURL: req.LogoURL,
-	}
-	if err := h.orgs.Create(r.Context(), org); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to create organization")
-		return
-	}
-
-	// Make the creating user an org_admin
-	userID := middleware.GetUserID(r.Context())
-	membership := &model.UserMembership{
-		UserID: userID,
-		OrgID:  org.ID,
-		Role:   "org_admin",
-	}
-	if err := h.orgs.AddMember(r.Context(), membership); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to add org admin")
-		return
-	}
-
-	JSON(w, http.StatusCreated, org)
 }
 
 func (h *OrgHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +70,7 @@ func (h *OrgHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req createOrgRequest
+	var req updateOrgRequest
 	if err := Decode(r, &req); err != nil {
 		Error(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -143,14 +91,10 @@ func (h *OrgHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.audit.Record(r, service.AuditOrgUpdate, "org", orgID, orgID, map[string]interface{}{
+		"name": org.Name,
+		"slug": org.Slug,
+	})
+
 	JSON(w, http.StatusOK, org)
-}
-
-var nonAlphaNum = regexp.MustCompile(`[^a-z0-9]+`)
-
-func slugify(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	s = nonAlphaNum.ReplaceAllString(s, "-")
-	s = strings.Trim(s, "-")
-	return s
 }

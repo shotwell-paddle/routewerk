@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/shotwell-paddle/routewerk/internal/auth"
@@ -11,27 +12,34 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/repository"
 )
 
+const (
+	maxLoginAttempts = 5
+	lockoutDuration  = 15 * time.Minute
+)
+
 var (
-	ErrEmailTaken       = errors.New("email already registered")
+	ErrEmailTaken         = errors.New("email already registered")
 	ErrInvalidCredentials = errors.New("invalid email or password")
-	ErrInvalidRefresh   = errors.New("invalid refresh token")
-	ErrUserNotFound     = errors.New("user not found")
+	ErrInvalidRefresh     = errors.New("invalid refresh token")
+	ErrUserNotFound       = errors.New("user not found")
+	ErrAccountLocked      = errors.New("account temporarily locked")
 )
 
 type AuthService struct {
-	users *repository.UserRepo
-	cfg   *config.Config
+	users    *repository.UserRepo
+	attempts *repository.LoginAttemptRepo
+	cfg      *config.Config
 }
 
-func NewAuthService(users *repository.UserRepo, cfg *config.Config) *AuthService {
-	return &AuthService{users: users, cfg: cfg}
+func NewAuthService(users *repository.UserRepo, attempts *repository.LoginAttemptRepo, cfg *config.Config) *AuthService {
+	return &AuthService{users: users, attempts: attempts, cfg: cfg}
 }
 
 type AuthResult struct {
-	User         *model.User   `json:"user"`
-	AccessToken  string        `json:"access_token"`
-	RefreshToken string        `json:"refresh_token"`
-	ExpiresAt    time.Time     `json:"expires_at"`
+	User         *model.User          `json:"user"`
+	AccessToken  string               `json:"access_token"`
+	RefreshToken string               `json:"refresh_token"`
+	ExpiresAt    time.Time            `json:"expires_at"`
 	Memberships  []model.UserMembership `json:"memberships,omitempty"`
 }
 
@@ -62,6 +70,18 @@ func (s *AuthService) Register(ctx context.Context, email, password, displayName
 }
 
 func (s *AuthService) Login(ctx context.Context, email, password string) (*AuthResult, error) {
+	// Check account lockout
+	locked, err := s.attempts.IsLocked(ctx, email)
+	if err != nil {
+		slog.Error("lockout check failed", "email", email, "error", err)
+		// Fail open on DB error — don't block legitimate users because
+		// the login_attempts table is unavailable. The IP rate limiter
+		// still protects against brute force.
+	} else if locked {
+		slog.Warn("login attempt on locked account", "email", email)
+		return nil, ErrAccountLocked
+	}
+
 	u, err := s.users.GetByEmail(ctx, email)
 	if err != nil {
 		return nil, err
@@ -71,7 +91,23 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*AuthR
 	}
 
 	if !auth.CheckPassword(password, u.PasswordHash) {
+		// Record failed attempt
+		count, lockedUntil, recErr := s.attempts.RecordFailure(ctx, email, maxLoginAttempts, lockoutDuration)
+		if recErr != nil {
+			slog.Error("failed to record login failure", "email", email, "error", recErr)
+		} else if !lockedUntil.IsZero() {
+			slog.Warn("account locked after failed attempts",
+				"email", email,
+				"attempts", count,
+				"locked_until", lockedUntil,
+			)
+		}
 		return nil, ErrInvalidCredentials
+	}
+
+	// Successful login — clear failure counter
+	if err := s.attempts.ClearFailures(ctx, email); err != nil {
+		slog.Error("failed to clear login failures", "email", email, "error", err)
 	}
 
 	return s.generateResult(ctx, u)

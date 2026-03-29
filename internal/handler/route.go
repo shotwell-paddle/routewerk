@@ -9,14 +9,16 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
+	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
 type RouteHandler struct {
 	routes *repository.RouteRepo
+	audit  *service.AuditService
 }
 
-func NewRouteHandler(routes *repository.RouteRepo) *RouteHandler {
-	return &RouteHandler{routes: routes}
+func NewRouteHandler(routes *repository.RouteRepo, audit *service.AuditService) *RouteHandler {
+	return &RouteHandler{routes: routes, audit: audit}
 }
 
 type createRouteRequest struct {
@@ -100,6 +102,12 @@ func (h *RouteHandler) Create(w http.ResponseWriter, r *http.Request) {
 		// Reload to include tags in response
 		rt, _ = h.routes.GetByID(r.Context(), rt.ID)
 	}
+
+	h.audit.Record(r, service.AuditRouteCreate, "route", rt.ID, "", map[string]interface{}{
+		"location_id": locationID,
+		"grade":       rt.Grade,
+		"route_type":  rt.RouteType,
+	})
 
 	JSON(w, http.StatusCreated, rt)
 }
@@ -227,6 +235,12 @@ func (h *RouteHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if len(req.TagIDs) > 0 {
 		rt, _ = h.routes.GetByID(r.Context(), rt.ID)
 	}
+
+	h.audit.Record(r, service.AuditRouteUpdate, "route", rt.ID, "", map[string]interface{}{
+		"grade":      rt.Grade,
+		"route_type": rt.RouteType,
+	})
+
 	JSON(w, http.StatusOK, rt)
 }
 
@@ -252,6 +266,10 @@ func (h *RouteHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusInternalServerError, "failed to update status")
 		return
 	}
+
+	h.audit.Record(r, service.AuditRouteStatusChange, "route", routeID, "", map[string]interface{}{
+		"new_status": req.Status,
+	})
 
 	rt, _ := h.routes.GetByID(r.Context(), routeID)
 	JSON(w, http.StatusOK, rt)
@@ -285,6 +303,12 @@ func (h *RouteHandler) BulkArchive(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusInternalServerError, "failed to archive routes")
 		return
 	}
+
+	h.audit.Record(r, service.AuditRouteBulkArchive, "route", chi.URLParam(r, "locationID"), "", map[string]interface{}{
+		"affected":  affected,
+		"wall_id":   req.WallID,
+		"route_ids": req.RouteIDs,
+	})
 
 	JSON(w, http.StatusOK, map[string]int{"archived": affected})
 }

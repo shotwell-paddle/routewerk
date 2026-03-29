@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"regexp"
+	"strings"
 )
 
 // maxBodySize limits request body to 1MB to prevent memory exhaustion.
@@ -37,4 +39,13 @@ func Decode(r *http.Request, target interface{}) error {
 	}
 
 	return err
+}
+
+var nonAlphaNum = regexp.MustCompile(`[^a-z0-9]+`)
+
+func slugify(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = nonAlphaNum.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	return s
 }

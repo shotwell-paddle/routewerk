@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +19,9 @@ import (
 func main() {
 	cfg := config.Load()
 
+	// Structured logging: JSON in production, human-readable in dev
+	initLogger(cfg.IsDev())
+
 	// Validate critical config in production
 	if !cfg.IsDev() {
 		if cfg.JWTSecret == "change-me" || len(cfg.JWTSecret) < 32 {
@@ -29,12 +33,13 @@ func main() {
 	}
 
 	// Connect to database
-	db, err := database.Connect(cfg.DatabaseURL)
+	db, err := database.Connect(cfg.DatabaseURL, cfg.IsDev())
 	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
+		slog.Error("failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 	defer db.Close()
-	log.Println("connected to database")
+	slog.Info("connected to database")
 
 	// Build router
 	r := router.New(cfg, db)
@@ -56,17 +61,32 @@ func main() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
-		log.Println("shutting down server...")
+		slog.Info("shutting down server")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(ctx); err != nil {
-			log.Printf("forced shutdown: %v", err)
+			slog.Error("forced shutdown", "error", err)
 		}
 	}()
 
-	log.Printf("routewerk api listening on %s (env=%s)", addr, cfg.Env)
+	slog.Info("routewerk api starting", "addr", addr, "env", cfg.Env)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("server error: %v", err)
+		slog.Error("server error", "error", err)
+		os.Exit(1)
 	}
+}
+
+func initLogger(isDev bool) {
+	var handler slog.Handler
+	if isDev {
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		})
+	} else {
+		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})
+	}
+	slog.SetDefault(slog.New(handler))
 }

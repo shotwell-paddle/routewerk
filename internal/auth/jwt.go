@@ -79,6 +79,38 @@ func ValidateAccessToken(tokenStr, secret string) (*Claims, error) {
 	return claims, nil
 }
 
+// ParseExpiredClaims extracts claims from a JWT that may have expired.
+// The HMAC signature IS verified (the keyfunc always runs). Only the
+// registered-claims check (exp, nbf, iat) is skipped so that an expired
+// access token can still identify the user for a refresh request.
+func ParseExpiredClaims(tokenStr, secret string) (*Claims, error) {
+	// Step 1: Parse with full signature verification but skip claims validation
+	// so that an expired token doesn't cause an error.
+	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return []byte(secret), nil
+	}, jwt.WithExpirationRequired(), jwt.WithoutClaimsValidation())
+	if err != nil {
+		return nil, fmt.Errorf("parse token: %w", err)
+	}
+
+	// Step 2: Verify the issuer matches to prevent cross-service token reuse.
+	claims, ok := token.Claims.(*Claims)
+	if !ok {
+		return nil, fmt.Errorf("invalid token claims")
+	}
+	if claims.Issuer != "routewerk" {
+		return nil, fmt.Errorf("invalid token issuer")
+	}
+	if claims.UserID == "" {
+		return nil, fmt.Errorf("missing user_id in token")
+	}
+
+	return claims, nil
+}
+
 // GenerateRefreshToken creates a cryptographically random refresh token.
 func GenerateRefreshToken() (string, error) {
 	b := make([]byte, 32)

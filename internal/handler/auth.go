@@ -107,6 +107,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.auth.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
+		if errors.Is(err, service.ErrAccountLocked) {
+			Error(w, http.StatusTooManyRequests, "account temporarily locked, try again later")
+			return
+		}
 		if errors.Is(err, service.ErrInvalidCredentials) {
 			Error(w, http.StatusUnauthorized, "invalid email or password")
 			return

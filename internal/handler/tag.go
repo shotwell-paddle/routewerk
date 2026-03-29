@@ -6,14 +6,16 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
+	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
 type TagHandler struct {
-	tags *repository.TagRepo
+	tags  *repository.TagRepo
+	audit *service.AuditService
 }
 
-func NewTagHandler(tags *repository.TagRepo) *TagHandler {
-	return &TagHandler{tags: tags}
+func NewTagHandler(tags *repository.TagRepo, audit *service.AuditService) *TagHandler {
+	return &TagHandler{tags: tags, audit: audit}
 }
 
 type createTagRequest struct {
@@ -48,6 +50,11 @@ func (h *TagHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.audit.Record(r, service.AuditTagCreate, "tag", tag.ID, orgID, map[string]interface{}{
+		"name":     tag.Name,
+		"category": tag.Category,
+	})
+
 	JSON(w, http.StatusCreated, tag)
 }
 
@@ -69,12 +76,15 @@ func (h *TagHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TagHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "orgID")
 	tagID := chi.URLParam(r, "tagID")
 
 	if err := h.tags.Delete(r.Context(), tagID); err != nil {
 		Error(w, http.StatusInternalServerError, "failed to delete tag")
 		return
 	}
+
+	h.audit.Record(r, service.AuditTagDelete, "tag", tagID, orgID, nil)
 
 	JSON(w, http.StatusNoContent, nil)
 }

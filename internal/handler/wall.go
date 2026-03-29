@@ -6,14 +6,16 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
+	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
 type WallHandler struct {
 	walls *repository.WallRepo
+	audit *service.AuditService
 }
 
-func NewWallHandler(walls *repository.WallRepo) *WallHandler {
-	return &WallHandler{walls: walls}
+func NewWallHandler(walls *repository.WallRepo, audit *service.AuditService) *WallHandler {
+	return &WallHandler{walls: walls, audit: audit}
 }
 
 type createWallRequest struct {
@@ -67,6 +69,12 @@ func (h *WallHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusInternalServerError, "failed to create wall")
 		return
 	}
+
+	h.audit.Record(r, service.AuditWallCreate, "wall", wall.ID, "", map[string]interface{}{
+		"location_id": locationID,
+		"name":        wall.Name,
+		"wall_type":   wall.WallType,
+	})
 
 	JSON(w, http.StatusCreated, wall)
 }
@@ -159,6 +167,10 @@ func (h *WallHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.audit.Record(r, service.AuditWallUpdate, "wall", wallID, "", map[string]interface{}{
+		"name": wall.Name,
+	})
+
 	JSON(w, http.StatusOK, wall)
 }
 
@@ -179,6 +191,10 @@ func (h *WallHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusInternalServerError, "failed to delete wall")
 		return
 	}
+
+	h.audit.Record(r, service.AuditWallDelete, "wall", wallID, "", map[string]interface{}{
+		"name": wall.Name,
+	})
 
 	JSON(w, http.StatusNoContent, nil)
 }

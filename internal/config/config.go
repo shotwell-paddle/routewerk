@@ -18,6 +18,7 @@ type Config struct {
 	StorageSecretKey    string
 	FCMProjectID        string
 	FCMCredentialsFile  string
+	FrontendURL         string
 }
 
 func Load() *Config {
@@ -37,6 +38,7 @@ func Load() *Config {
 		StorageSecretKey:   getEnv("STORAGE_SECRET_KEY", ""),
 		FCMProjectID:       getEnv("FCM_PROJECT_ID", ""),
 		FCMCredentialsFile: getEnv("FCM_CREDENTIALS_FILE", ""),
+		FrontendURL:        getEnv("FRONTEND_URL", "http://localhost:3000"),
 	}
 }
 

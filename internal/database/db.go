@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -13,7 +14,11 @@ import (
 // environments, it refuses to connect without TLS (sslmode=disable is
 // rejected and the absence of an sslmode parameter defaults to require).
 func Connect(databaseURL string, isDev bool) (*pgxpool.Pool, error) {
-	if !isDev {
+	// On Fly.io, Postgres is accessed over an encrypted WireGuard tunnel
+	// (*.flycast) so TLS at the Postgres layer is unnecessary and unsupported.
+	onFlyNetwork := os.Getenv("FLY_APP_NAME") != "" &&
+		strings.Contains(databaseURL, ".flycast")
+	if !isDev && !onFlyNetwork {
 		databaseURL = enforceTLS(databaseURL)
 	}
 
@@ -22,8 +27,8 @@ func Connect(databaseURL string, isDev bool) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("parse database url: %w", err)
 	}
 
-	config.MaxConns = 25
-	config.MinConns = 5
+	config.MaxConns = 10
+	config.MinConns = 2
 	config.MaxConnLifetime = 1 * time.Hour
 	config.MaxConnIdleTime = 30 * time.Minute
 

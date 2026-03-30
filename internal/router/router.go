@@ -32,10 +32,17 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 	r.Use(middleware.Recovery)
 
 	// CORS — always use explicit origins (never wildcard) so credentials work safely.
-	// In dev, allow common local dev ports; in production, allow only the configured frontend.
+	// In dev, allow common local dev ports; in production, allow the configured frontend
+	// plus any additional serving domains (Fly default hostname, other custom domains).
 	allowedOrigins := []string{cfg.FrontendURL}
 	if cfg.IsDev() {
 		allowedOrigins = []string{"http://localhost:3000", "http://localhost:8080", "http://127.0.0.1:3000", "http://127.0.0.1:8080"}
+	} else {
+		for _, extra := range cfg.ExtraOrigins {
+			if extra != "" {
+				allowedOrigins = append(allowedOrigins, extra)
+			}
+		}
 	}
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   allowedOrigins,

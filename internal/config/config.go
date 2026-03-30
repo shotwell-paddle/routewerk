@@ -21,6 +21,7 @@ type Config struct {
 	FCMProjectID        string
 	FCMCredentialsFile  string
 	FrontendURL         string
+	ExtraOrigins        []string // additional allowed CORS origins
 	SessionSecret       string
 	SessionMaxAge       time.Duration
 }
@@ -44,6 +45,7 @@ func Load() *Config {
 		FCMProjectID:       getEnv("FCM_PROJECT_ID", ""),
 		FCMCredentialsFile: getEnv("FCM_CREDENTIALS_FILE", ""),
 		FrontendURL:        getEnv("FRONTEND_URL", "http://localhost:3000"),
+		ExtraOrigins:       parseOrigins(getEnv("EXTRA_ORIGINS", "")),
 		SessionSecret:      getEnv("SESSION_SECRET", "change-me-session"),
 		SessionMaxAge:      sessionMaxAge,
 	}
@@ -148,6 +150,23 @@ func redactURL(u string) string {
 		return u
 	}
 	return u[:colon+1] + "****" + u[at:]
+}
+
+// parseOrigins splits a comma-separated list of origins (e.g.
+// "https://a.example.com,https://b.example.com") into a slice.
+func parseOrigins(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	origins := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			origins = append(origins, p)
+		}
+	}
+	return origins
 }
 
 func getEnv(key, fallback string) string {

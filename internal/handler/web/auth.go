@@ -20,6 +20,21 @@ var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-
 
 // LoginPage renders the login form (GET /login).
 func (h *Handler) LoginPage(w http.ResponseWriter, r *http.Request) {
+	// Auth pages are standalone HTML documents (no base layout). If requested
+	// via HTMX (sidebar link), force a full page navigation so the sidebar
+	// doesn't wrap the login card.
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Redirect", "/login")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Already authenticated — redirect to dashboard
+	if cookie, err := r.Cookie(middleware.SessionCookieName); err == nil && cookie.Value != "" {
+		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+		return
+	}
+
 	tmpl, ok := h.templates["auth/login.html"]
 	if !ok {
 		http.Error(w, "login template not found", http.StatusInternalServerError)
@@ -169,6 +184,12 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 
 // RegisterPage renders the registration form (GET /register).
 func (h *Handler) RegisterPage(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Redirect", "/register")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	tmpl, ok := h.templates["auth/register.html"]
 	if !ok {
 		http.Error(w, "register template not found", http.StatusInternalServerError)

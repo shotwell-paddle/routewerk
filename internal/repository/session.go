@@ -106,7 +106,7 @@ func (r *SessionRepo) ListByLocation(ctx context.Context, locationID string, lim
 		}
 		sessions = append(sessions, s)
 	}
-	return sessions, nil
+	return sessions, rows.Err()
 }
 
 func (r *SessionRepo) Update(ctx context.Context, s *model.SettingSession) error {
@@ -227,7 +227,7 @@ func (r *SessionRepo) ListByLocationWithDetails(ctx context.Context, locationID 
 		}
 		items = append(items, item)
 	}
-	return items, nil
+	return items, rows.Err()
 }
 
 // SessionAssignmentDetail holds an assignment enriched with user/wall names.
@@ -495,34 +495,38 @@ func (r *SessionRepo) UpdateStatus(ctx context.Context, id, status string) error
 }
 
 // Delete removes a session and cascade-deletes its routes (that were created in this session).
+// Runs inside a transaction so a partial failure doesn't leave orphaned records.
 func (r *SessionRepo) Delete(ctx context.Context, id string) error {
-	// First delete any draft routes linked to this session
-	_, err := r.db.Exec(ctx,
-		`DELETE FROM routes WHERE session_id = $1 AND status = 'draft'`, id)
+	tx, err := r.db.Begin(ctx)
 	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// First delete any draft routes linked to this session
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM routes WHERE session_id = $1 AND status = 'draft'`, id); err != nil {
 		return fmt.Errorf("delete session routes: %w", err)
 	}
 
 	// Unlink any published routes (keep them but clear session_id)
-	_, err = r.db.Exec(ctx,
-		`UPDATE routes SET session_id = NULL WHERE session_id = $1`, id)
-	if err != nil {
+	if _, err := tx.Exec(ctx,
+		`UPDATE routes SET session_id = NULL WHERE session_id = $1`, id); err != nil {
 		return fmt.Errorf("unlink session routes: %w", err)
 	}
 
 	// Delete assignments (no ON DELETE CASCADE on this FK)
-	_, err = r.db.Exec(ctx,
-		`DELETE FROM setting_session_assignments WHERE session_id = $1`, id)
-	if err != nil {
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM setting_session_assignments WHERE session_id = $1`, id); err != nil {
 		return fmt.Errorf("delete session assignments: %w", err)
 	}
 
 	// Delete the session (strip targets + checklist cascade automatically)
-	_, err = r.db.Exec(ctx, `DELETE FROM setting_sessions WHERE id = $1`, id)
-	if err != nil {
+	if _, err := tx.Exec(ctx, `DELETE FROM setting_sessions WHERE id = $1`, id); err != nil {
 		return fmt.Errorf("delete session: %w", err)
 	}
-	return nil
+
+	return tx.Commit(ctx)
 }
 
 // ── Session Routes ─────────────────────────────────────────
@@ -629,7 +633,7 @@ func (r *SessionRepo) ListChecklistItems(ctx context.Context, sessionID string) 
 		}
 		items = append(items, item)
 	}
-	return items, nil
+	return items, rows.Err()
 }
 
 // ToggleChecklistItem toggles the completed state of a checklist item.

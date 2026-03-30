@@ -192,7 +192,7 @@ func (r *TrainingRepo) GetItems(ctx context.Context, planID string) ([]model.Tra
 		}
 		items = append(items, item)
 	}
-	return items, nil
+	return items, rows.Err()
 }
 
 func (r *TrainingRepo) queryPlans(ctx context.Context, query, id string) ([]model.TrainingPlan, error) {
@@ -213,5 +213,5 @@ func (r *TrainingRepo) queryPlans(ctx context.Context, query, id string) ([]mode
 		}
 		plans = append(plans, p)
 	}
-	return plans, nil
+	return plans, rows.Err()
 }

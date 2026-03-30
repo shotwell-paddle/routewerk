@@ -100,7 +100,7 @@ func (r *OrgRepo) ListByUser(ctx context.Context, userID string) ([]model.Organi
 		}
 		orgs = append(orgs, o)
 	}
-	return orgs, nil
+	return orgs, rows.Err()
 }
 
 func (r *OrgRepo) Update(ctx context.Context, o *model.Organization) error {

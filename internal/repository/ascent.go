@@ -163,7 +163,7 @@ func (r *AscentRepo) ListByUserFiltered(ctx context.Context, userID string, f Ti
 		}
 		ascents = append(ascents, a)
 	}
-	return ascents, total, nil
+	return ascents, total, rows.Err()
 }
 
 // HasPriorAscents returns true if the user has any existing ascent records on this route.
@@ -248,7 +248,7 @@ func (r *AscentRepo) ListByRouteForViewer(ctx context.Context, routeID, viewerID
 		}
 		ascents = append(ascents, a)
 	}
-	return ascents, nil
+	return ascents, rows.Err()
 }
 
 // UserStats returns grade pyramid and summary stats for a climber.

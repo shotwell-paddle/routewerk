@@ -112,7 +112,7 @@ func (r *FollowRepo) ActivityFeed(ctx context.Context, userID string, limit, off
 		}
 		items = append(items, item)
 	}
-	return items, nil
+	return items, rows.Err()
 }
 
 func (r *FollowRepo) queryFollows(ctx context.Context, query, userID string, limit, offset int) ([]FollowUser, error) {
@@ -130,7 +130,7 @@ func (r *FollowRepo) queryFollows(ctx context.Context, query, userID string, lim
 		}
 		users = append(users, u)
 	}
-	return users, nil
+	return users, rows.Err()
 }
 
 type FollowUser struct {

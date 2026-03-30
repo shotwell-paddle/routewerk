@@ -80,7 +80,7 @@ func (r *LocationRepo) ListByOrg(ctx context.Context, orgID string) ([]model.Loc
 		}
 		locations = append(locations, l)
 	}
-	return locations, nil
+	return locations, rows.Err()
 }
 
 // SearchPublic finds locations by name (case-insensitive substring match).
@@ -115,7 +115,7 @@ func (r *LocationRepo) SearchPublic(ctx context.Context, query string, limit int
 		}
 		results = append(results, sr)
 	}
-	return results, nil
+	return results, rows.Err()
 }
 
 // ListAllPublic returns all locations (no search filter), for the initial
@@ -148,7 +148,7 @@ func (r *LocationRepo) ListAllPublic(ctx context.Context, limit int) ([]Location
 		}
 		results = append(results, sr)
 	}
-	return results, nil
+	return results, rows.Err()
 }
 
 // LocationSearchResult is a lightweight location view for search results.
@@ -204,7 +204,7 @@ func (r *LocationRepo) ListForUser(ctx context.Context, userID string) ([]UserLo
 		}
 		locations = append(locations, li)
 	}
-	return locations, nil
+	return locations, rows.Err()
 }
 
 func (r *LocationRepo) Update(ctx context.Context, l *model.Location) error {

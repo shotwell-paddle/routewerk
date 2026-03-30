@@ -82,7 +82,7 @@ func (r *WallRepo) ListByLocation(ctx context.Context, locationID string) ([]mod
 		}
 		walls = append(walls, w)
 	}
-	return walls, nil
+	return walls, rows.Err()
 }
 
 // WallWithCounts extends Wall with aggregate route counts.
@@ -131,7 +131,7 @@ func (r *WallRepo) ListWithCounts(ctx context.Context, locationID string) ([]Wal
 		}
 		walls = append(walls, wc)
 	}
-	return walls, nil
+	return walls, rows.Err()
 }
 
 func (r *WallRepo) Update(ctx context.Context, w *model.Wall) error {

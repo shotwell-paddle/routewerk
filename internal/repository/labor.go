@@ -61,7 +61,7 @@ func (r *LaborRepo) ListByLocation(ctx context.Context, locationID string, limit
 		}
 		logs = append(logs, l)
 	}
-	return logs, nil
+	return logs, rows.Err()
 }
 
 func (r *LaborRepo) ListBySetter(ctx context.Context, userID string, limit, offset int) ([]model.SetterLaborLog, error) {
@@ -93,7 +93,7 @@ func (r *LaborRepo) ListBySetter(ctx context.Context, userID string, limit, offs
 		}
 		logs = append(logs, l)
 	}
-	return logs, nil
+	return logs, rows.Err()
 }
 
 type LaborWithUser struct {

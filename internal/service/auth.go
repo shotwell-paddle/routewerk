@@ -162,19 +162,26 @@ func (s *AuthService) Refresh(ctx context.Context, userID, refreshToken string) 
 		return nil, err
 	}
 
-	valid := false
+	// Find the matching bcrypt hash for this token.
+	var matchedHash string
 	for _, hash := range hashes {
 		if auth.CheckRefreshToken(refreshToken, hash) {
-			valid = true
+			matchedHash = hash
 			break
 		}
 	}
-	if !valid {
+	if matchedHash == "" {
 		return nil, ErrInvalidRefresh
 	}
 
-	if err := s.users.RevokeRefreshTokens(ctx, userID); err != nil {
+	// Atomically revoke this specific token. If another request already
+	// consumed it (race), the UPDATE affects zero rows and we fail.
+	revoked, err := s.users.RevokeRefreshToken(ctx, matchedHash)
+	if err != nil {
 		return nil, err
+	}
+	if !revoked {
+		return nil, ErrInvalidRefresh
 	}
 
 	u, err := s.users.GetByID(ctx, userID)

@@ -96,7 +96,7 @@ func (r *RatingRepo) ListByRouteForViewer(ctx context.Context, routeID, viewerID
 		}
 		ratings = append(ratings, rr)
 	}
-	return ratings, nil
+	return ratings, rows.Err()
 }
 
 type RatingWithUser struct {

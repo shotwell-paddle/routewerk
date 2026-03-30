@@ -87,7 +87,7 @@ func (r *AnalyticsRepo) GradeDistribution(ctx context.Context, locationID, wallI
 		}
 		grades = append(grades, g)
 	}
-	return grades, nil
+	return grades, rows.Err()
 }
 
 // RouteLifecycle returns age and status info for active routes.
@@ -118,7 +118,7 @@ func (r *AnalyticsRepo) RouteLifecycle(ctx context.Context, locationID string) (
 		}
 		routes = append(routes, ri)
 	}
-	return routes, nil
+	return routes, rows.Err()
 }
 
 // Engagement returns climber activity metrics for a location.
@@ -169,7 +169,7 @@ func (r *AnalyticsRepo) Engagement(ctx context.Context, locationID string, days 
 		stats.TrendingRoutes = append(stats.TrendingRoutes, t)
 	}
 
-	return stats, nil
+	return stats, rows.Err()
 }
 
 // SetterProductivity returns per-setter metrics for a location.
@@ -211,7 +211,7 @@ func (r *AnalyticsRepo) SetterProductivity(ctx context.Context, locationID strin
 		}
 		stats = append(stats, s)
 	}
-	return stats, nil
+	return stats, rows.Err()
 }
 
 // RecentActivity returns the latest climber actions at a location for the activity feed.
@@ -247,7 +247,7 @@ func (r *AnalyticsRepo) RecentActivity(ctx context.Context, locationID string, l
 		}
 		entries = append(entries, e)
 	}
-	return entries, nil
+	return entries, rows.Err()
 }
 
 // OrgOverview returns high-level metrics across all locations in an org.
@@ -283,7 +283,7 @@ func (r *AnalyticsRepo) OrgOverview(ctx context.Context, orgID string) ([]Locati
 		}
 		overview = append(overview, lo)
 	}
-	return overview, nil
+	return overview, rows.Err()
 }
 
 // Types

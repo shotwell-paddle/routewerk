@@ -122,26 +122,32 @@ func Gzip(next http.Handler) http.Handler {
 }
 
 // RateLimiter provides per-IP rate limiting for sensitive endpoints like login/register.
+// The client map is capped at maxClients entries to prevent memory exhaustion from
+// distributed attacks. When the cap is hit, the oldest entry is evicted.
 type RateLimiter struct {
-	mu       sync.Mutex
-	clients  map[string]*clientWindow
-	limit    int
-	window   time.Duration
-	cleanTTL time.Duration
+	mu         sync.Mutex
+	clients    map[string]*clientWindow
+	limit      int
+	window     time.Duration
+	cleanTTL   time.Duration
+	maxClients int
 }
 
 type clientWindow struct {
-	count    int
+	count       int
 	windowStart time.Time
 }
+
+const defaultMaxClients = 10_000
 
 // NewRateLimiter creates a rate limiter: limit requests per window per IP.
 func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
 	rl := &RateLimiter{
-		clients:  make(map[string]*clientWindow),
-		limit:    limit,
-		window:   window,
-		cleanTTL: window * 2,
+		clients:    make(map[string]*clientWindow),
+		limit:      limit,
+		window:     window,
+		cleanTTL:   window * 2,
+		maxClients: defaultMaxClients,
 	}
 
 	// Background cleanup every window interval
@@ -167,6 +173,23 @@ func (rl *RateLimiter) cleanup() {
 	}
 }
 
+// evictOldest removes the entry with the oldest windowStart. Caller must hold rl.mu.
+func (rl *RateLimiter) evictOldest() {
+	var oldestIP string
+	var oldestTime time.Time
+	first := true
+	for ip, cw := range rl.clients {
+		if first || cw.windowStart.Before(oldestTime) {
+			oldestIP = ip
+			oldestTime = cw.windowStart
+			first = false
+		}
+	}
+	if oldestIP != "" {
+		delete(rl.clients, oldestIP)
+	}
+}
+
 // Limit returns middleware that rejects requests over the rate limit with 429.
 func (rl *RateLimiter) Limit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -177,6 +200,10 @@ func (rl *RateLimiter) Limit(next http.Handler) http.Handler {
 		now := time.Now()
 
 		if !exists || now.Sub(cw.windowStart) > rl.window {
+			// Evict oldest entry if at capacity
+			if !exists && len(rl.clients) >= rl.maxClients {
+				rl.evictOldest()
+			}
 			rl.clients[ip] = &clientWindow{count: 1, windowStart: now}
 			rl.mu.Unlock()
 			next.ServeHTTP(w, r)

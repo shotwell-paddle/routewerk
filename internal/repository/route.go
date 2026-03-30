@@ -197,7 +197,7 @@ func (r *RouteRepo) List(ctx context.Context, f RouteFilter) ([]model.Route, int
 		}
 		routes = append(routes, rt)
 	}
-	return routes, total, nil
+	return routes, total, rows.Err()
 }
 
 // RouteWithDetails is a route joined with wall name and setter display name.
@@ -311,7 +311,7 @@ func (r *RouteRepo) ListWithDetails(ctx context.Context, f RouteFilter) ([]Route
 		}
 		routes = append(routes, rd)
 	}
-	return routes, total, nil
+	return routes, total, rows.Err()
 }
 
 // ListActiveByLocation returns all active routes for a location in one query,
@@ -353,7 +353,7 @@ func (r *RouteRepo) ListActiveByLocation(ctx context.Context, locationID string)
 		}
 		routes = append(routes, rd)
 	}
-	return routes, nil
+	return routes, rows.Err()
 }
 
 func (r *RouteRepo) Update(ctx context.Context, rt *model.Route) error {
@@ -432,7 +432,7 @@ func (r *RouteRepo) GetTags(ctx context.Context, routeID string) ([]model.Tag, e
 		}
 		tags = append(tags, t)
 	}
-	return tags, nil
+	return tags, rows.Err()
 }
 
 func (r *RouteRepo) SetTags(ctx context.Context, routeID string, tagIDs []string) error {

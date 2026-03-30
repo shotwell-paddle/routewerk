@@ -119,7 +119,7 @@ func (r *UserRepo) GetMemberships(ctx context.Context, userID string) ([]model.U
 		}
 		memberships = append(memberships, m)
 	}
-	return memberships, nil
+	return memberships, rows.Err()
 }
 
 // SaveRefreshToken stores a hashed refresh token.
@@ -149,6 +149,21 @@ func (r *UserRepo) RevokeRefreshTokens(ctx context.Context, userID string) error
 	return nil
 }
 
+// RevokeRefreshToken atomically revokes a single refresh token by its hash.
+// Returns true if the token was revoked, false if it was already consumed or expired.
+func (r *UserRepo) RevokeRefreshToken(ctx context.Context, tokenHash string) (bool, error) {
+	query := `
+		UPDATE refresh_tokens
+		SET revoked_at = NOW()
+		WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > NOW()`
+
+	ct, err := r.db.Exec(ctx, query, tokenHash)
+	if err != nil {
+		return false, fmt.Errorf("revoke refresh token: %w", err)
+	}
+	return ct.RowsAffected() > 0, nil
+}
+
 // GetActiveRefreshTokens returns all active (non-revoked, non-expired) refresh tokens for a user.
 func (r *UserRepo) GetActiveRefreshTokens(ctx context.Context, userID string) ([]string, error) {
 	query := `
@@ -170,7 +185,7 @@ func (r *UserRepo) GetActiveRefreshTokens(ctx context.Context, userID string) ([
 		}
 		hashes = append(hashes, h)
 	}
-	return hashes, nil
+	return hashes, rows.Err()
 }
 
 // SetterAtLocation holds a setter's basic info for assignment dropdowns.
@@ -218,7 +233,7 @@ func (r *UserRepo) ListSettersByLocation(ctx context.Context, locationID string)
 		}
 		setters = append(setters, s)
 	}
-	return setters, nil
+	return setters, rows.Err()
 }
 
 // LocationMember holds a user's membership info for the team management page.
@@ -317,6 +332,9 @@ func (r *UserRepo) SearchMembersByLocation(ctx context.Context, locationID strin
 		}
 		members = append(members, m)
 	}
+	if err := rows.Err(); err != nil {
+		return MemberSearchResult{}, err
+	}
 	return MemberSearchResult{Members: members, TotalCount: total}, nil
 }
 
@@ -386,6 +404,9 @@ func (r *UserRepo) SearchMembersByOrg(ctx context.Context, orgID string, p Membe
 			return MemberSearchResult{}, fmt.Errorf("scan org member: %w", err)
 		}
 		members = append(members, m)
+	}
+	if err := rows.Err(); err != nil {
+		return MemberSearchResult{}, err
 	}
 	return MemberSearchResult{Members: members, TotalCount: total}, nil
 }

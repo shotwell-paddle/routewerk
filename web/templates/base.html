@@ -9,6 +9,8 @@
   <script src="{{staticPath "js/htmx.min.js"}}"></script>
 </head>
 <body hx-boost="true" hx-target="#main-content">
+  <div class="rw-loading-bar" id="rw-loading-bar"></div>
+  <div class="rw-toast" id="rw-toast" role="alert" aria-live="polite"></div>
   <div class="app-shell" id="app-shell">
     {{template "sidebar" .}}
     <div class="sidebar-backdrop" id="sidebar-backdrop"></div>

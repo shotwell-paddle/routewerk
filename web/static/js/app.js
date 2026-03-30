@@ -2,6 +2,77 @@
    Routewerk — Minimal JS (HTMX does the heavy lifting)
    ═══════════════════════════════════════════════════════════════ */
 
+// ── Loading bar (CSS-driven, JS just toggles class) ──────────
+document.addEventListener('htmx:beforeRequest', function() {
+  var bar = document.getElementById('rw-loading-bar');
+  if (!bar) return;
+  bar.classList.remove('done', 'fade');
+  // Force reflow so the transition restarts
+  void bar.offsetWidth;
+  bar.classList.add('active');
+});
+
+document.addEventListener('htmx:afterOnLoad', function() {
+  var bar = document.getElementById('rw-loading-bar');
+  if (!bar) return;
+  bar.classList.remove('active');
+  bar.classList.add('done');
+  setTimeout(function() { bar.classList.add('fade'); }, 200);
+  setTimeout(function() {
+    bar.classList.remove('done', 'fade');
+    bar.style.width = '';
+  }, 600);
+});
+
+// ── Toast helper ─────────────────────────────────────────────
+function showToast(msg, isError) {
+  var toast = document.getElementById('rw-toast');
+  if (!toast) return;
+  toast.textContent = msg;
+  toast.classList.toggle('error', !!isError);
+  toast.classList.add('visible');
+  clearTimeout(toast._timeout);
+  toast._timeout = setTimeout(function() {
+    toast.classList.remove('visible');
+  }, 4000);
+}
+
+// ── HTMX error handling ──────────────────────────────────────
+document.addEventListener('htmx:responseError', function(e) {
+  var status = e.detail.xhr ? e.detail.xhr.status : 0;
+  if (status === 429) {
+    showToast('Too many requests — please wait a moment.', true);
+  } else if (status >= 500) {
+    showToast('Something went wrong. Please try again.', true);
+  } else if (status >= 400) {
+    showToast('Request failed. Please check your input.', true);
+  }
+});
+
+document.addEventListener('htmx:sendError', function() {
+  showToast('Connection lost. Check your network and try again.', true);
+});
+
+document.addEventListener('htmx:timeout', function() {
+  showToast('Request timed out. Please try again.', true);
+});
+
+// ── Double-submit prevention ─────────────────────────────────
+// Add htmx-request class to the submit button during requests
+// so CSS can visually disable it and prevent re-clicks.
+document.addEventListener('htmx:beforeRequest', function(e) {
+  var form = e.detail.elt.closest('form');
+  if (!form) return;
+  var btn = form.querySelector('[type="submit"], .btn-primary');
+  if (btn) btn.classList.add('htmx-request');
+});
+document.addEventListener('htmx:afterRequest', function(e) {
+  var form = e.detail.elt.closest('form');
+  if (!form) return;
+  var btn = form.querySelector('[type="submit"], .btn-primary');
+  if (btn) btn.classList.remove('htmx-request');
+});
+
 // ── Filter chip toggle ────────────────────────────────────────
 document.addEventListener('click', function(e) {
   var chip = e.target.closest('.filter-chip');

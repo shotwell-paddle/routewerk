@@ -21,6 +21,69 @@
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
+/* ── Loading Bar ──────────────────────────────────────────── */
+.rw-loading-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0;
+  background: var(--rw-orange, #fc5200);
+  z-index: 9999;
+  pointer-events: none;
+  transition: none;
+}
+.rw-loading-bar.active {
+  width: 85%;
+  transition: width 8s cubic-bezier(0.1, 0.5, 0.3, 1);
+}
+.rw-loading-bar.done {
+  width: 100%;
+  transition: width 0.15s ease-out;
+}
+.rw-loading-bar.fade {
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+}
+
+/* ── Toast Notification ──────────────────────────────────── */
+.rw-toast {
+  position: fixed;
+  bottom: var(--sp-6, 1.5rem);
+  left: 50%;
+  transform: translateX(-50%) translateY(120%);
+  background: var(--rw-black, #0a0a0a);
+  color: var(--rw-white, #fff);
+  padding: var(--sp-3, 0.75rem) var(--sp-5, 1.25rem);
+  border-radius: var(--radius-lg, 0.5rem);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  z-index: 9998;
+  pointer-events: none;
+  opacity: 0;
+  transition: transform 0.25s ease-out, opacity 0.25s ease-out;
+  max-width: 90vw;
+  text-align: center;
+}
+.rw-toast.visible {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+.rw-toast.error {
+  background: #d32f2f;
+}
+
+/* ── Submit Button Disable During Request ────────────────── */
+.htmx-request .btn-primary,
+.htmx-request [type="submit"],
+button.htmx-request {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* ── Confirm Dialog (native browser, styled via hx-confirm) ─ */
+
 /* ── Reset & Base ──────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 

@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shotwell-paddle/routewerk/internal/config"
 	"github.com/shotwell-paddle/routewerk/internal/database"
 	"github.com/shotwell-paddle/routewerk/internal/router"
@@ -53,6 +54,9 @@ func main() {
 	defer db.Close()
 	slog.Info("connected to database")
 
+	// Background housekeeping — clean up expired web sessions every hour
+	go cleanupExpiredSessions(db)
+
 	// Build router
 	r := router.New(cfg, db)
 
@@ -86,6 +90,24 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		slog.Error("server error", "error", err)
 		os.Exit(1)
+	}
+}
+
+// cleanupExpiredSessions runs every hour to delete expired web sessions.
+func cleanupExpiredSessions(db *pgxpool.Pool) {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		tag, err := db.Exec(ctx, `DELETE FROM web_sessions WHERE expires_at <= NOW()`)
+		cancel()
+		if err != nil {
+			slog.Error("session cleanup failed", "error", err)
+			continue
+		}
+		if n := tag.RowsAffected(); n > 0 {
+			slog.Info("cleaned up expired sessions", "count", n)
+		}
 	}
 }
 

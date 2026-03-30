@@ -44,12 +44,19 @@ jobs:
       - name: Build Admin CLI
         run: CGO_ENABLED=0 go build -o bin/admin ./cmd/admin
 
-  docker:
+  deploy:
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, build]
     if: github.ref == 'refs/heads/main'
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Docker image
-        run: docker build -t routewerk:${{ github.sha }} .
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly.io
+        run: flyctl deploy --remote-only --app routewerk
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

@@ -184,6 +184,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 			r.Get("/profile/ticks", webHandler.ProfileTicks)
 			r.Get("/profile/settings", webHandler.ProfileSettings)
 			r.Post("/profile/settings", webHandler.ProfileSettingsSave)
+			r.Post("/profile/password", webHandler.PasswordChange)
 			r.Get("/profile/ticks/{ascentID}/edit", webHandler.TickEditForm)
 			r.Post("/profile/ticks/{ascentID}", webHandler.TickUpdate)
 			r.Post("/profile/ticks/{ascentID}/delete", webHandler.TickDelete)

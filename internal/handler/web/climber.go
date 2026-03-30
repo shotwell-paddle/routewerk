@@ -1,6 +1,8 @@
 package webhandler
 
 import (
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -12,6 +14,7 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
+	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
 // ── Ascent Logging ────────────────────────────────────────────
@@ -613,6 +616,59 @@ func (h *Handler) ProfileSettingsSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/profile/settings?saved=1", http.StatusSeeOther)
+}
+
+// ── Password Change ─────────────────────────────────────────
+
+// PasswordChange handles POST /profile/password.
+func (h *Handler) PasswordChange(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	user := middleware.GetWebUser(ctx)
+	if user == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		fmt.Fprint(w, `<div class="form-alert form-alert-error mb-4">Invalid form data.</div>`)
+		return
+	}
+
+	currentPassword := r.FormValue("current_password")
+	newPassword := r.FormValue("new_password")
+	newPasswordConfirm := r.FormValue("new_password_confirm")
+
+	if currentPassword == "" || newPassword == "" {
+		fmt.Fprint(w, `<div class="form-alert form-alert-error mb-4">All fields are required.</div>`)
+		return
+	}
+
+	if len(newPassword) < 8 {
+		fmt.Fprint(w, `<div class="form-alert form-alert-error mb-4">New password must be at least 8 characters.</div>`)
+		return
+	}
+
+	if len(newPassword) > 72 {
+		fmt.Fprint(w, `<div class="form-alert form-alert-error mb-4">New password must be 72 characters or fewer.</div>`)
+		return
+	}
+
+	if newPassword != newPasswordConfirm {
+		fmt.Fprint(w, `<div class="form-alert form-alert-error mb-4">New passwords do not match.</div>`)
+		return
+	}
+
+	if err := h.authService.ChangePassword(ctx, user.ID, currentPassword, newPassword); err != nil {
+		if errors.Is(err, service.ErrInvalidCredentials) {
+			fmt.Fprint(w, `<div class="form-alert form-alert-error mb-4">Current password is incorrect.</div>`)
+			return
+		}
+		slog.Error("password change failed", "user_id", user.ID, "error", err)
+		fmt.Fprint(w, `<div class="form-alert form-alert-error mb-4">Something went wrong. Please try again.</div>`)
+		return
+	}
+
+	fmt.Fprint(w, `<div class="form-alert form-alert-success mb-4">Password updated.</div>`)
 }
 
 // ── Tick Editing ─────────────────────────────────────────────

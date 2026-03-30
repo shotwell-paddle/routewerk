@@ -188,6 +188,51 @@ func (s *AuthService) Refresh(ctx context.Context, userID, refreshToken string) 
 	return s.generateResult(ctx, u)
 }
 
+// ChangePassword verifies the old password and sets a new one.
+func (s *AuthService) ChangePassword(ctx context.Context, userID, oldPassword, newPassword string) error {
+	u, err := s.users.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if u == nil {
+		return ErrUserNotFound
+	}
+
+	if !auth.CheckPassword(oldPassword, u.PasswordHash) {
+		return ErrInvalidCredentials
+	}
+
+	hash, err := auth.HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+
+	if err := s.users.UpdatePassword(ctx, userID, hash); err != nil {
+		return err
+	}
+
+	// Revoke all refresh tokens so other sessions must re-authenticate
+	_ = s.users.RevokeRefreshTokens(ctx, userID)
+
+	return nil
+}
+
+// ResetPassword sets a new password without requiring the old one.
+// Intended for admin-initiated resets.
+func (s *AuthService) ResetPassword(ctx context.Context, userID, newPassword string) error {
+	hash, err := auth.HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+
+	if err := s.users.UpdatePassword(ctx, userID, hash); err != nil {
+		return err
+	}
+
+	_ = s.users.RevokeRefreshTokens(ctx, userID)
+	return nil
+}
+
 func (s *AuthService) GetProfile(ctx context.Context, userID string) (*model.User, []model.UserMembership, error) {
 	u, err := s.users.GetByID(ctx, userID)
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/shotwell-paddle/routewerk/internal/auth"
 	"github.com/shotwell-paddle/routewerk/internal/config"
 	"github.com/shotwell-paddle/routewerk/internal/database"
 	"github.com/shotwell-paddle/routewerk/internal/model"
@@ -60,6 +61,8 @@ func main() {
 		listMembers(ctx, db, os.Args[2:])
 	case "list-orgs":
 		listOrgs(ctx, db)
+	case "reset-password":
+		resetPassword(ctx, db, os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", os.Args[1])
 		printUsage()
@@ -93,6 +96,10 @@ Organizations:
                List all members of an organization.
 
   list-orgs    List all organizations.
+
+Users:
+  reset-password --email <email> --password <new-password>
+               Reset a user's password (admin override, no old password required).
 
 Environment:
   DATABASE_URL   PostgreSQL connection string (required)`)
@@ -433,4 +440,47 @@ func slugify(s string) string {
 		}
 	}
 	return strings.Trim(string(result), "-")
+}
+
+func resetPassword(ctx context.Context, db *pgxpool.Pool, args []string) {
+	var email, password string
+	for i := 0; i < len(args)-1; i += 2 {
+		switch args[i] {
+		case "--email":
+			email = args[i+1]
+		case "--password":
+			password = args[i+1]
+		}
+	}
+
+	if email == "" || password == "" {
+		log.Fatal("usage: reset-password --email <email> --password <new-password>")
+	}
+
+	if len(password) < 8 {
+		log.Fatal("password must be at least 8 characters")
+	}
+	if len(password) > 72 {
+		log.Fatal("password must be 72 characters or fewer")
+	}
+
+	userRepo := repository.NewUserRepo(db)
+	user, err := userRepo.GetByEmail(ctx, email)
+	if err != nil {
+		log.Fatalf("failed to look up user: %v", err)
+	}
+	if user == nil {
+		log.Fatalf("no user found with email: %s", email)
+	}
+
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		log.Fatalf("failed to hash password: %v", err)
+	}
+
+	if err := userRepo.UpdatePassword(ctx, user.ID, hash); err != nil {
+		log.Fatalf("failed to update password: %v", err)
+	}
+
+	fmt.Printf("Password reset for %s (%s)\n", user.DisplayName, user.Email)
 }

@@ -80,6 +80,21 @@ func (r *UserRepo) Update(ctx context.Context, u *model.User) error {
 	).Scan(&u.UpdatedAt)
 }
 
+// UpdatePassword sets a new bcrypt hash for the given user.
+func (r *UserRepo) UpdatePassword(ctx context.Context, userID, passwordHash string) error {
+	query := `
+		UPDATE users SET password_hash = $2
+		WHERE id = $1 AND deleted_at IS NULL`
+	ct, err := r.db.Exec(ctx, query, userID, passwordHash)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("user not found")
+	}
+	return nil
+}
+
 func (r *UserRepo) GetMemberships(ctx context.Context, userID string) ([]model.UserMembership, error) {
 	query := `
 		SELECT id, user_id, org_id, location_id, role, specialties, created_at, updated_at

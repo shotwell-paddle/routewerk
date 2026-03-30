@@ -72,8 +72,16 @@ func (c *Config) Validate() []string {
 	check(c.DatabaseURL != "" &&
 		c.DatabaseURL != "postgres://routewerk:password@localhost:5432/routewerk?sslmode=disable",
 		"DATABASE_URL must be set to a real connection string")
-	check(!strings.Contains(strings.ToLower(c.DatabaseURL), "sslmode=disable"),
-		"DATABASE_URL must not use sslmode=disable in production")
+
+	// On Fly.io, Postgres is accessed over a private WireGuard network (*.flycast)
+	// that is already encrypted end-to-end. sslmode=disable is safe and expected
+	// because Fly's managed Postgres doesn't expose TLS on the internal interface.
+	onFlyNetwork := os.Getenv("FLY_APP_NAME") != "" &&
+		strings.Contains(c.DatabaseURL, ".flycast")
+	if !onFlyNetwork {
+		check(!strings.Contains(strings.ToLower(c.DatabaseURL), "sslmode=disable"),
+			"DATABASE_URL must not use sslmode=disable in production")
+	}
 
 	// Auth secrets
 	check(c.JWTSecret != "change-me" && len(c.JWTSecret) >= 32,

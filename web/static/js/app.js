@@ -73,6 +73,23 @@ document.addEventListener('htmx:afterRequest', function(e) {
   if (btn) btn.classList.remove('htmx-request');
 });
 
+// ── Smooth page transitions (prevent height bounce) ──────────
+// Before swap: lock the content area height so it doesn't collapse
+// to 0 during innerHTML replacement, causing a visible bounce.
+document.addEventListener('htmx:beforeSwap', function(e) {
+  var target = e.detail.target;
+  if (!target || target.id !== 'main-content') return;
+  target.style.minHeight = target.offsetHeight + 'px';
+});
+
+document.addEventListener('htmx:afterSwap', function(e) {
+  var target = e.detail.target;
+  if (!target || target.id !== 'main-content') return;
+  // Release the height lock and scroll to top
+  target.style.minHeight = '';
+  window.scrollTo(0, 0);
+});
+
 // ── Filter chip toggle ────────────────────────────────────────
 document.addEventListener('click', function(e) {
   var chip = e.target.closest('.filter-chip');

@@ -229,6 +229,7 @@ func (h *Handler) GymUpdate(w http.ResponseWriter, r *http.Request) {
 	websiteURL := strings.TrimSpace(r.FormValue("website_url"))
 	phone := strings.TrimSpace(r.FormValue("phone"))
 	dayPassInfo := strings.TrimSpace(r.FormValue("day_pass_info"))
+	customDomain := strings.ToLower(strings.TrimSpace(r.FormValue("custom_domain")))
 
 	if name == "" {
 		orgName := ""
@@ -242,6 +243,7 @@ func (h *Handler) GymUpdate(w http.ResponseWriter, r *http.Request) {
 			GymForm: GymFormValues{
 				Name: name, Slug: slug, Address: address, Timezone: timezone,
 				WebsiteURL: websiteURL, Phone: phone, DayPassInfo: dayPassInfo,
+				CustomDomain: customDomain,
 			},
 			FormError: "Gym name is required.",
 		}
@@ -264,6 +266,7 @@ func (h *Handler) GymUpdate(w http.ResponseWriter, r *http.Request) {
 	gym.WebsiteURL = nilIfEmpty(websiteURL)
 	gym.Phone = nilIfEmpty(phone)
 	gym.DayPassInfo = nilIfEmpty(dayPassInfo)
+	gym.CustomDomain = nilIfEmpty(customDomain)
 
 	if err := h.locationRepo.Update(ctx, gym); err != nil {
 		slog.Error("update gym failed", "error", err)
@@ -279,8 +282,9 @@ func (h *Handler) GymUpdate(w http.ResponseWriter, r *http.Request) {
 			GymForm: GymFormValues{
 				Name: name, Slug: slug, Address: address, Timezone: timezone,
 				WebsiteURL: websiteURL, Phone: phone, DayPassInfo: dayPassInfo,
+				CustomDomain: customDomain,
 			},
-			FormError: "Could not save changes. The slug may already be in use.",
+			FormError: "Could not save changes. The slug or custom domain may already be in use.",
 		}
 		h.render(w, r, "setter/gym-edit.html", data)
 		return
@@ -309,6 +313,9 @@ func gymFormFromLocation(l *model.Location) GymFormValues {
 	}
 	if l.DayPassInfo != nil {
 		gf.DayPassInfo = *l.DayPassInfo
+	}
+	if l.CustomDomain != nil {
+		gf.CustomDomain = *l.CustomDomain
 	}
 	return gf
 }

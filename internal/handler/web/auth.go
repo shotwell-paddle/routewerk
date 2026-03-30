@@ -94,16 +94,20 @@ func (h *Handler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Pick the user's first location as default (can be switched later)
+	// Pick the user's default location — prefer the domain-matched gym,
+	// then fall back to the first membership with a location.
 	memberships, memErr := h.userRepo.GetMemberships(r.Context(), user.ID)
 	if memErr != nil {
 		slog.Error("load memberships after login failed", "user_id", user.ID, "error", memErr)
 	}
-	var locationID *string
-	for _, m := range memberships {
-		if m.LocationID != nil {
-			locationID = m.LocationID
-			break
+
+	locationID := h.locationForHost(r)
+	if locationID == nil {
+		for _, m := range memberships {
+			if m.LocationID != nil {
+				locationID = m.LocationID
+				break
+			}
 		}
 	}
 
@@ -289,15 +293,20 @@ func (h *Handler) RegisterSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Pick the user's default location — prefer the domain-matched gym,
+	// then fall back to the first membership with a location.
 	memberships, memErr := h.userRepo.GetMemberships(r.Context(), user.ID)
 	if memErr != nil {
 		slog.Error("load memberships after register failed", "user_id", user.ID, "error", memErr)
 	}
-	var locationID *string
-	for _, m := range memberships {
-		if m.LocationID != nil {
-			locationID = m.LocationID
-			break
+
+	locationID := h.locationForHost(r)
+	if locationID == nil {
+		for _, m := range memberships {
+			if m.LocationID != nil {
+				locationID = m.LocationID
+				break
+			}
 		}
 	}
 
@@ -330,6 +339,31 @@ func (h *Handler) RegisterSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+}
+
+// locationForHost resolves the request hostname to a location via the
+// custom_domain column. Returns nil when no match is found (falls through
+// to the normal membership-based location selection).
+func (h *Handler) locationForHost(r *http.Request) *string {
+	host := r.Host
+	// Strip port if present (e.g. "localhost:8080")
+	if idx := strings.LastIndex(host, ":"); idx > 0 {
+		host = host[:idx]
+	}
+	if host == "" || host == "localhost" {
+		return nil
+	}
+
+	loc, err := h.locationRepo.GetByCustomDomain(r.Context(), host)
+	if err != nil {
+		slog.Error("domain lookup failed", "host", host, "error", err)
+		return nil
+	}
+	if loc == nil {
+		return nil
+	}
+	slog.Info("domain-matched location", "host", host, "location_id", loc.ID, "name", loc.Name)
+	return &loc.ID
 }
 
 // postAuthRedirect returns the URL to redirect to after login/register

@@ -98,6 +98,20 @@
       </div>
     </div>
 
+    <div class="form-card">
+      <h2 class="form-card-title">Domain Routing</h2>
+      <p class="form-hint" style="margin-bottom: 0.75rem;">
+        When users visit this domain, they'll be automatically routed to this gym on login.
+      </p>
+
+      <div class="form-group">
+        <label class="form-label" for="custom_domain">Custom Domain <span class="form-hint">(optional)</span></label>
+        <input class="form-input" type="text" id="custom_domain" name="custom_domain"
+               placeholder="e.g. routes.mosaicclimbing.com" maxlength="253"
+               value="{{.GymForm.CustomDomain}}">
+      </div>
+    </div>
+
     <div class="form-actions">
       <button type="submit" class="btn btn-primary">Save Changes</button>
       <a href="/settings/organization" class="btn btn-ghost"

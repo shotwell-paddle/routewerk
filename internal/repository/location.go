@@ -19,14 +19,14 @@ func NewLocationRepo(db *pgxpool.Pool) *LocationRepo {
 
 func (r *LocationRepo) Create(ctx context.Context, l *model.Location) error {
 	query := `
-		INSERT INTO locations (org_id, name, slug, address, timezone, website_url, phone, hours_json, day_pass_info, waiver_url, allow_shared_setters)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		INSERT INTO locations (org_id, name, slug, address, timezone, website_url, phone, hours_json, day_pass_info, waiver_url, allow_shared_setters, custom_domain)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING id, created_at, updated_at`
 
 	return r.db.QueryRow(ctx, query,
 		l.OrgID, l.Name, l.Slug, l.Address, l.Timezone,
 		l.WebsiteURL, l.Phone, l.HoursJSON, l.DayPassInfo,
-		l.WaiverURL, l.AllowSharedSetters,
+		l.WaiverURL, l.AllowSharedSetters, l.CustomDomain,
 	).Scan(&l.ID, &l.CreatedAt, &l.UpdatedAt)
 }
 
@@ -34,7 +34,7 @@ func (r *LocationRepo) GetByID(ctx context.Context, id string) (*model.Location,
 	query := `
 		SELECT id, org_id, name, slug, address, timezone, website_url, phone,
 			hours_json, day_pass_info, waiver_url, allow_shared_setters,
-			created_at, updated_at
+			custom_domain, created_at, updated_at
 		FROM locations
 		WHERE id = $1 AND deleted_at IS NULL`
 
@@ -42,7 +42,7 @@ func (r *LocationRepo) GetByID(ctx context.Context, id string) (*model.Location,
 	err := r.db.QueryRow(ctx, query, id).Scan(
 		&l.ID, &l.OrgID, &l.Name, &l.Slug, &l.Address, &l.Timezone,
 		&l.WebsiteURL, &l.Phone, &l.HoursJSON, &l.DayPassInfo,
-		&l.WaiverURL, &l.AllowSharedSetters, &l.CreatedAt, &l.UpdatedAt,
+		&l.WaiverURL, &l.AllowSharedSetters, &l.CustomDomain, &l.CreatedAt, &l.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -57,7 +57,7 @@ func (r *LocationRepo) ListByOrg(ctx context.Context, orgID string) ([]model.Loc
 	query := `
 		SELECT id, org_id, name, slug, address, timezone, website_url, phone,
 			hours_json, day_pass_info, waiver_url, allow_shared_setters,
-			created_at, updated_at
+			custom_domain, created_at, updated_at
 		FROM locations
 		WHERE org_id = $1 AND deleted_at IS NULL
 		ORDER BY name`
@@ -74,7 +74,7 @@ func (r *LocationRepo) ListByOrg(ctx context.Context, orgID string) ([]model.Loc
 		if err := rows.Scan(
 			&l.ID, &l.OrgID, &l.Name, &l.Slug, &l.Address, &l.Timezone,
 			&l.WebsiteURL, &l.Phone, &l.HoursJSON, &l.DayPassInfo,
-			&l.WaiverURL, &l.AllowSharedSetters, &l.CreatedAt, &l.UpdatedAt,
+			&l.WaiverURL, &l.AllowSharedSetters, &l.CustomDomain, &l.CreatedAt, &l.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan location: %w", err)
 		}
@@ -212,13 +212,38 @@ func (r *LocationRepo) Update(ctx context.Context, l *model.Location) error {
 		UPDATE locations
 		SET name = $2, slug = $3, address = $4, timezone = $5, website_url = $6,
 			phone = $7, hours_json = $8, day_pass_info = $9, waiver_url = $10,
-			allow_shared_setters = $11
+			allow_shared_setters = $11, custom_domain = $12
 		WHERE id = $1 AND deleted_at IS NULL
 		RETURNING updated_at`
 
 	return r.db.QueryRow(ctx, query,
 		l.ID, l.Name, l.Slug, l.Address, l.Timezone,
 		l.WebsiteURL, l.Phone, l.HoursJSON, l.DayPassInfo,
-		l.WaiverURL, l.AllowSharedSetters,
+		l.WaiverURL, l.AllowSharedSetters, l.CustomDomain,
 	).Scan(&l.UpdatedAt)
+}
+
+// GetByCustomDomain looks up a location by its vanity hostname.
+// Returns (nil, nil) when no location matches.
+func (r *LocationRepo) GetByCustomDomain(ctx context.Context, domain string) (*model.Location, error) {
+	query := `
+		SELECT id, org_id, name, slug, address, timezone, website_url, phone,
+			hours_json, day_pass_info, waiver_url, allow_shared_setters,
+			custom_domain, created_at, updated_at
+		FROM locations
+		WHERE custom_domain = $1 AND deleted_at IS NULL`
+
+	l := &model.Location{}
+	err := r.db.QueryRow(ctx, query, domain).Scan(
+		&l.ID, &l.OrgID, &l.Name, &l.Slug, &l.Address, &l.Timezone,
+		&l.WebsiteURL, &l.Phone, &l.HoursJSON, &l.DayPassInfo,
+		&l.WaiverURL, &l.AllowSharedSetters, &l.CustomDomain, &l.CreatedAt, &l.UpdatedAt,
+	)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get location by custom domain: %w", err)
+	}
+	return l, nil
 }

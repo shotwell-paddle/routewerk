@@ -404,13 +404,14 @@ func (v RouteFormValues) HasTag(id string) bool {
 
 // GymFormValues holds form state for creating/editing a gym location.
 type GymFormValues struct {
-	Name        string
-	Slug        string
-	Address     string
-	Timezone    string
-	WebsiteURL  string
-	Phone       string
-	DayPassInfo string
+	Name         string
+	Slug         string
+	Address      string
+	Timezone     string
+	WebsiteURL   string
+	Phone        string
+	DayPassInfo  string
+	CustomDomain string
 }
 
 // HoldColor represents a color swatch in the route form.

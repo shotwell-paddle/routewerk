@@ -33,6 +33,7 @@ type Location struct {
 	DayPassInfo        *string            `json:"day_pass_info,omitempty"`
 	WaiverURL          *string            `json:"waiver_url,omitempty"`
 	AllowSharedSetters bool               `json:"allow_shared_setters"`
+	CustomDomain       *string            `json:"custom_domain,omitempty"`
 	CreatedAt          time.Time          `json:"created_at"`
 	UpdatedAt          time.Time          `json:"updated_at"`
 	DeletedAt          pgtype.Timestamptz `json:"-"`

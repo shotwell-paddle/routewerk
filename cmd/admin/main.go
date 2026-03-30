@@ -63,6 +63,8 @@ func main() {
 		listOrgs(ctx, db)
 	case "reset-password":
 		resetPassword(ctx, db, os.Args[2:])
+	case "set-domain":
+		setDomain(ctx, db, os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", os.Args[1])
 		printUsage()
@@ -100,6 +102,11 @@ Organizations:
 Users:
   reset-password --email <email> --password <new-password>
                Reset a user's password (admin override, no old password required).
+
+Locations:
+  set-domain   --location-id <id> --domain <hostname>
+               Set the custom_domain for a location (e.g. routes.mosaicclimbing.com).
+               Pass --domain "" to clear.
 
 Environment:
   DATABASE_URL   PostgreSQL connection string (required)`)
@@ -483,4 +490,46 @@ func resetPassword(ctx context.Context, db *pgxpool.Pool, args []string) {
 	}
 
 	fmt.Printf("Password reset for %s (%s)\n", user.DisplayName, user.Email)
+}
+
+func setDomain(ctx context.Context, db *pgxpool.Pool, args []string) {
+	var locationID, domain string
+	domainSet := false
+	for i := 0; i < len(args)-1; i += 2 {
+		switch args[i] {
+		case "--location-id":
+			locationID = args[i+1]
+		case "--domain":
+			domain = args[i+1]
+			domainSet = true
+		}
+	}
+
+	if locationID == "" || !domainSet {
+		log.Fatal("usage: set-domain --location-id <id> --domain <hostname>")
+	}
+
+	locationRepo := repository.NewLocationRepo(db)
+	loc, err := locationRepo.GetByID(ctx, locationID)
+	if err != nil {
+		log.Fatalf("database error: %v", err)
+	}
+	if loc == nil {
+		log.Fatalf("location not found: %s", locationID)
+	}
+
+	domain = strings.TrimSpace(strings.ToLower(domain))
+	if domain == "" {
+		loc.CustomDomain = nil
+		fmt.Printf("clearing custom_domain for %q (%s)\n", loc.Name, loc.ID)
+	} else {
+		loc.CustomDomain = &domain
+		fmt.Printf("setting custom_domain=%s for %q (%s)\n", domain, loc.Name, loc.ID)
+	}
+
+	if err := locationRepo.Update(ctx, loc); err != nil {
+		log.Fatalf("failed to update location: %v", err)
+	}
+
+	fmt.Println("done")
 }

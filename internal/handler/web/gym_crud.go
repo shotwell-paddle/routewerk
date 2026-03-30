@@ -1,6 +1,7 @@
 package webhandler
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
+	"github.com/shotwell-paddle/routewerk/internal/repository"
 )
 
 // ── Gym Creation (org_admin only) ────────────────────────────
@@ -142,6 +144,9 @@ func (h *Handler) GymCreate(w http.ResponseWriter, r *http.Request) {
 		h.render(w, r, "setter/gym-new.html", data)
 		return
 	}
+
+	// Apply org-level grading defaults to the new location's settings.
+	applyOrgDefaults(ctx, h.settingsRepo, loc.OrgID, newLoc.ID)
 
 	slog.Info("new gym created", "location_id", newLoc.ID, "name", name, "org_id", loc.OrgID)
 
@@ -314,6 +319,26 @@ func nilIfEmpty(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// applyOrgDefaults reads the organization's default grading preferences and
+// applies them to a newly created location's settings. Non-fatal — if anything
+// fails the location just keeps the hardcoded defaults.
+func applyOrgDefaults(ctx context.Context, settingsRepo *repository.SettingsRepo, orgID, locationID string) {
+	orgSettings, err := settingsRepo.GetOrgSettings(ctx, orgID)
+	if err != nil {
+		slog.Error("load org defaults for new gym", "org_id", orgID, "error", err)
+		return
+	}
+
+	locSettings := model.DefaultLocationSettings()
+	locSettings.Grading.BoulderMethod = orgSettings.Defaults.BoulderMethod
+	locSettings.Grading.RouteGradeFormat = orgSettings.Defaults.RouteGradeFormat
+	locSettings.Grading.ShowGradesOnCircuit = orgSettings.Defaults.ShowGradesOnCircuit
+
+	if err := settingsRepo.UpdateLocationSettings(ctx, locationID, locSettings); err != nil {
+		slog.Error("apply org defaults to new gym", "location_id", locationID, "error", err)
+	}
 }
 
 // gymSlugify creates a URL-safe slug from a string.

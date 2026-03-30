@@ -87,6 +87,9 @@ func (h *Handler) SetupSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Apply org-level grading defaults to the new location.
+	applyOrgDefaults(ctx, h.settingsRepo, org.ID, loc.ID)
+
 	// Create org_admin membership for the current user (org-scoped, no location_id).
 	membership := &model.UserMembership{
 		UserID: user.ID,

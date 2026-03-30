@@ -21,7 +21,7 @@ type PoolConfig struct {
 	MaxConnIdleTime time.Duration
 }
 
-func Connect(databaseURL string, isDev bool, pool ...PoolConfig) (*pgxpool.Pool, error) {
+func Connect(databaseURL string, isDev bool, poolCfg ...PoolConfig) (*pgxpool.Pool, error) {
 	// On Fly.io, Postgres is accessed over an encrypted WireGuard tunnel
 	// (*.flycast) so TLS at the Postgres layer is unnecessary and unsupported.
 	onFlyNetwork := os.Getenv("FLY_APP_NAME") != "" &&
@@ -37,8 +37,8 @@ func Connect(databaseURL string, isDev bool, pool ...PoolConfig) (*pgxpool.Pool,
 
 	// Apply pool settings from caller, or use sensible defaults.
 	pc := PoolConfig{MaxConns: 10, MinConns: 2, MaxConnLifetime: 1 * time.Hour, MaxConnIdleTime: 30 * time.Minute}
-	if len(pool) > 0 {
-		pc = pool[0]
+	if len(poolCfg) > 0 {
+		pc = poolCfg[0]
 	}
 	config.MaxConns = pc.MaxConns
 	config.MinConns = pc.MinConns

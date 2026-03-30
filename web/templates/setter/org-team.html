@@ -31,20 +31,22 @@
            hx-vals='{{if .TeamRoleFilter}}{"role":"{{.TeamRoleFilter}}"}{{else}}{}{{end}}'>
   </div>
 
-  <!-- Role filter tabs -->
-  <div class="filter-tabs">
-    <a class="filter-tab {{if eq .TeamRoleFilter ""}}active{{end}}"
-       hx-get="/settings/organization/team{{if .TeamQuery}}?q={{.TeamQuery}}{{end}}"
-       hx-target="#main-content" hx-push-url="true">All</a>
-    <a class="filter-tab {{if eq .TeamRoleFilter "setter"}}active{{end}}"
-       hx-get="/settings/organization/team?role=setter{{if .TeamQuery}}&q={{.TeamQuery}}{{end}}"
-       hx-target="#main-content" hx-push-url="true">Setters</a>
-    <a class="filter-tab {{if eq .TeamRoleFilter "head_setter"}}active{{end}}"
-       hx-get="/settings/organization/team?role=head_setter{{if .TeamQuery}}&q={{.TeamQuery}}{{end}}"
-       hx-target="#main-content" hx-push-url="true">Head Setters</a>
-    <a class="filter-tab {{if eq .TeamRoleFilter "gym_manager"}}active{{end}}"
-       hx-get="/settings/organization/team?role=gym_manager{{if .TeamQuery}}&q={{.TeamQuery}}{{end}}"
-       hx-target="#main-content" hx-push-url="true">Managers</a>
+  <!-- Role filters -->
+  <div class="filter-bar mb-4">
+    <div class="flex gap-2 flex-wrap">
+      <button class="filter-chip {{if eq .TeamRoleFilter ""}}active{{end}}"
+              hx-get="/settings/organization/team{{if .TeamQuery}}?q={{.TeamQuery}}{{end}}"
+              hx-target="#main-content" hx-push-url="true">All</button>
+      <button class="filter-chip {{if eq .TeamRoleFilter "setter"}}active{{end}}"
+              hx-get="/settings/organization/team?role=setter{{if .TeamQuery}}&q={{.TeamQuery}}{{end}}"
+              hx-target="#main-content" hx-push-url="true">Setters</button>
+      <button class="filter-chip {{if eq .TeamRoleFilter "head_setter"}}active{{end}}"
+              hx-get="/settings/organization/team?role=head_setter{{if .TeamQuery}}&q={{.TeamQuery}}{{end}}"
+              hx-target="#main-content" hx-push-url="true">Head Setters</button>
+      <button class="filter-chip {{if eq .TeamRoleFilter "gym_manager"}}active{{end}}"
+              hx-get="/settings/organization/team?role=gym_manager{{if .TeamQuery}}&q={{.TeamQuery}}{{end}}"
+              hx-target="#main-content" hx-push-url="true">Managers</button>
+    </div>
   </div>
 
   {{if .TeamMembers}}

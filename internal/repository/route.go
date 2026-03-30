@@ -13,6 +13,70 @@ type RouteRepo struct {
 	db *pgxpool.Pool
 }
 
+// whereBuilder accumulates WHERE conditions and positional args for pgx.
+type whereBuilder struct {
+	conds []string
+	args  []interface{}
+	argN  int
+}
+
+func newWhereBuilder(firstArg interface{}) *whereBuilder {
+	return &whereBuilder{
+		conds: []string{"r.location_id = $1", "r.deleted_at IS NULL"},
+		args:  []interface{}{firstArg},
+		argN:  2,
+	}
+}
+
+func (wb *whereBuilder) addEq(col, val string) {
+	if val == "" {
+		return
+	}
+	wb.conds = append(wb.conds, fmt.Sprintf("%s = $%d", col, wb.argN))
+	wb.args = append(wb.args, val)
+	wb.argN++
+}
+
+func (wb *whereBuilder) addGte(col, val string) {
+	if val == "" {
+		return
+	}
+	wb.conds = append(wb.conds, fmt.Sprintf("%s >= $%d", col, wb.argN))
+	wb.args = append(wb.args, val)
+	wb.argN++
+}
+
+func (wb *whereBuilder) addLte(col, val string) {
+	if val == "" {
+		return
+	}
+	wb.conds = append(wb.conds, fmt.Sprintf("%s <= $%d", col, wb.argN))
+	wb.args = append(wb.args, val)
+	wb.argN++
+}
+
+func (wb *whereBuilder) addIn(col string, vals []string) {
+	if len(vals) == 0 {
+		return
+	}
+	placeholders := make([]string, len(vals))
+	for i, v := range vals {
+		placeholders[i] = fmt.Sprintf("$%d", wb.argN)
+		wb.args = append(wb.args, v)
+		wb.argN++
+	}
+	wb.conds = append(wb.conds, fmt.Sprintf("%s IN (%s)", col, strings.Join(placeholders, ",")))
+}
+
+func (wb *whereBuilder) clause() string {
+	return strings.Join(wb.conds, " AND ")
+}
+
+// nextArg returns the next positional parameter index (for LIMIT/OFFSET).
+func (wb *whereBuilder) nextArg() int {
+	return wb.argN
+}
+
 func NewRouteRepo(db *pgxpool.Pool) *RouteRepo {
 	return &RouteRepo{db: db}
 }
@@ -101,67 +165,28 @@ type RouteFilter struct {
 	Offset       int
 }
 
+// buildWhere constructs the shared WHERE clause for route queries.
+func (f RouteFilter) buildWhere() *whereBuilder {
+	wb := newWhereBuilder(f.LocationID)
+	wb.addEq("r.wall_id", f.WallID)
+	wb.addEq("r.status", f.Status)
+	wb.addEq("r.route_type", f.RouteType)
+	wb.addEq("r.grade", f.Grade)
+	wb.addIn("r.grade", f.GradeIn)
+	wb.addEq("r.circuit_color", f.CircuitColor)
+	wb.addEq("r.setter_id", f.SetterID)
+	wb.addGte("r.date_set", f.DateFrom)
+	wb.addLte("r.date_set", f.DateTo)
+	return wb
+}
+
 func (r *RouteRepo) List(ctx context.Context, f RouteFilter) ([]model.Route, int, error) {
-	where := []string{"r.location_id = $1", "r.deleted_at IS NULL"}
-	args := []interface{}{f.LocationID}
-	argN := 2
-
-	if f.WallID != "" {
-		where = append(where, fmt.Sprintf("r.wall_id = $%d", argN))
-		args = append(args, f.WallID)
-		argN++
-	}
-	if f.Status != "" {
-		where = append(where, fmt.Sprintf("r.status = $%d", argN))
-		args = append(args, f.Status)
-		argN++
-	}
-	if f.RouteType != "" {
-		where = append(where, fmt.Sprintf("r.route_type = $%d", argN))
-		args = append(args, f.RouteType)
-		argN++
-	}
-	if f.Grade != "" {
-		where = append(where, fmt.Sprintf("r.grade = $%d", argN))
-		args = append(args, f.Grade)
-		argN++
-	}
-	if len(f.GradeIn) > 0 {
-		placeholders := make([]string, len(f.GradeIn))
-		for i, g := range f.GradeIn {
-			placeholders[i] = fmt.Sprintf("$%d", argN)
-			args = append(args, g)
-			argN++
-		}
-		where = append(where, fmt.Sprintf("r.grade IN (%s)", strings.Join(placeholders, ",")))
-	}
-	if f.CircuitColor != "" {
-		where = append(where, fmt.Sprintf("r.circuit_color = $%d", argN))
-		args = append(args, f.CircuitColor)
-		argN++
-	}
-	if f.SetterID != "" {
-		where = append(where, fmt.Sprintf("r.setter_id = $%d", argN))
-		args = append(args, f.SetterID)
-		argN++
-	}
-	if f.DateFrom != "" {
-		where = append(where, fmt.Sprintf("r.date_set >= $%d", argN))
-		args = append(args, f.DateFrom)
-		argN++
-	}
-	if f.DateTo != "" {
-		where = append(where, fmt.Sprintf("r.date_set <= $%d", argN))
-		args = append(args, f.DateTo)
-		argN++
-	}
-
-	whereClause := strings.Join(where, " AND ")
+	wb := f.buildWhere()
 
 	// Count total
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM routes r WHERE %s", whereClause)
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM routes r WHERE %s", wb.clause())
 	var total int
-	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+	if err := r.db.QueryRow(ctx, countQuery, wb.args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count routes: %w", err)
 	}
 
@@ -175,6 +200,7 @@ func (r *RouteRepo) List(ctx context.Context, f RouteFilter) ([]model.Route, int
 		offset = 0
 	}
 
+	argN := wb.nextArg()
 	query := fmt.Sprintf(`
 		SELECT r.id, r.location_id, r.wall_id, r.setter_id, r.route_type, r.status,
 			r.grading_system, r.grade, r.grade_low, r.grade_high, r.circuit_color,
@@ -185,9 +211,9 @@ func (r *RouteRepo) List(ctx context.Context, f RouteFilter) ([]model.Route, int
 		WHERE %s
 		ORDER BY r.date_set DESC, r.created_at DESC
 		LIMIT $%d OFFSET $%d`,
-		whereClause, argN, argN+1)
+		wb.clause(), argN, argN+1)
 
-	args = append(args, limit, offset)
+	args := append(wb.args, limit, offset)
 
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
@@ -222,66 +248,12 @@ type RouteWithDetails struct {
 // ListWithDetails returns routes joined with wall and setter info.
 // Used by the web frontend which needs display names alongside route data.
 func (r *RouteRepo) ListWithDetails(ctx context.Context, f RouteFilter) ([]RouteWithDetails, int, error) {
-	where := []string{"r.location_id = $1", "r.deleted_at IS NULL"}
-	args := []interface{}{f.LocationID}
-	argN := 2
-
-	if f.WallID != "" {
-		where = append(where, fmt.Sprintf("r.wall_id = $%d", argN))
-		args = append(args, f.WallID)
-		argN++
-	}
-	if f.Status != "" {
-		where = append(where, fmt.Sprintf("r.status = $%d", argN))
-		args = append(args, f.Status)
-		argN++
-	}
-	if f.RouteType != "" {
-		where = append(where, fmt.Sprintf("r.route_type = $%d", argN))
-		args = append(args, f.RouteType)
-		argN++
-	}
-	if f.Grade != "" {
-		where = append(where, fmt.Sprintf("r.grade = $%d", argN))
-		args = append(args, f.Grade)
-		argN++
-	}
-	if len(f.GradeIn) > 0 {
-		placeholders := make([]string, len(f.GradeIn))
-		for i, g := range f.GradeIn {
-			placeholders[i] = fmt.Sprintf("$%d", argN)
-			args = append(args, g)
-			argN++
-		}
-		where = append(where, fmt.Sprintf("r.grade IN (%s)", strings.Join(placeholders, ",")))
-	}
-	if f.CircuitColor != "" {
-		where = append(where, fmt.Sprintf("r.circuit_color = $%d", argN))
-		args = append(args, f.CircuitColor)
-		argN++
-	}
-	if f.SetterID != "" {
-		where = append(where, fmt.Sprintf("r.setter_id = $%d", argN))
-		args = append(args, f.SetterID)
-		argN++
-	}
-	if f.DateFrom != "" {
-		where = append(where, fmt.Sprintf("r.date_set >= $%d", argN))
-		args = append(args, f.DateFrom)
-		argN++
-	}
-	if f.DateTo != "" {
-		where = append(where, fmt.Sprintf("r.date_set <= $%d", argN))
-		args = append(args, f.DateTo)
-		argN++
-	}
-
-	whereClause := strings.Join(where, " AND ")
+	wb := f.buildWhere()
 
 	// Count total
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM routes r WHERE %s", whereClause)
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM routes r WHERE %s", wb.clause())
 	var total int
-	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+	if err := r.db.QueryRow(ctx, countQuery, wb.args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count routes: %w", err)
 	}
 
@@ -294,6 +266,7 @@ func (r *RouteRepo) ListWithDetails(ctx context.Context, f RouteFilter) ([]Route
 		offset = 0
 	}
 
+	argN := wb.nextArg()
 	query := fmt.Sprintf(`
 		SELECT r.id, r.location_id, r.wall_id, r.setter_id, r.route_type, r.status,
 			r.grading_system, r.grade, r.grade_low, r.grade_high, r.circuit_color,
@@ -308,9 +281,9 @@ func (r *RouteRepo) ListWithDetails(ctx context.Context, f RouteFilter) ([]Route
 		WHERE %s
 		ORDER BY r.date_set DESC, r.created_at DESC
 		LIMIT $%d OFFSET $%d`,
-		whereClause, argN, argN+1)
+		wb.clause(), argN, argN+1)
 
-	args = append(args, limit, offset)
+	args := append(wb.args, limit, offset)
 
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {

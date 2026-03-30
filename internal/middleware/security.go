@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"compress/gzip"
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -35,8 +36,8 @@ func SecureHeadersWeb(next http.Handler) http.Handler {
 	csp := strings.Join([]string{
 		"default-src 'none'",
 		"script-src 'self'",
-		"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-		"font-src 'self' https://fonts.gstatic.com",
+		"style-src 'self' 'unsafe-inline'",
+		"font-src 'self'",
 		"img-src 'self' data:",
 		"connect-src 'self'",
 		"frame-ancestors 'none'",
@@ -229,4 +230,17 @@ func (rl *RateLimiter) Limit(next http.Handler) http.Handler {
 		rl.mu.Unlock()
 		next.ServeHTTP(w, r)
 	})
+}
+
+// RequestTimeout wraps each request context with a deadline so that all
+// downstream work (DB queries, S3 calls, etc.) is automatically cancelled
+// if the handler exceeds the given duration.
+func RequestTimeout(d time.Duration) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx, cancel := context.WithTimeout(r.Context(), d)
+			defer cancel()
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }

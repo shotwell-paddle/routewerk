@@ -106,8 +106,8 @@ func TestSecureHeadersWeb(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	csp := rec.Header().Get("Content-Security-Policy")
-	// Web CSP should allow self-hosted scripts and Google Fonts
-	for _, fragment := range []string{"script-src 'self'", "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", "font-src 'self' https://fonts.gstatic.com"} {
+	// Web CSP should allow self-hosted scripts and fonts
+	for _, fragment := range []string{"script-src 'self'", "style-src 'self' 'unsafe-inline'", "font-src 'self'"} {
 		if !strings.Contains(csp, fragment) {
 			t.Errorf("web CSP missing %q, got %q", fragment, csp)
 		}

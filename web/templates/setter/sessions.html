@@ -20,13 +20,15 @@
 </div>
 
 <div class="page-body">
-  <div class="filter-tabs">
-    <a href="/sessions" class="filter-tab {{if eq .SessionFilter ""}}active{{end}}"
-       hx-get="/sessions" hx-target="#main-content" hx-push-url="true">All</a>
-    <a href="/sessions?status=open" class="filter-tab {{if eq .SessionFilter "open"}}active{{end}}"
-       hx-get="/sessions?status=open" hx-target="#main-content" hx-push-url="true">Open</a>
-    <a href="/sessions?status=complete" class="filter-tab {{if eq .SessionFilter "complete"}}active{{end}}"
-       hx-get="/sessions?status=complete" hx-target="#main-content" hx-push-url="true">Complete</a>
+  <div class="filter-bar mb-4">
+    <div class="flex gap-2 flex-wrap">
+      <button class="filter-chip {{if eq .SessionFilter ""}}active{{end}}"
+              hx-get="/sessions" hx-target="#main-content" hx-push-url="true">All</button>
+      <button class="filter-chip {{if eq .SessionFilter "open"}}active{{end}}"
+              hx-get="/sessions?status=open" hx-target="#main-content" hx-push-url="true">Open</button>
+      <button class="filter-chip {{if eq .SessionFilter "complete"}}active{{end}}"
+              hx-get="/sessions?status=complete" hx-target="#main-content" hx-push-url="true">Complete</button>
+    </div>
   </div>
 
   <div class="session-list">

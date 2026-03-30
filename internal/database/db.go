@@ -13,7 +13,15 @@ import (
 // Connect opens a connection pool to PostgreSQL. In non-development
 // environments, it refuses to connect without TLS (sslmode=disable is
 // rejected and the absence of an sslmode parameter defaults to require).
-func Connect(databaseURL string, isDev bool) (*pgxpool.Pool, error) {
+// PoolConfig holds tunable connection pool parameters.
+type PoolConfig struct {
+	MaxConns        int32
+	MinConns        int32
+	MaxConnLifetime time.Duration
+	MaxConnIdleTime time.Duration
+}
+
+func Connect(databaseURL string, isDev bool, pool ...PoolConfig) (*pgxpool.Pool, error) {
 	// On Fly.io, Postgres is accessed over an encrypted WireGuard tunnel
 	// (*.flycast) so TLS at the Postgres layer is unnecessary and unsupported.
 	onFlyNetwork := os.Getenv("FLY_APP_NAME") != "" &&
@@ -27,10 +35,15 @@ func Connect(databaseURL string, isDev bool) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("parse database url: %w", err)
 	}
 
-	config.MaxConns = 10
-	config.MinConns = 2
-	config.MaxConnLifetime = 1 * time.Hour
-	config.MaxConnIdleTime = 30 * time.Minute
+	// Apply pool settings from caller, or use sensible defaults.
+	pc := PoolConfig{MaxConns: 10, MinConns: 2, MaxConnLifetime: 1 * time.Hour, MaxConnIdleTime: 30 * time.Minute}
+	if len(pool) > 0 {
+		pc = pool[0]
+	}
+	config.MaxConns = pc.MaxConns
+	config.MinConns = pc.MinConns
+	config.MaxConnLifetime = pc.MaxConnLifetime
+	config.MaxConnIdleTime = pc.MaxConnIdleTime
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -24,12 +25,22 @@ type Config struct {
 	ExtraOrigins        []string // additional allowed CORS origins
 	SessionSecret       string
 	SessionMaxAge       time.Duration
+	DBMaxConns          int32
+	DBMinConns          int32
+	DBMaxConnLifetime   time.Duration
+	DBMaxConnIdleTime   time.Duration
+	QueryTimeout        time.Duration
 }
 
 func Load() *Config {
 	jwtExpiry, _ := time.ParseDuration(getEnv("JWT_EXPIRY", "15m"))
 	refreshExpiry, _ := time.ParseDuration(getEnv("REFRESH_TOKEN_EXPIRY", "720h"))
 	sessionMaxAge, _ := time.ParseDuration(getEnv("SESSION_MAX_AGE", "720h")) // 30 days
+	dbMaxConns := getEnvInt("DB_MAX_CONNS", 10)
+	dbMinConns := getEnvInt("DB_MIN_CONNS", 2)
+	dbMaxConnLifetime, _ := time.ParseDuration(getEnv("DB_MAX_CONN_LIFETIME", "1h"))
+	dbMaxConnIdleTime, _ := time.ParseDuration(getEnv("DB_MAX_CONN_IDLE_TIME", "30m"))
+	queryTimeout, _ := time.ParseDuration(getEnv("QUERY_TIMEOUT", "5s"))
 
 	return &Config{
 		Port:               getEnv("PORT", "8080"),
@@ -48,6 +59,11 @@ func Load() *Config {
 		ExtraOrigins:       parseOrigins(getEnv("EXTRA_ORIGINS", "")),
 		SessionSecret:      getEnv("SESSION_SECRET", "change-me-session"),
 		SessionMaxAge:      sessionMaxAge,
+		DBMaxConns:         int32(dbMaxConns),
+		DBMinConns:         int32(dbMinConns),
+		DBMaxConnLifetime:  dbMaxConnLifetime,
+		DBMaxConnIdleTime:  dbMaxConnIdleTime,
+		QueryTimeout:       queryTimeout,
 	}
 }
 
@@ -174,4 +190,16 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getEnvInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	return n
 }

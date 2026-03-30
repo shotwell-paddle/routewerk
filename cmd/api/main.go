@@ -40,7 +40,12 @@ func main() {
 	}
 
 	// Connect to database
-	db, err := database.Connect(cfg.DatabaseURL, cfg.IsDev())
+	db, err := database.Connect(cfg.DatabaseURL, cfg.IsDev(), database.PoolConfig{
+		MaxConns:        cfg.DBMaxConns,
+		MinConns:        cfg.DBMinConns,
+		MaxConnLifetime: cfg.DBMaxConnLifetime,
+		MaxConnIdleTime: cfg.DBMaxConnIdleTime,
+	})
 	if err != nil {
 		slog.Error("failed to connect to database", "error", err)
 		os.Exit(1)

@@ -134,11 +134,12 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 		r.Handle("/static/*", webhandler.StaticHandler())
 	})
 
-	// Web pages — web-specific CSP, CSRF, rate limiting, gzip
+	// Web pages — web-specific CSP, CSRF, rate limiting, gzip, query timeout
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.SecureHeadersWeb)
 		r.Use(middleware.Gzip)
 		r.Use(webLimiter.Limit)
+		r.Use(middleware.RequestTimeout(cfg.QueryTimeout))
 		r.Use(csrf.Protect)
 
 		// Public auth routes (no session required, stricter rate limit)
@@ -267,9 +268,10 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 		})
 	})
 
-	// API v1 — JSON API with restrictive CSP
+	// API v1 — JSON API with restrictive CSP and query timeout
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(middleware.SecureHeaders)
+		r.Use(middleware.RequestTimeout(cfg.QueryTimeout))
 		// Public — rate-limited auth endpoints
 		r.Group(func(r chi.Router) {
 			r.Use(authLimiter.Limit)

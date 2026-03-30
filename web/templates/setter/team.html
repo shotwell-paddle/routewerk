@@ -1,0 +1,108 @@
+{{define "title"}}Team — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Team</h1>
+    <p class="page-subtitle">{{if .Location}}{{.Location.Name}}{{end}} — {{.TeamTotalCount}} member{{if ne .TeamTotalCount 1}}s{{end}}</p>
+  </div>
+  <a href="/settings" class="btn btn-ghost"
+     hx-get="/settings" hx-target="#main-content" hx-push-url="true">
+    &larr; Gym Settings
+  </a>
+</div>
+
+{{if .SettingsSuccess}}
+<div class="settings-toast" id="settings-toast">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+  </svg>
+  Role updated
+</div>
+{{end}}
+
+<div class="page-body">
+  <!-- Search -->
+  <div class="team-toolbar">
+    <input type="search" name="q" value="{{.TeamQuery}}" class="form-input team-search-input"
+           placeholder="Search by name or email…" autocomplete="off"
+           hx-get="/settings/team" hx-target="#main-content" hx-push-url="true"
+           hx-trigger="input changed delay:300ms, search"
+           hx-vals='{{if .TeamRoleFilter}}{"role":"{{.TeamRoleFilter}}"}{{else}}{}{{end}}'>
+  </div>
+
+  <!-- Role filter tabs -->
+  <div class="filter-tabs">
+    <a class="filter-tab {{if eq .TeamRoleFilter ""}}active{{end}}"
+       hx-get="/settings/team{{if .TeamQuery}}?q={{.TeamQuery}}{{end}}"
+       hx-target="#main-content" hx-push-url="true">All</a>
+    <a class="filter-tab {{if eq .TeamRoleFilter "setter"}}active{{end}}"
+       hx-get="/settings/team?role=setter{{if .TeamQuery}}&q={{.TeamQuery}}{{end}}"
+       hx-target="#main-content" hx-push-url="true">Setters</a>
+    <a class="filter-tab {{if eq .TeamRoleFilter "head_setter"}}active{{end}}"
+       hx-get="/settings/team?role=head_setter{{if .TeamQuery}}&q={{.TeamQuery}}{{end}}"
+       hx-target="#main-content" hx-push-url="true">Head Setters</a>
+    <a class="filter-tab {{if eq .TeamRoleFilter "climber"}}active{{end}}"
+       hx-get="/settings/team?role=climber{{if .TeamQuery}}&q={{.TeamQuery}}{{end}}"
+       hx-target="#main-content" hx-push-url="true">Climbers</a>
+  </div>
+
+  {{if .TeamMembers}}
+  <div class="team-list">
+    {{range .TeamMembers}}
+    <div class="team-member">
+      <div class="team-member-avatar">{{slice .DisplayName 0 1}}</div>
+      <div class="team-member-info">
+        <div class="team-member-name">{{.DisplayName}}</div>
+        <div class="team-member-email">{{.Email}}</div>
+      </div>
+      <div class="team-member-role">
+        {{if or (eq .Role "org_admin") (eq .Role "gym_manager")}}
+        <span class="role-badge role-{{.Role}}">{{.Role | roleName}}</span>
+        {{else}}
+        <select name="role" class="form-input form-input-sm team-role-select"
+                hx-post="/settings/team/{{.MembershipID}}/role"
+                hx-vals='{"_csrf_token": "{{$.CSRFToken}}"}'
+                hx-target="#main-content"
+                hx-trigger="change">
+          <option value="climber" {{if eq .Role "climber"}}selected{{end}}>Climber</option>
+          <option value="setter" {{if eq .Role "setter"}}selected{{end}}>Setter</option>
+          {{if $.IsManager}}
+          <option value="head_setter" {{if eq .Role "head_setter"}}selected{{end}}>Head Setter</option>
+          {{end}}
+        </select>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+  </div>
+
+  {{if gt .TeamTotalPages 1}}
+  <div class="team-pagination">
+    {{if gt .TeamPage 1}}
+    <a class="btn btn-ghost btn-sm"
+       hx-get="/settings/team?page={{sub .TeamPage 1}}{{if .TeamQuery}}&q={{.TeamQuery}}{{end}}{{if .TeamRoleFilter}}&role={{.TeamRoleFilter}}{{end}}"
+       hx-target="#main-content" hx-push-url="true">&larr; Previous</a>
+    {{end}}
+    <span class="team-page-info">Page {{.TeamPage}} of {{.TeamTotalPages}}</span>
+    {{if lt .TeamPage .TeamTotalPages}}
+    <a class="btn btn-ghost btn-sm"
+       hx-get="/settings/team?page={{add .TeamPage 1}}{{if .TeamQuery}}&q={{.TeamQuery}}{{end}}{{if .TeamRoleFilter}}&role={{.TeamRoleFilter}}{{end}}"
+       hx-target="#main-content" hx-push-url="true">Next &rarr;</a>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{else}}
+  <div class="empty-state">
+    {{if .TeamQuery}}
+    <h3>No results</h3>
+    <p>No members match "{{.TeamQuery}}".</p>
+    {{else}}
+    <h3>No members yet</h3>
+    <p>Members will appear here once they join your gym.</p>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}

@@ -28,6 +28,16 @@ func (r *OrgRepo) Create(ctx context.Context, o *model.Organization) error {
 	).Scan(&o.ID, &o.CreatedAt, &o.UpdatedAt)
 }
 
+// Count returns the total number of active organizations.
+func (r *OrgRepo) Count(ctx context.Context) (int, error) {
+	var count int
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM organizations WHERE deleted_at IS NULL`).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count orgs: %w", err)
+	}
+	return count, nil
+}
+
 func (r *OrgRepo) GetByID(ctx context.Context, id string) (*model.Organization, error) {
 	query := `
 		SELECT id, name, slug, logo_url, created_at, updated_at
@@ -115,4 +125,45 @@ func (r *OrgRepo) AddMember(ctx context.Context, m *model.UserMembership) error 
 	return r.db.QueryRow(ctx, query,
 		m.UserID, m.OrgID, m.LocationID, m.Role, m.Specialties,
 	).Scan(&m.ID, &m.CreatedAt, &m.UpdatedAt)
+}
+
+// EnsureOrgScopedMembership makes sure the user has an org-wide membership
+// (location_id IS NULL) at the given role or higher. If they only have
+// location-scoped memberships, this upgrades the highest one to org-scoped.
+// This is needed so org_admins can see all locations in the gym switcher.
+func (r *OrgRepo) EnsureOrgScopedMembership(ctx context.Context, userID, orgID, role string) error {
+	// Check if an org-scoped membership already exists
+	var exists bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM user_memberships
+			WHERE user_id = $1 AND org_id = $2 AND location_id IS NULL AND deleted_at IS NULL
+		)`, userID, orgID).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("check org membership: %w", err)
+	}
+	if exists {
+		return nil
+	}
+
+	// No org-scoped membership — upgrade the user's location-scoped one to org-scoped
+	_, err = r.db.Exec(ctx, `
+		UPDATE user_memberships
+		SET location_id = NULL, role = $3, updated_at = NOW()
+		WHERE id = (
+			SELECT id FROM user_memberships
+			WHERE user_id = $1 AND org_id = $2 AND deleted_at IS NULL
+			ORDER BY CASE role
+				WHEN 'org_admin' THEN 1
+				WHEN 'gym_manager' THEN 2
+				WHEN 'head_setter' THEN 3
+				WHEN 'setter' THEN 4
+				ELSE 5
+			END
+			LIMIT 1
+		)`, userID, orgID, role)
+	if err != nil {
+		return fmt.Errorf("upgrade to org membership: %w", err)
+	}
+	return nil
 }

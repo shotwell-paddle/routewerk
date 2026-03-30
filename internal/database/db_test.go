@@ -2,6 +2,25 @@ package database
 
 import "testing"
 
+func TestToPgx5URL(t *testing.T) {
+	tests := []struct {
+		name, input, want string
+	}{
+		{"postgres scheme", "postgres://user:pass@host:5432/db", "pgx5://user:pass@host:5432/db"},
+		{"postgresql scheme", "postgresql://user:pass@host:5432/db", "pgx5://user:pass@host:5432/db"},
+		{"already pgx5", "pgx5://user:pass@host:5432/db", "pgx5://user:pass@host:5432/db"},
+		{"with params", "postgres://u:p@h/db?sslmode=require", "pgx5://u:p@h/db?sslmode=require"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := toPgx5URL(tc.input)
+			if got != tc.want {
+				t.Errorf("toPgx5URL(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestEnforceTLS(t *testing.T) {
 	tests := []struct {
 		name     string

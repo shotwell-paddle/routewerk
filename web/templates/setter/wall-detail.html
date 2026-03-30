@@ -1,0 +1,75 @@
+{{define "title"}}{{.Wall.Name}} — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <div class="flex items-center gap-3">
+        <a href="/walls" class="btn btn-ghost btn-sm"
+           hx-get="/walls" hx-target="#main-content" hx-push-url="true"
+           title="Back to walls">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+        </a>
+        <div>
+          <h1>{{.Wall.Name}}</h1>
+          <p class="page-subtitle">
+            {{.Wall.WallType | title}}{{if .Wall.Angle}} · {{deref .Wall.Angle}}{{end}}
+            {{if .Wall.HeightMeters}} · {{printf "%.1f" (derefFloat .Wall.HeightMeters)}}m{{end}}
+            — {{.TotalRoutes}} routes
+          </p>
+        </div>
+      </div>
+    </div>
+    <div class="flex gap-2">
+      <a href="/routes/new?wall={{.Wall.ID}}" class="btn btn-primary"
+         hx-get="/routes/new?wall={{.Wall.ID}}" hx-target="#main-content" hx-push-url="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        Add Route
+      </a>
+      <a href="/walls/{{.Wall.ID}}/edit" class="btn btn-ghost"
+         hx-get="/walls/{{.Wall.ID}}/edit" hx-target="#main-content" hx-push-url="true">
+        Edit Wall
+      </a>
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <!-- Status filter -->
+  <div class="filter-bar mb-4">
+    <div class="flex gap-2">
+      <button class="filter-chip {{if eq .StatusFilter ""}}active{{end}}"
+              hx-get="/walls/{{.Wall.ID}}" hx-target="#main-content" hx-push-url="true">All</button>
+      <button class="filter-chip {{if eq .StatusFilter "active"}}active{{end}}"
+              hx-get="/walls/{{.Wall.ID}}?status=active" hx-target="#main-content" hx-push-url="true">Active</button>
+      <button class="filter-chip {{if eq .StatusFilter "flagged"}}active{{end}}"
+              hx-get="/walls/{{.Wall.ID}}?status=flagged" hx-target="#main-content" hx-push-url="true">Flagged</button>
+      <button class="filter-chip {{if eq .StatusFilter "archived"}}active{{end}}"
+              hx-get="/walls/{{.Wall.ID}}?status=archived" hx-target="#main-content" hx-push-url="true">Archived</button>
+    </div>
+  </div>
+
+  <!-- Routes on this wall -->
+  <div class="wall-routes">
+    {{range .Routes}}
+    {{template "route-card" .}}
+    {{end}}
+
+    {{if not .Routes}}
+    <div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+      </svg>
+      <h3>No routes on this wall</h3>
+      <p>{{if .StatusFilter}}No {{.StatusFilter}} routes. Try a different filter.{{else}}Add your first route to this wall.{{end}}</p>
+      <a href="/routes/new?wall={{.Wall.ID}}" class="btn btn-primary mt-4"
+         hx-get="/routes/new?wall={{.Wall.ID}}" hx-target="#main-content" hx-push-url="true">Add Route</a>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}

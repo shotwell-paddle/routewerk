@@ -13,21 +13,21 @@
 
 <div class="page-body" style="padding-top: 0;">
   <!-- Route hero -->
-  <div class="card" style="overflow: hidden; margin-bottom: var(--sp-6);">
-    <div style="height: 6px; background: {{.Route.Color}};"></div>
-    <div style="padding: var(--sp-8);">
-      <div class="flex items-center gap-6">
+  <div class="card" style="overflow: hidden; margin-bottom: var(--sp-6); padding: 0;">
+    <div style="height: 6px; background: {{.Route.SafeColor}};"></div>
+    <div class="route-hero-inner">
+      <div class="route-hero-row">
         {{if .Route.IsCircuit}}
-        <div class="circuit-badge lg" style="--circuit-color: {{.Route.Color}}">
+        <div class="circuit-badge lg" style="--circuit-color: {{.Route.SafeColor}}">
           <div class="circuit-dot"></div>
-          <span>{{.Route.DisplayGrade}}</span>
+          <span>{{.Route.DisplayGrade}}{{if .Route.CircuitVGrade}} · {{.Route.CircuitVGrade}}{{end}}</span>
         </div>
         {{else}}
-        <div class="grade-badge lg" style="--route-color: {{.Route.Color}}">{{.Route.DisplayGrade}}</div>
+        <div class="grade-badge lg" style="--route-color: {{.Route.SafeColor}}">{{.Route.DisplayGrade}}</div>
         {{end}}
         <div style="flex: 1;">
           <h1 style="font-size: var(--text-2xl); margin-bottom: var(--sp-1);">
-            {{if .Route.Name}}{{deref .Route.Name}}{{else}}{{.Route.RouteType | title}}{{if not .Route.IsCircuit}} — {{.Route.Grade}}{{end}}{{end}}
+            {{if .Route.Name}}{{deref .Route.Name}}{{else}}{{.Route.RouteType | title}}{{end}}
           </h1>
           <div class="route-meta" style="font-size: var(--text-base);">
             <span>{{.WallName}}</span>
@@ -42,9 +42,86 @@
           </div>
           {{end}}
         </div>
-        <div class="route-status {{.Route.Status}}" style="font-size: var(--text-sm);">{{.Route.Status}}</div>
+        <div class="flex items-center gap-3">
+          <div class="route-status {{.Route.Status}}" style="font-size: var(--text-sm);">{{.Route.Status}}</div>
+          <details class="share-menu">
+            <summary class="btn btn-ghost btn-sm" title="Share route">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+              Share
+            </summary>
+            <div class="share-menu-dropdown">
+              <button type="button" class="share-menu-item" onclick="copyRouteLink(this)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                  <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/>
+                  <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>
+                </svg>
+                <span>Copy Link</span>
+              </button>
+              <a href="/routes/{{.Route.ID}}/card/share.png"
+                 target="_blank" class="share-menu-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+                </svg>
+                Download Card (PNG)
+              </a>
+              <a href="/routes/{{.Route.ID}}/card/share.pdf"
+                 target="_blank" class="share-menu-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                </svg>
+                Download Card (PDF)
+              </a>
+            </div>
+          </details>
+        </div>
       </div>
     </div>
+  </div>
+
+  <!-- Log activity -->
+  <div class="card mb-6">
+    {{if $.HasCompleted}}
+    <div class="log-send-row" style="align-items: center;">
+      <h3 style="margin: 0; white-space: nowrap; color: var(--rw-green);">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" style="vertical-align: -3px;">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        Sent
+      </h3>
+      <span class="text-sm text-muted" style="flex: 1;">You've completed this route.</span>
+    </div>
+    <form class="log-send-form mt-3" hx-post="/routes/{{.Route.ID}}/ascent" hx-target="#route-ascents" hx-swap="afterbegin"
+          hx-headers='{"X-CSRF-Token": "{{$.CSRFToken}}"}'>
+      <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+      <input type="hidden" name="ascent_type" value="attempt">
+      <div class="log-send-row">
+        <span class="text-sm" style="white-space: nowrap;">Log another attempt</span>
+        <input class="form-input form-input-sm" type="number" name="attempts" value="1" min="1" style="width: 70px;" placeholder="Att.">
+        <input class="form-input form-input-sm" type="text" name="notes" placeholder="Notes (optional)" style="flex: 1; min-width: 100px;">
+        <button type="submit" class="btn btn-secondary btn-sm">Log</button>
+      </div>
+    </form>
+    {{else}}
+    <form class="log-send-form" hx-post="/routes/{{.Route.ID}}/ascent" hx-target="#route-ascents" hx-swap="afterbegin"
+          hx-headers='{"X-CSRF-Token": "{{$.CSRFToken}}"}'>
+      <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+      <div class="log-send-row">
+        <h3 style="margin: 0; white-space: nowrap;">Log Activity</h3>
+        <select class="form-select form-select-sm" name="ascent_type">
+          <option value="send">Send</option>
+          {{if $.CanFlash}}<option value="flash">Flash</option>{{end}}
+          <option value="attempt">Attempt</option>
+          <option value="project">Project</option>
+        </select>
+        <input class="form-input form-input-sm" type="number" name="attempts" value="1" min="1" style="width: 70px;" placeholder="Attempts">
+        <input class="form-input form-input-sm" type="text" name="notes" placeholder="Notes (optional)" style="flex: 1; min-width: 100px;">
+        <button type="submit" class="btn btn-primary btn-sm">Log</button>
+      </div>
+    </form>
+    {{end}}
   </div>
 
   <div class="layout-split">
@@ -70,118 +147,303 @@
       </div>
 
       <!-- Consensus difficulty -->
-      <div class="card" style="padding: var(--sp-5); margin-bottom: var(--sp-6);" id="consensus-section">
-        <div class="flex items-center justify-between mb-4">
-          <h3>How does it feel?</h3>
-          {{if .Consensus}}
-          <span class="text-sm text-muted">{{.Consensus.TotalVotes}} votes</span>
-          {{end}}
-        </div>
-        {{if .Consensus}}
-        <div class="consensus-bar mb-2">
-          {{if gt .Consensus.EasyPct 0}}<div class="seg-easy" style="width: {{.Consensus.EasyPct}}%"></div>{{end}}
-          {{if gt .Consensus.RightPct 0}}<div class="seg-right" style="width: {{.Consensus.RightPct}}%"></div>{{end}}
-          {{if gt .Consensus.HardPct 0}}<div class="seg-hard" style="width: {{.Consensus.HardPct}}%"></div>{{end}}
-        </div>
-        {{end}}
-        <div class="consensus-votes"
-             hx-post="/routes/{{.Route.ID}}/difficulty" hx-target="#consensus-section" hx-swap="outerHTML">
-          <button type="button" name="vote" value="easy" class="consensus-vote-btn easy"
-                  hx-post="/routes/{{.Route.ID}}/difficulty?vote=easy" hx-target="#consensus-section" hx-swap="outerHTML">
-            <span class="vote-label">Easy</span>
-            <span class="vote-count">{{if .Consensus}}{{.Consensus.EasyCount}}{{else}}0{{end}}</span>
-          </button>
-          <button type="button" name="vote" value="right" class="consensus-vote-btn right"
-                  hx-post="/routes/{{.Route.ID}}/difficulty?vote=right" hx-target="#consensus-section" hx-swap="outerHTML">
-            <span class="vote-label">Right On</span>
-            <span class="vote-count">{{if .Consensus}}{{.Consensus.RightCount}}{{else}}0{{end}}</span>
-          </button>
-          <button type="button" name="vote" value="hard" class="consensus-vote-btn hard"
-                  hx-post="/routes/{{.Route.ID}}/difficulty?vote=hard" hx-target="#consensus-section" hx-swap="outerHTML">
-            <span class="vote-label">Hard</span>
-            <span class="vote-count">{{if .Consensus}}{{.Consensus.HardCount}}{{else}}0{{end}}</span>
-          </button>
-        </div>
-      </div>
+      {{template "consensus-section" .}}
 
       {{if .Route.Description}}
-      <div class="card" style="padding: var(--sp-5); margin-bottom: var(--sp-6);">
+      <div class="card" style="margin-bottom: var(--sp-6);">
         <h3 class="mb-2">Description</h3>
         <p style="color: var(--rw-dark-gray); line-height: 1.6;">{{deref .Route.Description}}</p>
       </div>
       {{end}}
 
+      <!-- Route Photos -->
+      {{if or .Photos .CanUploadPhoto}}
+      <div class="card" style="margin-bottom: var(--sp-6);">
+        <div class="flex items-center justify-between mb-4">
+          <h3>Photos</h3>
+          {{if .Photos}}<span class="text-sm text-muted">{{len .Photos}} photo{{if gt (len .Photos) 1}}s{{end}}</span>{{end}}
+        </div>
+
+        {{if .Photos}}
+        <div class="photo-gallery">
+          {{range .Photos}}
+          <div class="photo-item">
+            <img src="{{.PhotoURL}}" alt="{{if .Caption}}{{deref .Caption}}{{else}}Route photo{{end}}" loading="lazy"
+                 onclick="this.closest('.photo-item').classList.toggle('photo-expanded')">
+            <div class="photo-overlay">
+              <div class="photo-meta">
+                <span class="photo-uploader">{{.UploaderName}}</span>
+                <span class="photo-date">{{.CreatedAt | reltime}}</span>
+              </div>
+              {{if .Caption}}<div class="photo-caption">{{deref .Caption}}</div>{{end}}
+              {{if $.IsSetter}}
+              <form method="POST" action="/routes/{{$.Route.ID}}/photos/{{.ID}}/delete" class="photo-delete-form">
+                <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+                <button type="submit" class="photo-delete-btn" title="Delete photo"
+                        onclick="return confirm('Delete this photo?')">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                  </svg>
+                </button>
+              </form>
+              {{end}}
+            </div>
+          </div>
+          {{end}}
+        </div>
+        {{else}}
+        <div class="photo-empty">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--rw-mid-gray);">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+          </svg>
+          <p class="text-sm text-muted">No photos yet</p>
+        </div>
+        {{end}}
+
+        {{if .CanUploadPhoto}}
+        <form method="POST" action="/routes/{{.Route.ID}}/photos" enctype="multipart/form-data"
+              class="photo-upload-form mt-4">
+          <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+          <div class="photo-upload-row">
+            <label class="photo-upload-btn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              Choose photo
+              <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" required
+                     style="display: none;" onchange="this.closest('form').querySelector('.photo-filename').textContent = this.files[0]?.name || ''">
+            </label>
+            <span class="photo-filename text-sm text-muted"></span>
+          </div>
+          <div class="photo-upload-row mt-2">
+            <input type="text" name="caption" class="form-input" placeholder="Caption (optional)" style="flex: 1;">
+            <button type="submit" class="btn btn-secondary btn-sm">Upload</button>
+          </div>
+        </form>
+        {{end}}
+      </div>
+      {{end}}
+
+      <!-- Community Tags -->
+      {{template "community-tags-section" .}}
+
       <!-- Recent ascents -->
       <h3 class="mb-4">Recent Sends</h3>
       <div class="feed-list" id="route-ascents"
-           hx-get="/routes/{{.Route.ID}}/ascents-feed" hx-trigger="revealed">
-        {{range .RecentAscents}}
-        <div class="feed-item">
-          <div class="feed-avatar">{{.UserInitial}}</div>
-          <div class="feed-body">
-            <div class="feed-action">
-              <strong>{{.UserName}}</strong> {{.AscentType}}
-              {{if gt .Attempts 1}}<span class="text-muted">({{.Attempts}} attempts)</span>{{end}}
-            </div>
-            {{if .Notes}}<p class="text-sm text-muted mt-2">{{deref .Notes}}</p>{{end}}
-            <div class="feed-time">{{.ClimbedAt | reltime}}</div>
-          </div>
-        </div>
-        {{end}}
-        {{if not .RecentAscents}}
-        <div class="empty-state" style="padding: var(--sp-8);">
-          <p class="text-muted text-sm">No sends yet. Be the first!</p>
-        </div>
-        {{end}}
+           hx-get="/routes/{{.Route.ID}}/ascents-feed" hx-trigger="revealed" hx-target="this">
+        {{template "ascent-feed-list" .}}
       </div>
     </div>
 
-    <!-- Aside: Log an ascent -->
+    <!-- Aside: Rate this route -->
     <aside class="layout-aside">
-      <div class="card" style="padding: var(--sp-5);">
-        <h3 class="mb-4">Log a Send</h3>
-        <form hx-post="/routes/{{.Route.ID}}/ascent" hx-target="#route-ascents" hx-swap="afterbegin">
-          <div class="form-group">
-            <label class="form-label">Type</label>
-            <select class="form-select" name="ascent_type">
-              <option value="send">Send</option>
-              <option value="flash">Flash</option>
-              <option value="onsight">Onsight</option>
-              <option value="project">Project (attempt)</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Attempts</label>
-            <input class="form-input" type="number" name="attempts" value="1" min="1">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Notes <span class="text-muted">(optional)</span></label>
-            <textarea class="form-input" name="notes" rows="2" placeholder="How'd it go?"></textarea>
-          </div>
-          <button type="submit" class="btn btn-primary" style="width: 100%;">Log Send</button>
-        </form>
-      </div>
-
-      <div class="card mt-4" style="padding: var(--sp-5);">
-        <h3 class="mb-4">Rate this Route</h3>
-        <form hx-post="/routes/{{.Route.ID}}/rate" hx-swap="outerHTML">
-          <div class="flex gap-2 mb-4" style="justify-content: center;">
-            {{range $i := seq 1 5}}
-            <label style="cursor: pointer;">
-              <input type="radio" name="rating" value="{{$i}}" style="display: none;" class="star-input">
-              <svg class="star-icon" viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="var(--rw-mid-gray)" stroke-width="1.5">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-              </svg>
-            </label>
-            {{end}}
-          </div>
-          <div class="form-group">
-            <textarea class="form-input" name="comment" rows="2" placeholder="Quick review..."></textarea>
-          </div>
-          <button type="submit" class="btn btn-secondary" style="width: 100%;">Submit Rating</button>
-        </form>
+      <div id="route-rating-section">
+        {{if gt .UserRating 0}}
+        {{template "rating-confirmation" .}}
+        {{else}}
+        <div class="card">
+          <h3 class="mb-4">Rate this Route</h3>
+          <form hx-post="/routes/{{.Route.ID}}/rate" hx-target="#route-rating-section" hx-swap="innerHTML"
+                hx-headers='{"X-CSRF-Token": "{{$.CSRFToken}}"}'>
+            <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+            <div class="star-rating mb-4">
+              {{range $i := seq 1 5}}
+              <label class="star-label">
+                <input type="radio" name="rating" value="{{$i}}" class="star-input">
+                <svg class="star-icon" viewBox="0 0 24 24" width="32" height="32">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                </svg>
+              </label>
+              {{end}}
+            </div>
+            <div class="form-group">
+              <textarea class="form-input" name="comment" rows="2" placeholder="Quick review..."></textarea>
+            </div>
+            <button type="submit" class="btn btn-secondary" style="width: 100%;">Submit Rating</button>
+          </form>
+        </div>
+        {{end}}
       </div>
     </aside>
   </div>
+</div>
+
+<script>
+document.addEventListener('click', function(e) {
+  document.querySelectorAll('.share-menu[open]').forEach(function(m) {
+    if (!m.contains(e.target)) m.removeAttribute('open');
+  });
+});
+
+function copyRouteLink(btn) {
+  var url = window.location.origin + window.location.pathname;
+  navigator.clipboard.writeText(url).then(function() {
+    var span = btn.querySelector('span');
+    var orig = span.textContent;
+    span.textContent = 'Copied!';
+    setTimeout(function() { span.textContent = orig; }, 1500);
+  });
+  // Close the share menu
+  var menu = btn.closest('.share-menu');
+  if (menu) menu.removeAttribute('open');
+}
+</script>
+{{end}}
+
+{{/* ── HTMX Partials ────────────────────────────────────────── */}}
+
+{{/* Single ascent feed item — returned by POST /routes/{id}/ascent */}}
+{{define "ascent-feed-item"}}
+{{range .RecentAscents}}
+<div class="feed-item">
+  <div class="feed-avatar">{{.UserInitial}}</div>
+  <div class="feed-body">
+    <div class="feed-action">
+      <strong>{{.UserName}}</strong> {{.AscentType}}
+      {{if gt .Attempts 1}}<span class="text-muted">({{.Attempts}} attempts)</span>{{end}}
+    </div>
+    {{if .Notes}}<p class="text-sm text-muted mt-2">{{deref .Notes}}</p>{{end}}
+    <div class="feed-time">{{.ClimbedAt | reltime}}</div>
+  </div>
+</div>
+{{end}}
+{{end}}
+
+{{/* Full ascent feed list — returned by GET /routes/{id}/ascents-feed */}}
+{{define "ascent-feed-list"}}
+{{range .RecentAscents}}
+<div class="feed-item">
+  <div class="feed-avatar">{{.UserInitial}}</div>
+  <div class="feed-body">
+    <div class="feed-action">
+      <strong>{{.UserName}}</strong> {{.AscentType}}
+      {{if gt .Attempts 1}}<span class="text-muted">({{.Attempts}} attempts)</span>{{end}}
+    </div>
+    {{if .Notes}}<p class="text-sm text-muted mt-2">{{deref .Notes}}</p>{{end}}
+    <div class="feed-time">{{.ClimbedAt | reltime}}</div>
+  </div>
+</div>
+{{end}}
+{{if not .RecentAscents}}
+<div class="empty-state" style="padding: var(--sp-8);">
+  <p class="text-muted text-sm">No sends yet. Be the first!</p>
+</div>
+{{end}}
+{{end}}
+
+{{/* Consensus section — returned by POST /routes/{id}/difficulty */}}
+{{define "consensus-section"}}
+<div class="card" style="margin-bottom: var(--sp-6);" id="consensus-section">
+  <div class="flex items-center justify-between mb-4">
+    <h3>How does it feel?</h3>
+    {{if .Consensus}}
+    <span class="text-sm text-muted">{{.Consensus.TotalVotes}} votes</span>
+    {{end}}
+  </div>
+  {{if .Consensus}}{{if gt .Consensus.TotalVotes 0}}
+  <div class="consensus-bar mb-2">
+    {{if gt .Consensus.EasyPct 0}}<div class="seg-easy" style="width: {{.Consensus.EasyPct}}%"></div>{{end}}
+    {{if gt .Consensus.RightPct 0}}<div class="seg-right" style="width: {{.Consensus.RightPct}}%"></div>{{end}}
+    {{if gt .Consensus.HardPct 0}}<div class="seg-hard" style="width: {{.Consensus.HardPct}}%"></div>{{end}}
+  </div>
+  {{end}}{{end}}
+  <div class="consensus-votes">
+    <button type="button" name="vote" value="easy" class="consensus-vote-btn easy"
+            hx-post="/routes/{{.Route.ID}}/difficulty?vote=easy" hx-target="#consensus-section" hx-swap="outerHTML"
+            hx-headers='{"X-CSRF-Token": "{{$.CSRFToken}}"}'>
+      <span class="vote-label">Easy</span>
+      <span class="vote-count">{{if .Consensus}}{{.Consensus.EasyCount}}{{else}}0{{end}}</span>
+    </button>
+    <button type="button" name="vote" value="right" class="consensus-vote-btn right"
+            hx-post="/routes/{{.Route.ID}}/difficulty?vote=right" hx-target="#consensus-section" hx-swap="outerHTML"
+            hx-headers='{"X-CSRF-Token": "{{$.CSRFToken}}"}'>
+      <span class="vote-label">Right On</span>
+      <span class="vote-count">{{if .Consensus}}{{.Consensus.RightCount}}{{else}}0{{end}}</span>
+    </button>
+    <button type="button" name="vote" value="hard" class="consensus-vote-btn hard"
+            hx-post="/routes/{{.Route.ID}}/difficulty?vote=hard" hx-target="#consensus-section" hx-swap="outerHTML"
+            hx-headers='{"X-CSRF-Token": "{{$.CSRFToken}}"}'>
+      <span class="vote-label">Hard</span>
+      <span class="vote-count">{{if .Consensus}}{{.Consensus.HardCount}}{{else}}0{{end}}</span>
+    </button>
+  </div>
+</div>
+{{end}}
+
+{{/* Rating confirmation — replaces the rating form after submission */}}
+{{define "rating-confirmation"}}
+<div class="card mt-4">
+  <h3 class="mb-2">Your Rating</h3>
+  <div class="star-rating mb-2">
+    {{range $i := seq 1 5}}
+    <svg class="star-icon {{if le $i $.UserRating}}filled{{end}}" viewBox="0 0 24 24" width="28" height="28">
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+    </svg>
+    {{end}}
+  </div>
+  <p class="text-sm text-muted">Thanks for rating! Your review helps other climbers.</p>
+</div>
+{{end}}
+
+{{/* ── Community Tags Section ─────────────────────────────────── */}}
+
+{{define "community-tags-section"}}
+<div class="card mb-6" id="community-tags-section">
+  <div class="flex items-center justify-between mb-4">
+    <h3>Tags</h3>
+    {{if .CommunityTags}}
+    <span class="text-sm text-muted">{{len .CommunityTags}} tag{{if gt (len .CommunityTags) 1}}s{{end}}</span>
+    {{end}}
+  </div>
+
+  {{if .CommunityTags}}
+  <div class="community-tags-list mb-4">
+    {{range .CommunityTags}}
+    <div class="community-tag {{if .UserAdded}}user-added{{end}}">
+      <span class="community-tag-name">{{.TagName}}</span>
+      <span class="community-tag-count">{{.Count}}</span>
+      {{if .UserAdded}}
+      <button class="community-tag-remove" title="Remove your tag"
+              hx-post="/routes/{{$.Route.ID}}/tags/remove"
+              hx-vals='{"tag_name": "{{.TagName}}"}'
+              hx-target="#community-tags-section"
+              hx-swap="outerHTML"
+              hx-headers='{"X-CSRF-Token": "{{$.CSRFToken}}"}'>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+      {{end}}
+      {{if $.IsHeadSetter}}
+      <button class="community-tag-moderate" title="Remove tag for everyone"
+              hx-post="/routes/{{$.Route.ID}}/tags/delete"
+              hx-vals='{"tag_name": "{{.TagName}}"}'
+              hx-target="#community-tags-section"
+              hx-swap="outerHTML"
+              hx-confirm="Remove '{{.TagName}}' from this route for all users?"
+              hx-headers='{"X-CSRF-Token": "{{$.CSRFToken}}"}'>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+        </svg>
+      </button>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+  {{else}}
+  <p class="text-sm text-muted mb-4">No tags yet. Be the first to describe this route!</p>
+  {{end}}
+
+  <form class="community-tag-form"
+        hx-post="/routes/{{.Route.ID}}/tags"
+        hx-target="#community-tags-section"
+        hx-swap="outerHTML"
+        hx-headers='{"X-CSRF-Token": "{{$.CSRFToken}}"}'>
+    <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+    <div class="community-tag-input-row">
+      <input type="text" name="tag_name" class="form-input form-input-sm" placeholder="Add a tag (e.g. crimpy, powerful, technical)" maxlength="30" autocomplete="off">
+      <button type="submit" class="btn btn-secondary btn-sm">Add</button>
+    </div>
+  </form>
 </div>
 {{end}}

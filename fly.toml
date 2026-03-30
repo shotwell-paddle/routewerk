@@ -1,5 +1,5 @@
 app = "routewerk"
-primary_region = "iad"
+primary_region = "ord"
 
 [build]
 
@@ -12,14 +12,22 @@ primary_region = "iad"
   force_https = true
   auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0
 
   [http_service.concurrency]
     type = "requests"
     hard_limit = 250
     soft_limit = 200
 
+  [http_service.checks]
+    [http_service.checks.health]
+      interval = "30s"
+      timeout = "5s"
+      grace_period = "10s"
+      method = "GET"
+      path = "/health"
+
 [[vm]]
-  memory = "512mb"
+  memory = "256mb"
   cpu_kind = "shared"
   cpus = 1

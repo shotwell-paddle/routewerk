@@ -7,16 +7,25 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/routewerk.css">
-  <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="{{staticPath "css/routewerk.css"}}">
+  <script src="{{staticPath "js/htmx.min.js"}}"></script>
 </head>
-<body hx-boost="true">
-  <div class="app-shell">
+<body hx-boost="true" hx-target="#main-content">
+  <div class="app-shell" id="app-shell">
     {{template "sidebar" .}}
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
     <main class="main-content" id="main-content">
+      <header class="mobile-header" id="mobile-header">
+        <button class="sidebar-toggle" aria-label="Open menu">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+        <span class="mobile-header-title">{{if .Location}}{{.Location.Name}}{{else}}Routewerk{{end}}</span>
+      </header>
       {{block "content" .}}{{end}}
     </main>
   </div>
-  <script src="/static/js/app.js"></script>
+  <script src="{{staticPath "js/app.js"}}"></script>
 </body>
 </html>

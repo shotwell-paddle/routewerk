@@ -1,0 +1,84 @@
+{{define "title"}}Find Your Gym — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Find Your Gym</h1>
+    <p class="page-subtitle">Search for your climbing gym to get started</p>
+  </div>
+</div>
+
+<div class="page-body">
+  {{if .JoinSuccess}}
+  <div class="form-alert form-alert-success" style="margin-bottom: var(--sp-6);">
+    {{.JoinSuccess}}
+  </div>
+  {{end}}
+
+  {{if .JoinError}}
+  <div class="form-alert form-alert-error" style="margin-bottom: var(--sp-6);">
+    {{.JoinError}}
+  </div>
+  {{end}}
+
+  <!-- Search bar -->
+  <div class="gym-search-bar">
+    <form class="gym-search-form"
+          hx-get="/join-gym" hx-target="#gym-results" hx-swap="innerHTML"
+          hx-push-url="true" hx-select="#gym-results">
+      <div class="gym-search-input-wrap">
+        <svg class="gym-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input class="form-input gym-search-input" type="search" name="q"
+               value="{{.GymQuery}}" placeholder="Search by gym name..."
+               autofocus autocomplete="off"
+               hx-get="/join-gym/search" hx-target="#gym-results" hx-swap="innerHTML"
+               hx-trigger="input changed delay:300ms, search">
+      </div>
+    </form>
+  </div>
+
+  <!-- Results -->
+  <div id="gym-results" class="gym-results">
+    {{template "gym-result-list" .}}
+  </div>
+</div>
+{{end}}
+
+{{/* ── HTMX Partial: gym search results ───────────────────── */}}
+
+{{define "gym-result-list"}}
+{{if .GymResults}}
+<div class="gym-grid">
+  {{$csrf := .CSRFToken}}
+  {{range .GymResults}}
+  <div class="gym-card">
+    <div class="gym-card-info">
+      <div class="gym-card-name">{{.Name}}</div>
+      <div class="gym-card-org">{{.OrgName}}</div>
+      {{if .Address}}<div class="gym-card-address">{{deref .Address}}</div>{{end}}
+    </div>
+    <form method="POST" action="/join-gym">
+      <input type="hidden" name="_csrf_token" value="{{$csrf}}">
+      <input type="hidden" name="location_id" value="{{.ID}}">
+      <input type="hidden" name="org_id" value="{{.OrgID}}">
+      <button type="submit" class="btn btn-primary btn-sm">Join</button>
+    </form>
+  </div>
+  {{end}}
+</div>
+{{else}}
+<div class="empty-state" style="padding: var(--sp-12);">
+  <svg viewBox="0 0 24 24" fill="none" stroke="var(--rw-mid-gray)" stroke-width="1.5" width="48" height="48" style="margin-bottom: var(--sp-4);">
+    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+  </svg>
+  {{if .GymQuery}}
+  <p class="text-muted">No gyms found for "{{.GymQuery}}"</p>
+  <p class="text-sm text-muted mt-2">Try a different search or ask your gym if they're on Routewerk.</p>
+  {{else}}
+  <p class="text-muted">Search for your gym above to get started.</p>
+  {{end}}
+</div>
+{{end}}
+{{end}}

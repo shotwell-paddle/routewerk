@@ -1,0 +1,12 @@
+{{define "title"}}Error — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-body" style="display: flex; align-items: center; justify-content: center; min-height: 60vh;">
+  <div style="text-align: center; max-width: 400px;">
+    <div style="font-size: var(--text-4xl); font-weight: 800; color: var(--rw-mid-gray); margin-bottom: var(--sp-4);">{{.ErrorCode}}</div>
+    <h2 style="margin-bottom: var(--sp-2);">{{.ErrorTitle}}</h2>
+    <p class="text-muted" style="margin-bottom: var(--sp-6);">{{.ErrorMessage}}</p>
+    <a href="/" class="btn btn-primary">Back to dashboard</a>
+  </div>
+</div>
+{{end}}

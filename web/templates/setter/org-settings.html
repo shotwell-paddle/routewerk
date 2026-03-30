@@ -1,0 +1,165 @@
+{{define "title"}}Organization Settings — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Organization Settings</h1>
+    <p class="page-subtitle">{{if .OrgName}}{{.OrgName}}{{end}} — Controls what head setters can configure at each gym</p>
+  </div>
+  <div class="flex items-center gap-2">
+    <a href="/settings/organization/gyms/new" class="btn btn-primary"
+       hx-get="/settings/organization/gyms/new" hx-target="#main-content" hx-push-url="true">
+      + Add Gym
+    </a>
+    <a href="/settings/organization/team" class="btn btn-ghost"
+       hx-get="/settings/organization/team" hx-target="#main-content" hx-push-url="true">
+      Manage Team
+    </a>
+  </div>
+</div>
+
+{{if .SettingsSuccess}}
+<div class="settings-toast" id="settings-toast">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+  </svg>
+  Changes saved
+</div>
+{{end}}
+
+<div class="page-body">
+
+  <!-- ── Gyms ──────────────────────────────────────────── -->
+  <section class="settings-section">
+    <div class="settings-section-header">
+      <h2 class="settings-section-title">Gyms</h2>
+      <p class="settings-section-desc">All locations in your organization.</p>
+    </div>
+
+    {{if .OrgLocations}}
+    <div class="gym-list">
+      {{range .OrgLocations}}
+      <div class="gym-list-item">
+        <div class="gym-list-info">
+          <div class="gym-list-name">{{.Name}}</div>
+          <div class="gym-list-meta">
+            {{if .Address}}<span>{{deref .Address}}</span>{{end}}
+            {{if .Timezone}}<span class="gym-list-tz">{{.Timezone}}</span>{{end}}
+          </div>
+        </div>
+        <a href="/settings/organization/gyms/{{.ID}}/edit" class="btn btn-ghost btn-sm"
+           hx-get="/settings/organization/gyms/{{.ID}}/edit" hx-target="#main-content" hx-push-url="true">
+          Edit
+        </a>
+      </div>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="empty-state-text">No gyms yet. Add your first gym to get started.</p>
+    {{end}}
+  </section>
+
+  <form method="POST" action="/settings/organization" class="settings-form">
+    <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+
+    <!-- ── Head Setter Permissions ───────────────────────── -->
+    <section class="settings-section">
+      <div class="settings-section-header">
+        <h2 class="settings-section-title">Head Setter Permissions</h2>
+        <p class="settings-section-desc">Control which settings sections head setters can modify at each gym location. Gym managers and admins always have full access.</p>
+      </div>
+
+      <div class="settings-field">
+        <label class="settings-toggle">
+          <input type="checkbox" name="hs_edit_grading" {{if .OrgSettingsData.Permissions.HeadSetterCanEditGrading}}checked{{end}}>
+          <span class="settings-toggle-track"></span>
+          <div class="settings-toggle-content">
+            <span class="settings-toggle-label">Grading settings</span>
+            <span class="settings-toggle-desc">Boulder method, route grade format, grade visibility</span>
+          </div>
+        </label>
+      </div>
+      <div class="settings-field">
+        <label class="settings-toggle">
+          <input type="checkbox" name="hs_edit_circuits" {{if .OrgSettingsData.Permissions.HeadSetterCanEditCircuits}}checked{{end}}>
+          <span class="settings-toggle-track"></span>
+          <div class="settings-toggle-content">
+            <span class="settings-toggle-label">Circuit colors</span>
+            <span class="settings-toggle-desc">Add, remove, and reorder circuit color palette</span>
+          </div>
+        </label>
+      </div>
+      <div class="settings-field">
+        <label class="settings-toggle">
+          <input type="checkbox" name="hs_edit_hold_colors" {{if .OrgSettingsData.Permissions.HeadSetterCanEditHoldColors}}checked{{end}}>
+          <span class="settings-toggle-track"></span>
+          <div class="settings-toggle-content">
+            <span class="settings-toggle-label">Hold colors</span>
+            <span class="settings-toggle-desc">Customize the hold color palette for route creation</span>
+          </div>
+        </label>
+      </div>
+      <div class="settings-field">
+        <label class="settings-toggle">
+          <input type="checkbox" name="hs_edit_display" {{if .OrgSettingsData.Permissions.HeadSetterCanEditDisplay}}checked{{end}}>
+          <span class="settings-toggle-track"></span>
+          <div class="settings-toggle-content">
+            <span class="settings-toggle-label">Display preferences</span>
+            <span class="settings-toggle-desc">Setter names, route age, difficulty consensus visibility</span>
+          </div>
+        </label>
+      </div>
+      <div class="settings-field">
+        <label class="settings-toggle">
+          <input type="checkbox" name="hs_edit_sessions" {{if .OrgSettingsData.Permissions.HeadSetterCanEditSessions}}checked{{end}}>
+          <span class="settings-toggle-track"></span>
+          <div class="settings-toggle-content">
+            <span class="settings-toggle-label">Session defaults</span>
+            <span class="settings-toggle-desc">Playbook auto-add, photo requirements</span>
+          </div>
+        </label>
+      </div>
+    </section>
+
+    <!-- ── Organization Defaults ─────────────────────────── -->
+    <section class="settings-section">
+      <div class="settings-section-header">
+        <h2 class="settings-section-title">Organization Defaults</h2>
+        <p class="settings-section-desc">Default grading configuration for new locations. Existing locations keep their current settings.</p>
+      </div>
+
+      <div class="settings-field">
+        <label class="settings-label">Default Boulder Method</label>
+        <select name="default_boulder_method" class="form-input form-input-sm settings-input-medium">
+          <option value="v_scale" {{if eq .OrgSettingsData.Defaults.BoulderMethod "v_scale"}}selected{{end}}>V-Scale Only</option>
+          <option value="circuit" {{if eq .OrgSettingsData.Defaults.BoulderMethod "circuit"}}selected{{end}}>Circuit Colors Only</option>
+          <option value="both" {{if eq .OrgSettingsData.Defaults.BoulderMethod "both"}}selected{{end}}>Both</option>
+        </select>
+      </div>
+
+      <div class="settings-field">
+        <label class="settings-label">Default Route Grade Format</label>
+        <select name="default_route_grade_format" class="form-input form-input-sm settings-input-medium">
+          <option value="plus_minus" {{if eq .OrgSettingsData.Defaults.RouteGradeFormat "plus_minus"}}selected{{end}}>Plus / Minus (5.9-, 5.9, 5.9+)</option>
+          <option value="letter" {{if eq .OrgSettingsData.Defaults.RouteGradeFormat "letter"}}selected{{end}}>Letter (5.9a, 5.9b, 5.9c, 5.9d)</option>
+        </select>
+      </div>
+
+      <div class="settings-field">
+        <label class="settings-toggle">
+          <input type="checkbox" name="default_show_grades_on_circuit" {{if .OrgSettingsData.Defaults.ShowGradesOnCircuit}}checked{{end}}>
+          <span class="settings-toggle-track"></span>
+          <div class="settings-toggle-content">
+            <span class="settings-toggle-label">Show grades on circuit boulders by default</span>
+            <span class="settings-toggle-desc">New locations will start with this setting enabled</span>
+          </div>
+        </label>
+      </div>
+    </section>
+
+    <div class="settings-actions">
+      <button type="submit" class="btn btn-primary">Save Organization Settings</button>
+    </div>
+  </form>
+</div>
+{{end}}

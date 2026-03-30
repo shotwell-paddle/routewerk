@@ -57,6 +57,11 @@ func (r *RatingRepo) GetByUserAndRoute(ctx context.Context, userID, routeID stri
 }
 
 func (r *RatingRepo) ListByRoute(ctx context.Context, routeID string, limit, offset int) ([]RatingWithUser, error) {
+	return r.ListByRouteForViewer(ctx, routeID, "", limit, offset)
+}
+
+// ListByRouteForViewer lists ratings respecting user privacy settings.
+func (r *RatingRepo) ListByRouteForViewer(ctx context.Context, routeID, viewerID string, limit, offset int) ([]RatingWithUser, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -67,10 +72,14 @@ func (r *RatingRepo) ListByRoute(ctx context.Context, routeID string, limit, off
 		FROM route_ratings rr
 		JOIN users u ON u.id = rr.user_id
 		WHERE rr.route_id = $1
+		  AND (
+		    rr.user_id = $4
+		    OR COALESCE(u.settings_json->'privacy'->>'show_profile', 'true') = 'true'
+		  )
 		ORDER BY rr.created_at DESC
 		LIMIT $2 OFFSET $3`
 
-	rows, err := r.db.Query(ctx, query, routeID, limit, offset)
+	rows, err := r.db.Query(ctx, query, routeID, limit, offset, viewerID)
 	if err != nil {
 		return nil, fmt.Errorf("list ratings: %w", err)
 	}

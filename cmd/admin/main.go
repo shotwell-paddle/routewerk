@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,6 +13,9 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/database"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
+
+	// Register pgx5 driver for golang-migrate
+	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 )
 
 func main() {
@@ -22,6 +26,22 @@ func main() {
 
 	cfg := config.Load()
 	ctx := context.Background()
+
+	// Migration commands don't need a connection pool — they manage their own.
+	switch os.Args[1] {
+	case "migrate":
+		migrateUp(cfg)
+		return
+	case "migrate-down":
+		migrateDown(cfg)
+		return
+	case "migrate-version":
+		migrateVersion(cfg)
+		return
+	case "migrate-force":
+		migrateForce(cfg, os.Args[2:])
+		return
+	}
 
 	db, err := database.Connect(cfg.DatabaseURL, cfg.IsDev())
 	if err != nil {
@@ -53,7 +73,13 @@ func printUsage() {
 Usage:
   routewerk-admin <command> [arguments]
 
-Commands:
+Database:
+  migrate          Apply all pending database migrations.
+  migrate-down     Roll back the last applied migration.
+  migrate-version  Show current migration version.
+  migrate-force <version>  Force migration version and clear dirty flag.
+
+Organizations:
   create-org   --name <name> --slug <slug> --owner-email <email>
                Create an organization and assign the owner (org_admin).
 
@@ -70,6 +96,53 @@ Commands:
 
 Environment:
   DATABASE_URL   PostgreSQL connection string (required)`)
+}
+
+// ============================================================
+// migrate
+// ============================================================
+
+func migrateUp(cfg *config.Config) {
+	fmt.Println("applying migrations...")
+	if err := database.Migrate(cfg.DatabaseURL); err != nil {
+		log.Fatalf("migration failed: %v", err)
+	}
+	fmt.Println("migrations applied successfully")
+}
+
+func migrateDown(cfg *config.Config) {
+	fmt.Println("rolling back last migration...")
+	if err := database.MigrateDown(cfg.DatabaseURL); err != nil {
+		log.Fatalf("rollback failed: %v", err)
+	}
+	fmt.Println("rollback complete")
+}
+
+func migrateVersion(cfg *config.Config) {
+	version, dirty, err := database.MigrateVersion(cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("failed to get version: %v", err)
+	}
+	state := "clean"
+	if dirty {
+		state = "DIRTY"
+	}
+	fmt.Printf("migration version: %d (%s)\n", version, state)
+}
+
+func migrateForce(cfg *config.Config, args []string) {
+	if len(args) < 1 {
+		log.Fatal("usage: migrate-force <version>")
+	}
+	version, err := strconv.Atoi(args[0])
+	if err != nil {
+		log.Fatalf("invalid version number: %s", args[0])
+	}
+	fmt.Printf("forcing migration version to %d...\n", version)
+	if err := database.MigrateForce(cfg.DatabaseURL, version); err != nil {
+		log.Fatalf("force failed: %v", err)
+	}
+	fmt.Println("done — dirty flag cleared")
 }
 
 // ============================================================

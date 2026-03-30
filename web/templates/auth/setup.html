@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Setup — Routewerk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/routewerk.css">
+</head>
+<body>
+  <div class="auth-shell">
+    <div class="auth-card" style="max-width: 480px;">
+      <div class="auth-brand">
+        <h1>Routewerk</h1>
+        <p>Set up your first gym</p>
+      </div>
+
+      <p style="font-size: var(--text-sm); color: var(--rw-mid-gray); margin-bottom: var(--sp-6); line-height: 1.6;">
+        Welcome, {{.UserName}}. Create your organization and first gym location to get started.
+      </p>
+
+      {{if .Error}}
+      <div class="auth-error">{{.Error}}</div>
+      {{end}}
+
+      <form method="POST" action="/setup">
+        <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+
+        <div style="font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--rw-mid-gray); margin-bottom: var(--sp-3);">Organization</div>
+        <div class="form-group">
+          <label class="form-label" for="org_name">Organization Name</label>
+          <input class="form-input" type="text" id="org_name" name="org_name"
+                 value="{{.OrgName}}" required autofocus autocomplete="organization"
+                 placeholder="LEF Climbing" maxlength="100">
+          <span class="form-hint" style="font-size: var(--text-xs); color: var(--rw-mid-gray);">
+            Your company or gym brand name
+          </span>
+        </div>
+
+        <div style="font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--rw-mid-gray); margin-bottom: var(--sp-3); margin-top: var(--sp-6);">First Location</div>
+        <div class="form-group">
+          <label class="form-label" for="gym_name">Gym Name</label>
+          <input class="form-input" type="text" id="gym_name" name="gym_name"
+                 value="{{.GymName}}" required autocomplete="off"
+                 placeholder="LEF Climbing — Downtown" maxlength="100">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="address">Address <span class="form-hint">(optional)</span></label>
+          <input class="form-input" type="text" id="address" name="address"
+                 value="{{.Address}}" autocomplete="street-address"
+                 placeholder="123 Boulder St, Chicago, IL">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="timezone">Timezone</label>
+          <select class="form-input" id="timezone" name="timezone">
+            <option value="America/Chicago"{{if eq .Timezone "America/Chicago"}} selected{{end}}>Central (Chicago)</option>
+            <option value="America/New_York"{{if eq .Timezone "America/New_York"}} selected{{end}}>Eastern (New York)</option>
+            <option value="America/Denver"{{if eq .Timezone "America/Denver"}} selected{{end}}>Mountain (Denver)</option>
+            <option value="America/Los_Angeles"{{if eq .Timezone "America/Los_Angeles"}} selected{{end}}>Pacific (Los Angeles)</option>
+          </select>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: var(--sp-4);">
+          Create Gym
+        </button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

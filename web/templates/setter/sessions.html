@@ -1,0 +1,86 @@
+{{define "title"}}Sessions — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>Setting Sessions</h1>
+      <p class="page-subtitle">{{if .Location}}{{.Location.Name}}{{end}}</p>
+    </div>
+    {{if .IsSetter}}
+    <a href="/sessions/new" class="btn btn-primary"
+       hx-get="/sessions/new" hx-target="#main-content" hx-push-url="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      New Session
+    </a>
+    {{end}}
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="filter-tabs">
+    <a href="/sessions" class="filter-tab {{if eq .SessionFilter ""}}active{{end}}"
+       hx-get="/sessions" hx-target="#main-content" hx-push-url="true">All</a>
+    <a href="/sessions?status=open" class="filter-tab {{if eq .SessionFilter "open"}}active{{end}}"
+       hx-get="/sessions?status=open" hx-target="#main-content" hx-push-url="true">Open</a>
+    <a href="/sessions?status=complete" class="filter-tab {{if eq .SessionFilter "complete"}}active{{end}}"
+       hx-get="/sessions?status=complete" hx-target="#main-content" hx-push-url="true">Complete</a>
+  </div>
+
+  <div class="session-list">
+    {{range .Sessions}}
+    <a href="/sessions/{{.ID}}" class="session-card"
+       hx-get="/sessions/{{.ID}}" hx-target="#main-content" hx-push-url="true">
+      <div class="session-card-date">
+        <span class="session-month">{{.ScheduledDate.Format "Jan"}}</span>
+        <span class="session-day">{{.ScheduledDate.Format "02"}}</span>
+        <span class="session-year">{{.ScheduledDate.Format "2006"}}</span>
+      </div>
+      <div class="session-card-body">
+        <div class="session-card-title">
+          {{.ScheduledDate.Format "Monday, January 2"}}
+        </div>
+        <div class="session-card-meta">
+          Created by {{.CreatorName}} · {{.AssignmentCount}} setter{{if ne .AssignmentCount 1}}s{{end}} assigned
+          {{if eq .Status "complete"}}
+          <span class="status-badge status-complete">Complete</span>
+          {{else if eq .Status "in_progress"}}
+          <span class="status-badge status-active">In Progress</span>
+          {{end}}
+        </div>
+        {{if .Notes}}
+        <div class="session-card-notes">{{deref .Notes}}</div>
+        {{end}}
+      </div>
+      <div class="session-card-arrow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </div>
+    </a>
+    {{end}}
+
+    {{if not .Sessions}}
+    <div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+      </svg>
+      {{if eq .SessionFilter "open"}}
+      <h3>No open sessions</h3>
+      <p>All sessions have been completed. Nice work!</p>
+      {{else if eq .SessionFilter "complete"}}
+      <h3>No completed sessions</h3>
+      <p>Sessions will appear here once they're published.</p>
+      {{else}}
+      <h3>No sessions yet</h3>
+      <p>Schedule your first setting session to coordinate your team.</p>
+      <a href="/sessions/new" class="btn btn-primary mt-4"
+         hx-get="/sessions/new" hx-target="#main-content" hx-push-url="true">Schedule Session</a>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}

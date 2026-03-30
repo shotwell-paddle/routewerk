@@ -20,24 +20,29 @@ import (
 func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 	r := chi.NewRouter()
 
-	// Global middleware
+	// Request metrics (lightweight in-process counters)
+	metrics := middleware.NewMetrics()
+
+	// Global middleware (applied to ALL routes — API and web)
 	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
-	r.Use(middleware.SecureHeaders)
+	r.Use(metrics.Collect)
+	r.Use(middleware.HSTS(cfg.IsDev()))
 	r.Use(middleware.Logger)
-	r.Use(chimw.Recoverer)
+	r.Use(middleware.Recovery)
 
-	// CORS
-	allowedOrigins := []string{"http://localhost:3000", "http://localhost:8080"}
+	// CORS — always use explicit origins (never wildcard) so credentials work safely.
+	// In dev, allow common local dev ports; in production, allow only the configured frontend.
+	allowedOrigins := []string{cfg.FrontendURL}
 	if cfg.IsDev() {
-		allowedOrigins = []string{"*"}
+		allowedOrigins = []string{"http://localhost:3000", "http://localhost:8080", "http://127.0.0.1:3000", "http://127.0.0.1:8080"}
 	}
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: !cfg.IsDev(),
+		AllowCredentials: true,
 		MaxAge:           300,
 	}))
 
@@ -63,6 +68,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 	trainingRepo := repository.NewTrainingRepo(db)
 	partnerRepo := repository.NewPartnerRepo(db)
 	analyticsRepo := repository.NewAnalyticsRepo(db)
+	webSessionRepo := repository.NewWebSessionRepo(db)
 
 	// Audit
 	auditRepo := repository.NewAuditRepo(db)
@@ -71,6 +77,9 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 	// Services
 	authService := service.NewAuthService(userRepo, loginAttemptRepo, cfg)
 	cardGen := service.NewCardGenerator(cfg.FrontendURL)
+
+	// Web session manager (cookie-based auth for HTMX frontend)
+	sessionMgr := middleware.NewSessionManager(webSessionRepo, userRepo, cfg.IsDev())
 
 	// Handlers
 	healthHandler := handler.NewHealthHandler(db)
@@ -90,25 +99,167 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsRepo)
 	cardHandler := handler.NewCardHandler(routeRepo, wallRepo, locationRepo, userRepo, cardGen)
 
-	// Health check
+	// Health check and metrics
 	r.Get("/health", healthHandler.Check)
+	r.Get("/metrics", metrics.Handler)
 
 	// ── Web Frontend (HTMX) ────────────────────────────────────
-	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo)
+	difficultyRepo := repository.NewDifficultyRepo(db)
+	photoRepo := repository.NewRoutePhotoRepo(db)
+	settingsRepo := repository.NewSettingsRepo(db)
+	userTagRepo := repository.NewUserTagRepo(db)
+	storageSvc := service.NewStorageService(cfg)
+	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, authService, storageSvc, cardGen, sessionMgr, cfg)
 
-	// Static assets
-	r.Handle("/static/*", webhandler.StaticHandler())
+	// Rate limiter for web pages: 120 requests per minute per IP
+	webLimiter := middleware.NewRateLimiter(120, 1*time.Minute)
 
-	// Web pages — served as full HTML or HTMX partials
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/dashboard", http.StatusTemporaryRedirect)
+	// Stricter rate limiter for login: 10 requests per minute per IP
+	loginLimiter := middleware.NewRateLimiter(10, 1*time.Minute)
+
+	// CSRF protection for state-changing requests
+	csrf := middleware.NewCSRFProtection(cfg.IsDev())
+
+	// Static assets — immutable cache headers, gzip compressed
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.SecureHeadersStatic)
+		r.Use(middleware.Gzip)
+		r.Handle("/static/*", webhandler.StaticHandler())
 	})
-	r.Get("/dashboard", webHandler.Dashboard)
-	r.Get("/routes", webHandler.Routes)
-	r.Get("/routes/{routeID}", webHandler.RouteDetail)
 
-	// API v1
+	// Web pages — web-specific CSP, CSRF, rate limiting, gzip
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.SecureHeadersWeb)
+		r.Use(middleware.Gzip)
+		r.Use(webLimiter.Limit)
+		r.Use(csrf.Protect)
+
+		// Public auth routes (no session required, stricter rate limit)
+		r.Group(func(r chi.Router) {
+			r.Use(loginLimiter.Limit)
+			r.Get("/login", webHandler.LoginPage)
+			r.Post("/login", webHandler.LoginSubmit)
+			r.Get("/register", webHandler.RegisterPage)
+			r.Post("/register", webHandler.RegisterSubmit)
+		})
+
+		// Authenticated web routes
+		r.Group(func(r chi.Router) {
+			r.Use(sessionMgr.RequireSession)
+
+			r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, "/dashboard", http.StatusTemporaryRedirect)
+			})
+			// First-run setup (only works when no orgs exist)
+			r.Get("/setup", webHandler.SetupPage)
+			r.Post("/setup", webHandler.SetupSubmit)
+
+			// Gym discovery (works even without a location)
+			r.Get("/join-gym", webHandler.JoinGymPage)
+			r.Get("/join-gym/search", webHandler.JoinGymSearch)
+			r.Post("/join-gym", webHandler.JoinGymSubmit)
+
+			// Location and role switchers
+			r.Post("/switch-location", webHandler.SwitchLocation)
+			r.Post("/switch-view-as", webHandler.SwitchViewAs)
+
+			// Climber routes — any authenticated user
+			r.Get("/explore/walls", webHandler.ClimberWalls)
+			r.Get("/routes", webHandler.Routes)
+			r.Get("/routes/{routeID}", webHandler.RouteDetail)
+			r.Get("/routes/{routeID}/card/print.png", webHandler.RouteCardPrintPNG)
+			r.Get("/routes/{routeID}/card/print.pdf", webHandler.RouteCardPrintPDF)
+			r.Get("/routes/{routeID}/card/share.png", webHandler.RouteCardSharePNG)
+			r.Get("/routes/{routeID}/card/share.pdf", webHandler.RouteCardSharePDF)
+			r.Post("/routes/{routeID}/ascent", webHandler.LogAscent)
+			r.Get("/routes/{routeID}/ascents-feed", webHandler.AscentsFeed)
+			r.Post("/routes/{routeID}/rate", webHandler.RateRoute)
+			r.Post("/routes/{routeID}/difficulty", webHandler.DifficultyVote)
+			r.Post("/routes/{routeID}/tags", webHandler.AddCommunityTag)
+			r.Post("/routes/{routeID}/tags/remove", webHandler.RemoveCommunityTag)
+			r.Post("/routes/{routeID}/tags/delete", webHandler.DeleteCommunityTag)
+			r.Post("/routes/{routeID}/photos", webHandler.PhotoUpload)
+			r.Post("/routes/{routeID}/photos/{photoID}/delete", webHandler.PhotoDelete)
+			r.Get("/profile", webHandler.ClimberProfile)
+			r.Get("/profile/ticks", webHandler.ProfileTicks)
+			r.Get("/profile/settings", webHandler.ProfileSettings)
+			r.Post("/profile/settings", webHandler.ProfileSettingsSave)
+			r.Get("/profile/ticks/{ascentID}/edit", webHandler.TickEditForm)
+			r.Post("/profile/ticks/{ascentID}", webHandler.TickUpdate)
+			r.Post("/profile/ticks/{ascentID}/delete", webHandler.TickDelete)
+			r.Post("/logout", webHandler.Logout)
+
+			// Setter routes — require setter role or above
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireSetterSession)
+
+				r.Get("/dashboard", webHandler.Dashboard)
+
+				// Route creation, editing, status management
+				r.Get("/routes/manage", webHandler.RouteManage)
+				r.Get("/routes/new", webHandler.RouteNew)
+				r.Get("/routes/new/fields", webHandler.RouteFormFields)
+				r.Post("/routes/new", webHandler.RouteCreate)
+				r.Get("/routes/{routeID}/edit", webHandler.RouteEdit)
+				r.Post("/routes/{routeID}/edit", webHandler.RouteUpdate)
+				r.Post("/routes/{routeID}/status", webHandler.RouteStatusUpdate)
+
+				// Wall management
+				r.Get("/walls", webHandler.WallList)
+				r.Get("/walls/new", webHandler.WallNew)
+				r.Post("/walls/new", webHandler.WallCreate)
+				r.Get("/walls/{wallID}", webHandler.WallDetail)
+				r.Get("/walls/{wallID}/edit", webHandler.WallEdit)
+				r.Post("/walls/{wallID}/edit", webHandler.WallUpdate)
+				r.Post("/walls/{wallID}/delete", webHandler.WallDelete)
+
+				// Setting sessions
+				r.Get("/sessions", webHandler.SessionList)
+				r.Get("/sessions/new", webHandler.SessionNew)
+				r.Post("/sessions/new", webHandler.SessionCreate)
+				r.Get("/sessions/{sessionID}", webHandler.SessionDetail)
+				r.Get("/sessions/{sessionID}/edit", webHandler.SessionEdit)
+				r.Post("/sessions/{sessionID}/edit", webHandler.SessionUpdate)
+				r.Post("/sessions/{sessionID}/assign", webHandler.SessionAddAssignment)
+				r.Post("/sessions/{sessionID}/unassign/{assignmentID}", webHandler.SessionRemoveAssignment)
+				r.Post("/sessions/{sessionID}/strip", webHandler.SessionAddStripTarget)
+				r.Post("/sessions/{sessionID}/strip/{targetID}/delete", webHandler.SessionRemoveStripTarget)
+				r.Post("/sessions/{sessionID}/checklist/{itemID}/toggle", webHandler.SessionToggleChecklist)
+				r.Post("/sessions/{sessionID}/delete", webHandler.SessionDelete)
+				r.Get("/sessions/{sessionID}/complete", webHandler.SessionComplete)
+				r.Post("/sessions/{sessionID}/publish", webHandler.SessionPublish)
+				r.Post("/sessions/{sessionID}/reopen", webHandler.SessionReopen)
+				r.Get("/sessions/{sessionID}/route-fields", webHandler.SessionRouteFields)
+				r.Post("/sessions/{sessionID}/routes", webHandler.SessionAddRoute)
+				r.Post("/sessions/{sessionID}/routes/{routeID}/edit", webHandler.SessionEditRoute)
+				r.Post("/sessions/{sessionID}/routes/{routeID}/delete", webHandler.SessionDeleteRoute)
+
+				// Gym settings — head_setter or above (handler checks role internally)
+				r.Get("/settings", webHandler.GymSettingsPage)
+				r.Post("/settings", webHandler.GymSettingsSave)
+				r.Post("/settings/circuits/add", webHandler.GymSettingsAddCircuit)
+				r.Post("/settings/circuits/{colorName}/delete", webHandler.GymSettingsRemoveCircuit)
+				r.Post("/settings/hold-colors/add", webHandler.GymSettingsAddHoldColor)
+				r.Post("/settings/hold-colors/{colorName}/delete", webHandler.GymSettingsRemoveHoldColor)
+				r.Get("/settings/team", webHandler.TeamPage)
+				r.Post("/settings/team/{membershipID}/role", webHandler.TeamUpdateRole)
+
+				// Organization settings — gym_manager or above (handler checks role internally)
+				r.Get("/settings/organization", webHandler.OrgSettingsPage)
+				r.Post("/settings/organization", webHandler.OrgSettingsSave)
+				r.Get("/settings/organization/gyms/new", webHandler.GymNewPage)
+				r.Post("/settings/organization/gyms/new", webHandler.GymCreate)
+				r.Get("/settings/organization/gyms/{gymID}/edit", webHandler.GymEditPage)
+				r.Post("/settings/organization/gyms/{gymID}/edit", webHandler.GymUpdate)
+				r.Get("/settings/organization/team", webHandler.OrgTeamPage)
+				r.Post("/settings/organization/team/{membershipID}/role", webHandler.OrgTeamUpdateRole)
+			})
+		})
+	})
+
+	// API v1 — JSON API with restrictive CSP
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(middleware.SecureHeaders)
 		// Public — rate-limited auth endpoints
 		r.Group(func(r chi.Router) {
 			r.Use(authLimiter.Limit)

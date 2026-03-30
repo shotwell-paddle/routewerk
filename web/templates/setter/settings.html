@@ -1,0 +1,304 @@
+{{define "title"}}Settings — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Gym Settings</h1>
+    <p class="page-subtitle">{{if .Location}}{{.Location.Name}}{{end}} — Grading, circuits, and display preferences</p>
+  </div>
+  <div class="flex items-center gap-2">
+    {{if .IsHeadSetter}}
+    <a href="/settings/team" class="btn btn-ghost"
+       hx-get="/settings/team" hx-target="#main-content" hx-push-url="true">
+      Manage Team
+    </a>
+    {{end}}
+    {{if .IsOrgAdmin}}
+    <a href="/settings/organization" class="btn btn-ghost"
+       hx-get="/settings/organization" hx-target="#main-content" hx-push-url="true">
+      Organization Settings
+    </a>
+    {{end}}
+  </div>
+</div>
+
+{{if .SettingsSuccess}}
+<div class="settings-toast" id="settings-toast">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+  </svg>
+  Settings saved
+</div>
+{{end}}
+
+<div class="page-body" data-csrf="{{.CSRFToken}}">
+  <form method="POST" action="/settings" class="settings-form">
+    <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+
+    <!-- ── Grading Section ──────────────────────────────── -->
+    <section class="settings-section" id="grading">
+      <div class="settings-section-header">
+        <h2 class="settings-section-title">Grading</h2>
+        <p class="settings-section-desc">How grades are configured and displayed at your gym</p>
+      </div>
+
+      {{if or .IsManager .OrgPermissions.HeadSetterCanEditGrading}}
+      <div class="settings-field">
+        <label class="settings-label">Boulder Grading Method</label>
+        <p class="settings-hint">Choose how boulders are graded for climbers</p>
+        <div class="settings-radio-group">
+          <label class="settings-radio">
+            <input type="radio" name="boulder_method" value="v_scale" {{if eq .GymSettings.Grading.BoulderMethod "v_scale"}}checked{{end}}>
+            <div class="settings-radio-content">
+              <span class="settings-radio-label">V-Scale Only</span>
+              <span class="settings-radio-desc">VB, V0, V1 ... V12. The standard.</span>
+            </div>
+          </label>
+          <label class="settings-radio">
+            <input type="radio" name="boulder_method" value="circuit" {{if eq .GymSettings.Grading.BoulderMethod "circuit"}}checked{{end}}>
+            <div class="settings-radio-content">
+              <span class="settings-radio-label">Circuit Colors Only</span>
+              <span class="settings-radio-desc">Color-coded difficulty tiers, no numeric grades shown.</span>
+            </div>
+          </label>
+          <label class="settings-radio">
+            <input type="radio" name="boulder_method" value="both" {{if eq .GymSettings.Grading.BoulderMethod "both"}}checked{{end}}>
+            <div class="settings-radio-content">
+              <span class="settings-radio-label">Both</span>
+              <span class="settings-radio-desc">Circuit colors with optional V-grade visible.</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-field">
+        <label class="settings-toggle">
+          <input type="checkbox" name="show_grades_on_circuit" {{if .GymSettings.Grading.ShowGradesOnCircuit}}checked{{end}}>
+          <span class="settings-toggle-track"></span>
+          <div class="settings-toggle-content">
+            <span class="settings-toggle-label">Show grades on circuit boulders to climbers</span>
+            <span class="settings-toggle-desc">Display the V-grade alongside the circuit color in the climber view. Setters always see the grade regardless of this setting.</span>
+          </div>
+        </label>
+      </div>
+
+      <div class="settings-field">
+        <label class="settings-label">Route Grade Format</label>
+        <p class="settings-hint">How roped route grades (sport, top rope, lead) are displayed</p>
+        <div class="settings-radio-group">
+          <label class="settings-radio">
+            <input type="radio" name="route_grade_format" value="plus_minus" {{if eq .GymSettings.Grading.RouteGradeFormat "plus_minus"}}checked{{end}}>
+            <div class="settings-radio-content">
+              <span class="settings-radio-label">Plus / Minus</span>
+              <span class="settings-radio-desc">5.9-, 5.9, 5.9+ — commonly used in the US</span>
+            </div>
+          </label>
+          <label class="settings-radio">
+            <input type="radio" name="route_grade_format" value="letter" {{if eq .GymSettings.Grading.RouteGradeFormat "letter"}}checked{{end}}>
+            <div class="settings-radio-content">
+              <span class="settings-radio-label">Letter Grades</span>
+              <span class="settings-radio-desc">5.9a, 5.9b, 5.9c, 5.9d — more granular</span>
+            </div>
+          </label>
+        </div>
+      </div>
+      {{else}}
+      <div class="settings-locked">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
+        </svg>
+        Grading settings are managed by your organization admin
+      </div>
+      {{end}}
+    </section>
+
+    <!-- ── Circuit Colors Section ───────────────────────── -->
+    <section class="settings-section" id="circuits">
+      <div class="settings-section-header">
+        <h2 class="settings-section-title">Circuit Colors</h2>
+        <p class="settings-section-desc">Manage the circuit color palette and ordering. Drag to reorder.</p>
+      </div>
+
+      {{if or .IsManager .OrgPermissions.HeadSetterCanEditCircuits}}
+      <input type="hidden" name="circuit_colors_json" id="circuit-colors-json" value="">
+
+      <div class="circuit-list" id="circuit-list">
+        {{range .GymSettings.Circuits.Colors}}
+        <div class="circuit-item" data-name="{{.Name}}" data-hex="{{.Hex}}" draggable="true">
+          <div class="circuit-item-drag">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="8" y1="6" x2="8" y2="6.01"/><line x1="16" y1="6" x2="16" y2="6.01"/>
+              <line x1="8" y1="12" x2="8" y2="12.01"/><line x1="16" y1="12" x2="16" y2="12.01"/>
+              <line x1="8" y1="18" x2="8" y2="18.01"/><line x1="16" y1="18" x2="16" y2="18.01"/>
+            </svg>
+          </div>
+          <span class="circuit-item-swatch" style="background: {{.Hex | safeCSS}}"></span>
+          <span class="circuit-item-name">{{.Name | title}}</span>
+          <span class="circuit-item-hex">{{.Hex}}</span>
+          <button type="button" class="btn btn-ghost btn-sm btn-danger-text circuit-item-delete" title="Remove"
+                  hx-post="/settings/circuits/{{.Name}}/delete"
+                  hx-vals='{"_csrf_token": "{{$.CSRFToken}}"}'
+                  hx-confirm="Remove {{.Name | title}} from circuit colors?">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        {{end}}
+      </div>
+      <!-- Add circuit color (uses hx-post to avoid nested form) -->
+      <div class="settings-inline-form" id="circuit-add-area">
+        <input type="text" id="add-color-name" placeholder="Color name" class="form-input form-input-sm" maxlength="20">
+        <input type="color" id="add-color-hex" value="#999999" class="form-input-color">
+        <button type="button" class="btn btn-sm btn-ghost" id="add-color-btn">+ Add Color</button>
+      </div>
+      {{else}}
+      <div class="settings-locked">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
+        </svg>
+        Circuit colors are managed by your organization admin
+      </div>
+      {{end}}
+    </section>
+
+    <!-- ── Hold Colors Section ─────────────────────────── -->
+    <section class="settings-section" id="hold-colors">
+      <div class="settings-section-header">
+        <h2 class="settings-section-title">Hold Colors</h2>
+        <p class="settings-section-desc">The palette of hold/tape colors setters choose from when creating routes</p>
+      </div>
+
+      {{if or .IsManager .OrgPermissions.HeadSetterCanEditHoldColors}}
+      <div class="hold-color-list" id="hold-color-list">
+        {{range .GymSettings.HoldColors.Colors}}
+        <div class="circuit-item" data-name="{{.Name}}" data-hex="{{.Hex}}">
+          <span class="circuit-item-swatch" style="background: {{.Hex | safeCSS}}"></span>
+          <span class="circuit-item-name">{{.Name}}</span>
+          <span class="circuit-item-hex">{{.Hex}}</span>
+          <button type="button" class="btn btn-ghost btn-sm btn-danger-text circuit-item-delete" title="Remove"
+                  hx-post="/settings/hold-colors/{{.Name}}/delete"
+                  hx-vals='{"_csrf_token": "{{$.CSRFToken}}"}'
+                  hx-confirm="Remove {{.Name}} from hold colors? Routes already using this color won't be affected.">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        {{end}}
+      </div>
+      <div class="settings-inline-form">
+        <input type="text" id="add-hold-color-name" placeholder="Color name" class="form-input form-input-sm" maxlength="20">
+        <input type="color" id="add-hold-color-hex" value="#999999" class="form-input-color">
+        <button type="button" class="btn btn-sm btn-ghost" id="add-hold-color-btn">+ Add Color</button>
+      </div>
+      {{else}}
+      <div class="settings-locked">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
+        </svg>
+        Hold colors are managed by your organization admin
+      </div>
+      {{end}}
+    </section>
+
+    <!-- ── Display Section ──────────────────────────────── -->
+    <section class="settings-section" id="display">
+      <div class="settings-section-header">
+        <h2 class="settings-section-title">Display</h2>
+        <p class="settings-section-desc">What climbers see when browsing routes</p>
+      </div>
+
+      {{if or .IsManager .OrgPermissions.HeadSetterCanEditDisplay}}
+      <div class="settings-field">
+        <label class="settings-toggle">
+          <input type="checkbox" name="show_setter_name" {{if .GymSettings.Display.ShowSetterName}}checked{{end}}>
+          <span class="settings-toggle-track"></span>
+          <div class="settings-toggle-content">
+            <span class="settings-toggle-label">Show setter names</span>
+            <span class="settings-toggle-desc">Display who set each route on the climber-facing view</span>
+          </div>
+        </label>
+      </div>
+      <div class="settings-field">
+        <label class="settings-toggle">
+          <input type="checkbox" name="show_route_age" {{if .GymSettings.Display.ShowRouteAge}}checked{{end}}>
+          <span class="settings-toggle-track"></span>
+          <div class="settings-toggle-content">
+            <span class="settings-toggle-label">Show route age</span>
+            <span class="settings-toggle-desc">Display how long each route has been up</span>
+          </div>
+        </label>
+      </div>
+      <div class="settings-field">
+        <label class="settings-toggle">
+          <input type="checkbox" name="show_difficulty_consensus" {{if .GymSettings.Display.ShowDifficultyConsensus}}checked{{end}}>
+          <span class="settings-toggle-track"></span>
+          <div class="settings-toggle-content">
+            <span class="settings-toggle-label">Show difficulty consensus</span>
+            <span class="settings-toggle-desc">Show easy/right/hard community vote on route detail</span>
+          </div>
+        </label>
+      </div>
+      <div class="settings-field">
+        <label class="settings-label" for="default_strip_age_days">Default strip age (days)</label>
+        <p class="settings-hint">Routes older than this are flagged for review. Set to 0 to disable.</p>
+        <input type="number" name="default_strip_age_days" id="default_strip_age_days"
+               value="{{.GymSettings.Display.DefaultStripAgeDays}}"
+               min="0" max="365" class="form-input form-input-sm settings-input-narrow">
+      </div>
+      {{else}}
+      <div class="settings-locked">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
+        </svg>
+        Display settings are managed by your organization admin
+      </div>
+      {{end}}
+    </section>
+
+    <!-- ── Sessions Section ─────────────────────────────── -->
+    <section class="settings-section" id="sessions-config">
+      <div class="settings-section-header">
+        <h2 class="settings-section-title">Setting Sessions</h2>
+        <p class="settings-section-desc">Defaults for new setting sessions</p>
+      </div>
+
+      {{if or .IsManager .OrgPermissions.HeadSetterCanEditSessions}}
+      <div class="settings-field">
+        <label class="settings-toggle">
+          <input type="checkbox" name="default_playbook_enabled" {{if .GymSettings.Sessions.DefaultPlaybookEnabled}}checked{{end}}>
+          <span class="settings-toggle-track"></span>
+          <div class="settings-toggle-content">
+            <span class="settings-toggle-label">Auto-add playbook to new sessions</span>
+            <span class="settings-toggle-desc">Pre-populate the checklist with your standard playbook steps</span>
+          </div>
+        </label>
+      </div>
+      <div class="settings-field">
+        <label class="settings-toggle">
+          <input type="checkbox" name="require_route_photo" {{if .GymSettings.Sessions.RequireRoutePhoto}}checked{{end}}>
+          <span class="settings-toggle-track"></span>
+          <div class="settings-toggle-content">
+            <span class="settings-toggle-label">Require route photo</span>
+            <span class="settings-toggle-desc">Setters must upload a photo before publishing a route</span>
+          </div>
+        </label>
+      </div>
+      {{else}}
+      <div class="settings-locked">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
+        </svg>
+        Session settings are managed by your organization admin
+      </div>
+      {{end}}
+    </section>
+
+    <div class="settings-actions">
+      <button type="submit" class="btn btn-primary">Save Settings</button>
+    </div>
+  </form>
+
+</div>
+{{end}}

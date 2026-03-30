@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — Routewerk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/routewerk.css">
+</head>
+<body>
+  <div class="auth-shell">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <h1>Routewerk</h1>
+        <p>Sign in to your account</p>
+      </div>
+
+      {{if .Error}}
+      <div class="auth-error">{{.Error}}</div>
+      {{end}}
+
+      <form method="POST" action="/login">
+        <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+        <div class="form-group">
+          <label class="form-label" for="email">Email</label>
+          <input class="form-input" type="email" id="email" name="email"
+                 value="{{.Email}}" required autofocus autocomplete="email"
+                 placeholder="you@gym.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="password">Password</label>
+          <input class="form-input" type="password" id="password" name="password"
+                 required autocomplete="current-password"
+                 placeholder="••••••••">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: var(--sp-2);">
+          Sign In
+        </button>
+      </form>
+
+      <div class="auth-footer">
+        Don't have an account? <a href="/register">Sign up</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

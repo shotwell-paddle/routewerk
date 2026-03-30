@@ -72,15 +72,264 @@ document.addEventListener('change', function(e) {
   });
 });
 
+// ── Route type → grade constraint ─────────────────────────────
 // ── Mobile sidebar toggle ─────────────────────────────────────
+function openSidebar() {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebar-backdrop').classList.add('visible');
+  document.body.classList.add('sidebar-open');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-backdrop').classList.remove('visible');
+  document.body.classList.remove('sidebar-open');
+}
 document.addEventListener('click', function(e) {
   if (e.target.closest('.sidebar-toggle')) {
-    document.getElementById('sidebar').classList.toggle('open');
+    var sidebar = document.getElementById('sidebar');
+    if (sidebar.classList.contains('open')) {
+      closeSidebar();
+    } else {
+      openSidebar();
+    }
+  }
+  if (e.target.id === 'sidebar-backdrop') {
+    closeSidebar();
   }
 });
 
-// ── HTMX: close sidebar on mobile navigation ─────────────────
+// ── Sidebar: update active nav based on current URL ──────────
+function updateActiveNav() {
+  var path = window.location.pathname;
+  var items = document.querySelectorAll('.sidebar-nav .nav-item');
+  var bestMatch = null;
+  var bestLen = 0;
+
+  items.forEach(function(item) {
+    var href = item.getAttribute('href');
+    if (!href) return;
+    if (path === href || path.indexOf(href + '/') === 0) {
+      if (href.length > bestLen) {
+        bestMatch = item;
+        bestLen = href.length;
+      }
+    }
+  });
+
+  items.forEach(function(item) { item.classList.remove('active'); });
+  if (bestMatch) bestMatch.classList.add('active');
+}
+
+// ── HTMX: close sidebar on mobile + re-init settings ────────
 document.addEventListener('htmx:afterSwap', function() {
-  var sidebar = document.getElementById('sidebar');
-  if (sidebar) sidebar.classList.remove('open');
+  closeSidebar();
+
+  updateActiveNav();
+
+  // Re-init settings after HTMX swap
+  initCircuitDragDrop();
+  initSettingsFormSync();
+  initCircuitAddColor();
+  initHoldColorAdd();
+});
+
+// ── Settings: circuit color drag-and-drop reorder ─────────────
+function initCircuitDragDrop() {
+  var list = document.getElementById('circuit-list');
+  if (!list) return;
+
+  var dragItem = null;
+
+  list.addEventListener('dragstart', function(e) {
+    var item = e.target.closest('.circuit-item');
+    if (!item) return;
+    dragItem = item;
+    item.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+
+  list.addEventListener('dragend', function(e) {
+    var item = e.target.closest('.circuit-item');
+    if (item) item.classList.remove('dragging');
+    // Clear all drop indicators
+    list.querySelectorAll('.circuit-item').forEach(function(ci) {
+      ci.classList.remove('drop-above', 'drop-below');
+    });
+    dragItem = null;
+    syncCircuitColorsJSON();
+  });
+
+  list.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    var target = e.target.closest('.circuit-item');
+    if (!target || target === dragItem) return;
+
+    // Clear previous indicators
+    list.querySelectorAll('.circuit-item').forEach(function(ci) {
+      ci.classList.remove('drop-above', 'drop-below');
+    });
+
+    var rect = target.getBoundingClientRect();
+    var midY = rect.top + rect.height / 2;
+    if (e.clientY < midY) {
+      target.classList.add('drop-above');
+    } else {
+      target.classList.add('drop-below');
+    }
+  });
+
+  list.addEventListener('drop', function(e) {
+    e.preventDefault();
+    var target = e.target.closest('.circuit-item');
+    if (!target || !dragItem || target === dragItem) return;
+
+    var rect = target.getBoundingClientRect();
+    var midY = rect.top + rect.height / 2;
+
+    if (e.clientY < midY) {
+      list.insertBefore(dragItem, target);
+    } else {
+      list.insertBefore(dragItem, target.nextSibling);
+    }
+
+    // Clear indicators
+    list.querySelectorAll('.circuit-item').forEach(function(ci) {
+      ci.classList.remove('drop-above', 'drop-below');
+    });
+
+    syncCircuitColorsJSON();
+  });
+}
+
+// Sync the circuit colors order to the hidden JSON field
+function syncCircuitColorsJSON() {
+  var input = document.getElementById('circuit-colors-json');
+  var list = document.getElementById('circuit-list');
+  if (!input || !list) return;
+
+  var colors = [];
+  list.querySelectorAll('.circuit-item').forEach(function(item, i) {
+    colors.push({
+      name: item.getAttribute('data-name'),
+      hex: item.getAttribute('data-hex'),
+      sort_order: i
+    });
+  });
+
+  input.value = JSON.stringify(colors);
+}
+
+// Sync before form submit
+function initSettingsFormSync() {
+  var form = document.querySelector('.settings-form');
+  if (!form) return;
+
+  form.addEventListener('submit', function() {
+    syncCircuitColorsJSON();
+  });
+}
+
+// ── Settings: add circuit color via fetch ─────────────────────
+function initCircuitAddColor() {
+  var btn = document.getElementById('add-color-btn');
+  if (!btn) return;
+
+  btn.addEventListener('click', function() {
+    var nameInput = document.getElementById('add-color-name');
+    var hexInput = document.getElementById('add-color-hex');
+    var name = nameInput.value.trim();
+    var hex = hexInput.value;
+
+    if (!name) {
+      nameInput.focus();
+      return;
+    }
+
+    var csrf = document.querySelector('.page-body').getAttribute('data-csrf');
+    var body = new URLSearchParams();
+    body.append('_csrf_token', csrf);
+    body.append('color_name', name);
+    body.append('color_hex', hex);
+
+    fetch('/settings/circuits/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    }).then(function(resp) {
+      if (resp.ok) {
+        // Follow the HX-Redirect or just reload settings
+        var redirect = resp.headers.get('HX-Redirect');
+        if (redirect) {
+          htmx.ajax('GET', redirect, { target: '#main-content', swap: 'innerHTML' });
+          history.pushState({}, '', redirect);
+        } else {
+          htmx.ajax('GET', '/settings?saved=1', { target: '#main-content', swap: 'innerHTML' });
+          history.pushState({}, '', '/settings?saved=1');
+        }
+      } else {
+        resp.text().then(function(t) { alert(t || 'Failed to add color'); });
+      }
+    });
+  });
+}
+
+// ── Settings: hold color add button ──────────────────────────
+function initHoldColorAdd() {
+  var btn = document.getElementById('add-hold-color-btn');
+  if (!btn) return;
+
+  btn.addEventListener('click', function() {
+    var nameInput = document.getElementById('add-hold-color-name');
+    var hexInput = document.getElementById('add-hold-color-hex');
+    var name = nameInput.value.trim();
+    var hex = hexInput.value;
+
+    if (!name) {
+      nameInput.focus();
+      return;
+    }
+
+    var csrf = document.querySelector('.page-body').getAttribute('data-csrf');
+    var body = new URLSearchParams();
+    body.append('_csrf_token', csrf);
+    body.append('color_name', name);
+    body.append('color_hex', hex);
+
+    fetch('/settings/hold-colors/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    }).then(function(resp) {
+      if (resp.ok) {
+        var redirect = resp.headers.get('HX-Redirect');
+        if (redirect) {
+          htmx.ajax('GET', redirect, { target: '#main-content', swap: 'innerHTML' });
+          history.pushState({}, '', redirect);
+        } else {
+          htmx.ajax('GET', '/settings?saved=1', { target: '#main-content', swap: 'innerHTML' });
+          history.pushState({}, '', '/settings?saved=1');
+        }
+      } else {
+        resp.text().then(function(t) { alert(t || 'Failed to add color'); });
+      }
+    });
+  });
+}
+
+// ── Settings: auto-dismiss success toast ──────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  initCircuitDragDrop();
+  initSettingsFormSync();
+  initCircuitAddColor();
+  initHoldColorAdd();
+
+  var toast = document.getElementById('settings-toast');
+  if (toast) {
+    setTimeout(function() {
+      toast.style.transition = 'opacity 0.3s';
+      toast.style.opacity = '0';
+      setTimeout(function() { toast.remove(); }, 300);
+    }, 3000);
+  }
 });

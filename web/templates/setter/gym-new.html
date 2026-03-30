@@ -1,0 +1,106 @@
+{{define "title"}}New Gym — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>Add a Gym</h1>
+      <p class="page-subtitle">{{if .OrgName}}{{.OrgName}}{{end}} — Create a new gym location</p>
+    </div>
+    <a href="/settings/organization" class="btn btn-ghost"
+       hx-get="/settings/organization" hx-target="#main-content" hx-push-url="true">
+      &larr; Back
+    </a>
+  </div>
+</div>
+
+<div class="page-body">
+  {{if .FormError}}
+  <div class="form-alert form-alert-error">
+    {{.FormError}}
+  </div>
+  {{end}}
+
+  {{if .FormSuccess}}
+  <div class="form-alert form-alert-success">
+    {{.FormSuccess}}
+  </div>
+  {{end}}
+
+  <form method="POST" action="/settings/organization/gyms/new"
+        hx-post="/settings/organization/gyms/new"
+        hx-target="#main-content" hx-push-url="false"
+        class="route-form">
+    <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+
+    <div class="form-card">
+      <h2 class="form-card-title">Gym Details</h2>
+
+      <div class="form-group">
+        <label class="form-label" for="name">Gym Name</label>
+        <input class="form-input" type="text" id="name" name="name"
+               placeholder="e.g. Mosaic Climbing" required maxlength="120"
+               value="{{.GymForm.Name}}">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="slug">URL Slug <span class="form-hint">(optional — auto-generated from name)</span></label>
+        <input class="form-input" type="text" id="slug" name="slug"
+               placeholder="e.g. mosaic-climbing" maxlength="60"
+               value="{{.GymForm.Slug}}">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="address">Address <span class="form-hint">(optional)</span></label>
+        <input class="form-input" type="text" id="address" name="address"
+               placeholder="e.g. 123 Main St, Portland, OR 97201" maxlength="250">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="timezone">Timezone</label>
+        <select class="form-select" id="timezone" name="timezone">
+          <option value="America/New_York">Eastern (America/New_York)</option>
+          <option value="America/Chicago">Central (America/Chicago)</option>
+          <option value="America/Denver">Mountain (America/Denver)</option>
+          <option value="America/Los_Angeles" selected>Pacific (America/Los_Angeles)</option>
+          <option value="America/Anchorage">Alaska (America/Anchorage)</option>
+          <option value="Pacific/Honolulu">Hawaii (Pacific/Honolulu)</option>
+          <option value="America/Phoenix">Arizona (America/Phoenix)</option>
+          <option value="UTC">UTC</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-card">
+      <h2 class="form-card-title">Contact & Info</h2>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="website_url">Website <span class="form-hint">(optional)</span></label>
+          <input class="form-input" type="url" id="website_url" name="website_url"
+                 placeholder="https://...">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="phone">Phone <span class="form-hint">(optional)</span></label>
+          <input class="form-input" type="tel" id="phone" name="phone"
+                 placeholder="(503) 555-0123">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="day_pass_info">Day Pass Info <span class="form-hint">(optional)</span></label>
+        <input class="form-input" type="text" id="day_pass_info" name="day_pass_info"
+               placeholder="e.g. $20 day pass, $15 with student ID" maxlength="250">
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Create Gym</button>
+      <a href="/settings/organization" class="btn btn-ghost"
+         hx-get="/settings/organization" hx-target="#main-content" hx-push-url="true">
+        Cancel
+      </a>
+    </div>
+  </form>
+</div>
+{{end}}

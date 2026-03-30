@@ -1,0 +1,130 @@
+{{define "title"}}Review &amp; Publish — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <div class="flex items-center gap-3">
+        <a href="/sessions/{{.Session.ID}}" class="btn btn-ghost btn-sm"
+           hx-get="/sessions/{{.Session.ID}}" hx-target="#main-content" hx-push-url="true"
+           title="Back to session">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+        </a>
+        <div>
+          <h1>Review &amp; Publish</h1>
+          <p class="page-subtitle">{{.Session.ScheduledDate.Format "Monday, January 2, 2006"}}</p>
+        </div>
+      </div>
+    </div>
+    {{if .SessionRoutes}}
+    <form method="POST" action="/sessions/{{.Session.ID}}/publish"
+          hx-confirm="Publish all draft routes and mark this session complete?">
+      <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+      <button type="submit" class="btn btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        Publish All &amp; Complete
+      </button>
+    </form>
+    {{end}}
+  </div>
+</div>
+
+<div class="page-body">
+  {{if .SessionRoutes}}
+  <div class="session-section">
+    <div class="flex items-center justify-between mb-3">
+      <h3>Routes to Publish</h3>
+      <span class="badge">{{len .SessionRoutes}}</span>
+    </div>
+    <p class="text-muted mb-3">Review each route. Delete any that didn't make the cut. When ready, hit "Publish All" to go live.</p>
+
+    <div class="review-route-list">
+      {{range .SessionRoutes}}
+      <details class="review-route-card" id="review-route-{{.ID}}">
+        <summary class="review-route-header">
+          <div class="session-route-color-dot" style="background:{{.Color}}"></div>
+          <span class="review-route-grade">{{.Grade}}</span>
+          <span class="review-route-wall">{{.WallName}}</span>
+          <span class="review-route-type">{{.RouteType}}</span>
+          <span class="review-route-setter">{{.SetterName}}</span>
+          {{if .Name}}<span class="review-route-name">{{deref .Name}}</span>{{end}}
+          {{if eq .Status "draft"}}
+          <span class="status-badge status-draft">Draft</span>
+          {{else}}
+          <span class="status-badge status-complete">Published</span>
+          {{end}}
+
+          <div class="review-route-buttons">
+            <a href="/routes/{{.ID}}/card/print.png"
+               target="_blank" class="btn btn-ghost btn-sm" title="Print card">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/>
+                <rect x="6" y="14" width="12" height="8"/>
+              </svg>
+              Print
+            </a>
+            <a href="/routes/{{.ID}}/card/share.png"
+               target="_blank" class="btn btn-ghost btn-sm" title="Share card">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+              Share
+            </a>
+            {{if eq .Status "draft"}}
+            <form method="POST" action="/sessions/{{deref .SessionID}}/routes/{{.ID}}/delete"
+                  hx-confirm="Delete this route?">
+              <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn-ghost btn-sm btn-danger-text" title="Delete route">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                  <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                </svg>
+                Delete
+              </button>
+            </form>
+            {{end}}
+          </div>
+        </summary>
+
+        {{if eq .Status "draft"}}
+        <form class="review-edit-form" method="POST"
+              action="/sessions/{{deref .SessionID}}/routes/{{.ID}}/edit">
+          <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+          <div class="review-edit-row">
+            <div class="form-group" style="flex: 0 0 auto;">
+              <label class="form-label">Grade</label>
+              <input type="text" name="grade" value="{{.Grade}}" class="form-input form-input-sm" style="width: 80px;">
+            </div>
+            <div class="form-group" style="flex: 0 0 auto;">
+              <label class="form-label">Color</label>
+              <select name="color" class="form-select form-select-sm">
+                {{range $.HoldColors}}
+                <option value="{{.Hex}}" style="color: {{.Hex}};">{{.Name}}</option>
+                {{end}}
+              </select>
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label class="form-label">Name</label>
+              <input type="text" name="name" value="{{if .Name}}{{deref .Name}}{{end}}" placeholder="Optional name" class="form-input form-input-sm">
+            </div>
+            <div class="form-group" style="flex: 0 0 auto; align-self: flex-end;">
+              <button type="submit" class="btn btn-primary btn-sm">Save</button>
+            </div>
+          </div>
+        </form>
+        {{end}}
+      </details>
+      {{end}}
+    </div>
+  </div>
+  {{else}}
+  <div class="session-section">
+    <p class="text-muted">No routes to publish. Go back and add routes to this session first.</p>
+  </div>
+  {{end}}
+</div>
+{{end}}

@@ -1,0 +1,105 @@
+{{define "title"}}{{if .Wall}}Edit Wall{{else}}New Wall{{end}} — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>{{if .Wall}}Edit {{.Wall.Name}}{{else}}New Wall{{end}}</h1>
+      <p class="page-subtitle">{{if .Location}}{{.Location.Name}}{{end}}</p>
+    </div>
+    <a href="/walls" class="btn btn-ghost"
+       hx-get="/walls" hx-target="#main-content" hx-push-url="true">
+      Cancel
+    </a>
+  </div>
+</div>
+
+<div class="page-body">
+  <form class="route-form" method="POST"
+        action="{{if .Wall}}/walls/{{.Wall.ID}}/edit{{else}}/walls/new{{end}}"
+        hx-post="{{if .Wall}}/walls/{{.Wall.ID}}/edit{{else}}/walls/new{{end}}"
+        hx-target="#main-content" hx-push-url="false">
+    <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+
+    {{if .WallFormError}}
+    <div class="form-alert form-alert-error">
+      {{.WallFormError}}
+    </div>
+    {{end}}
+
+    <div class="form-card">
+      <h2 class="form-card-title">Basics</h2>
+
+      <div class="form-group">
+        <label class="form-label" for="name">Wall Name</label>
+        <input class="form-input" type="text" id="name" name="name" required
+               placeholder="e.g. The Cave, Lead Wall A, Slab Corner"
+               value="{{.WallFormValues.Name}}" maxlength="100">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="wall_type">Wall Type</label>
+          <select class="form-select" id="wall_type" name="wall_type" required>
+            <option value="boulder" {{if eq .WallFormValues.WallType "boulder"}}selected{{end}}>Boulder</option>
+            <option value="route" {{if eq .WallFormValues.WallType "route"}}selected{{end}}>Route (Sport / Top Rope)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="angle">Angle / Profile <span class="form-hint">(optional)</span></label>
+          <input class="form-input" type="text" id="angle" name="angle"
+                 placeholder="e.g. Overhang, Slab, 45°"
+                 value="{{.WallFormValues.Angle}}" maxlength="60">
+        </div>
+      </div>
+    </div>
+
+    <div class="form-card">
+      <h2 class="form-card-title">Specifications</h2>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="height_meters">Height (meters) <span class="form-hint">(optional)</span></label>
+          <input class="form-input" type="number" id="height_meters" name="height_meters"
+                 step="0.1" min="0" max="30"
+                 value="{{.WallFormValues.HeightMeters}}" placeholder="e.g. 4.5">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="num_anchors">Number of Anchors <span class="form-hint">(optional)</span></label>
+          <input class="form-input" type="number" id="num_anchors" name="num_anchors"
+                 min="0" max="100"
+                 value="{{.WallFormValues.NumAnchors}}" placeholder="e.g. 8">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="surface_type">Surface Type <span class="form-hint">(optional)</span></label>
+          <input class="form-input" type="text" id="surface_type" name="surface_type"
+                 placeholder="e.g. Textured plywood"
+                 value="{{.WallFormValues.SurfaceType}}" maxlength="60">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="sort_order">Sort Order <span class="form-hint">(lower = first)</span></label>
+          <input class="form-input" type="number" id="sort_order" name="sort_order"
+                 min="0" max="999"
+                 value="{{.WallFormValues.SortOrder}}" placeholder="0">
+        </div>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">
+        {{if .Wall}}Save Changes{{else}}Create Wall{{end}}
+      </button>
+      <a href="/walls" class="btn btn-ghost"
+         hx-get="/walls" hx-target="#main-content" hx-push-url="true">
+        Cancel
+      </a>
+    </div>
+  </form>
+</div>
+{{end}}

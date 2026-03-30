@@ -1,0 +1,93 @@
+{{define "title"}}Walls — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>Walls</h1>
+      <p class="page-subtitle">{{if .Location}}{{.Location.Name}}{{end}}</p>
+    </div>
+    <a href="/walls/new" class="btn btn-primary"
+       hx-get="/walls/new" hx-target="#main-content" hx-push-url="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      New Wall
+    </a>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="wall-grid">
+    {{range .WallList}}
+    <div class="wall-card">
+      <div class="wall-card-header">
+        <div class="wall-card-icon">
+          {{if eq .WallType "boulder"}}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+            <path d="M2 22L7 2l5 10 5-6 5 16"/>
+          </svg>
+          {{else}}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+            <path d="M2 20h20"/><path d="M5 20V8l7-5 7 5v12"/>
+          </svg>
+          {{end}}
+        </div>
+        <div>
+          <h3 class="wall-card-title">{{.Name}}</h3>
+          <div class="wall-card-meta">
+            {{.WallType | title}}{{if .Angle}} · {{deref .Angle}}{{end}}
+          </div>
+        </div>
+      </div>
+
+      <div class="wall-card-stats">
+        <div class="wall-card-stat">
+          <span class="wall-card-stat-value">{{.ActiveRoutes}}</span>
+          <span class="wall-card-stat-label">active</span>
+        </div>
+        {{if .FlaggedRoutes}}
+        <div class="wall-card-stat wall-card-stat-flagged">
+          <span class="wall-card-stat-value">{{.FlaggedRoutes}}</span>
+          <span class="wall-card-stat-label">flagged</span>
+        </div>
+        {{end}}
+        <div class="wall-card-stat">
+          <span class="wall-card-stat-value">{{.TotalRoutes}}</span>
+          <span class="wall-card-stat-label">total</span>
+        </div>
+      </div>
+
+      <div class="wall-card-details">
+        {{if .HeightMeters}}<span>{{printf "%.1f" (derefFloat .HeightMeters)}}m</span>{{end}}
+        {{if .NumAnchors}}<span>{{derefInt .NumAnchors}} anchors</span>{{end}}
+        {{if .SurfaceType}}<span>{{deref .SurfaceType}}</span>{{end}}
+      </div>
+
+      <div class="wall-card-actions">
+        <a href="/walls/{{.ID}}" class="btn btn-secondary btn-sm"
+           hx-get="/walls/{{.ID}}" hx-target="#main-content" hx-push-url="true">
+          View Routes
+        </a>
+        <a href="/walls/{{.ID}}/edit" class="btn btn-ghost btn-sm"
+           hx-get="/walls/{{.ID}}/edit" hx-target="#main-content" hx-push-url="true">
+          Edit
+        </a>
+      </div>
+    </div>
+    {{end}}
+
+    {{if not .WallList}}
+    <div class="empty-state" style="grid-column: 1 / -1">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 20h20"/><path d="M5 20V8l7-5 7 5v12"/>
+      </svg>
+      <h3>No walls yet</h3>
+      <p>Create your first wall to start adding routes.</p>
+      <a href="/walls/new" class="btn btn-primary mt-4"
+         hx-get="/walls/new" hx-target="#main-content" hx-push-url="true">Create Wall</a>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}

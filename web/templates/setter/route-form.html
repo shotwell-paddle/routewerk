@@ -1,0 +1,180 @@
+{{define "title"}}{{if .Route}}Edit Route{{else}}New Route{{end}} — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>{{if .Route}}Edit Route{{else}}New Route{{end}}</h1>
+      <p class="page-subtitle">{{if .Location}}{{.Location.Name}}{{end}}</p>
+    </div>
+    <a href="{{if .Route}}/routes/manage{{else}}/dashboard{{end}}" class="btn btn-ghost"
+       hx-get="{{if .Route}}/routes/manage{{else}}/dashboard{{end}}" hx-target="#main-content" hx-push-url="true">
+      Cancel
+    </a>
+  </div>
+</div>
+
+<div class="page-body">
+  <form class="route-form" method="POST"
+        action="{{if .Route}}/routes/{{.Route.ID}}/edit{{else}}/routes/new{{end}}"
+        hx-post="{{if .Route}}/routes/{{.Route.ID}}/edit{{else}}/routes/new{{end}}"
+        hx-target="#main-content" hx-push-url="false">
+    <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+
+    {{if .FormError}}
+    <div class="form-alert form-alert-error">
+      {{.FormError}}
+    </div>
+    {{end}}
+
+    {{if .FormSuccess}}
+    <div class="form-alert form-alert-success">
+      {{.FormSuccess}}
+    </div>
+    {{end}}
+
+    <div class="form-card">
+      <h2 class="form-card-title">Basics</h2>
+
+      <div class="form-group">
+        <label class="form-label" for="wall_id">Wall</label>
+        <select class="form-select" id="wall_id" name="wall_id" required
+                hx-get="/routes/new/fields"
+                hx-target="#route-form-fields"
+                hx-trigger="change"
+                hx-include="[name='wall_id']">
+          <option value="">Select a wall</option>
+          {{range .FormWalls}}
+          <option value="{{.ID}}" {{if $.FormValues.WallID}}{{if eq $.FormValues.WallID .ID}}selected{{end}}{{end}}>
+            {{.Name}}{{if .WallType}} — {{.WallType}}{{end}}{{if .Angle}} ({{.Angle}}){{end}}
+          </option>
+          {{end}}
+        </select>
+      </div>
+
+      {{template "route-form-fields" .RouteFields}}
+
+      {{if .Setters}}
+      <div class="form-group">
+        <label class="form-label" for="setter_id">Setter</label>
+        <select class="form-select" id="setter_id" name="setter_id">
+          {{range .Setters}}
+          <option value="{{.UserID}}" {{if eq $.FormValues.SetterID .UserID}}selected{{end}}>{{.DisplayName}}</option>
+          {{end}}
+        </select>
+      </div>
+      {{end}}
+    </div>
+
+    <div class="form-card">
+      <h2 class="form-card-title">Details</h2>
+
+      <div class="form-group">
+        <label class="form-label" for="name">Route Name <span class="form-hint">(optional)</span></label>
+        <input class="form-input" type="text" id="name" name="name" placeholder="e.g. Crimpy McSendface"
+               value="{{.FormValues.Name}}" maxlength="120">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="description">Description <span class="form-hint">(optional)</span></label>
+        <textarea class="form-input" id="description" name="description" rows="3"
+                  placeholder="Beta notes, intended style, anything useful for climbers...">{{.FormValues.Description}}</textarea>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="date_set">Date Set</label>
+          <input class="form-input" type="date" id="date_set" name="date_set"
+                 value="{{.FormValues.DateSet}}">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="projected_strip_date">Projected Strip Date <span class="form-hint">(optional)</span></label>
+          <input class="form-input" type="date" id="projected_strip_date" name="projected_strip_date"
+                 value="{{.FormValues.ProjectedStripDate}}">
+        </div>
+      </div>
+    </div>
+
+    {{if .FormTags}}
+    <div class="form-card">
+      <h2 class="form-card-title">Tags</h2>
+      <div class="tag-picker">
+        {{range .FormTags}}
+        <label class="tag-option {{if $.FormValues.HasTag .ID}}active{{end}}">
+          <input type="checkbox" name="tag_ids" value="{{.ID}}" {{if $.FormValues.HasTag .ID}}checked{{end}}>
+          <span class="tag-pill-check">{{.Name}}</span>
+        </label>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">
+        {{if .Route}}Save Changes{{else}}Create Route{{end}}
+      </button>
+      <a href="{{if .Route}}/routes/manage{{else}}/dashboard{{end}}" class="btn btn-ghost"
+         hx-get="{{if .Route}}/routes/manage{{else}}/dashboard{{end}}" hx-target="#main-content" hx-push-url="true">
+        Cancel
+      </a>
+    </div>
+  </form>
+</div>
+{{end}}
+
+{{define "route-form-fields"}}
+<div id="route-form-fields">
+  {{if .WallType}}
+  <div class="form-group">
+    <label for="route_type" class="form-label">Type</label>
+    <select name="route_type" id="route_type" class="form-select" required
+            hx-get="/routes/new/fields"
+            hx-target="#route-form-fields"
+            hx-trigger="change"
+            hx-include="[name='wall_id']">
+      {{range .TypeOptions}}
+      <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
+      {{end}}
+    </select>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label for="route_grade" class="form-label">{{.GradeLabel}}</label>
+      <select name="grade" id="route_grade" class="form-select" required>
+        <option value="">Select {{.GradePlaceholder}}…</option>
+        {{range .GradeOptions}}
+        <option value="{{.}}">{{.}}</option>
+        {{end}}
+      </select>
+    </div>
+  </div>
+
+  {{if .ShowVGrade}}
+  <div class="form-group">
+    <label for="circuit_vgrade" class="form-label">V-Grade (optional)</label>
+    <select name="circuit_vgrade" id="circuit_vgrade" class="form-select">
+      <option value="">No grade</option>
+      {{range .VScaleGrades}}
+      <option value="{{.}}">{{.}}</option>
+      {{end}}
+    </select>
+  </div>
+  {{end}}
+
+  <div class="form-group">
+    <label class="form-label">Hold Color</label>
+    <div class="color-picker-group">
+      {{range .HoldColors}}
+      <label class="color-swatch" title="{{.Name}}">
+        <input type="radio" name="color" value="{{.Hex}}" required>
+        <span class="color-dot" style="background: {{.Hex | safeCSS}}"></span>
+      </label>
+      {{end}}
+    </div>
+  </div>
+  {{else}}
+  <p class="text-muted text-sm" style="padding: 0.75rem 0;">Select a wall to see type and grade options.</p>
+  {{end}}
+</div>
+{{end}}

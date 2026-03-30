@@ -1,0 +1,56 @@
+{{define "title"}}{{if .Session}}Edit Session{{else}}New Session{{end}} — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center gap-3">
+    <a href="/sessions" class="btn btn-ghost btn-sm"
+       hx-get="/sessions" hx-target="#main-content" hx-push-url="true"
+       title="Back to sessions">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+    </a>
+    <div>
+      <h1>{{if .Session}}Edit Session{{else}}Schedule Session{{end}}</h1>
+      <p class="page-subtitle">{{if .Location}}{{.Location.Name}}{{end}}</p>
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="form-container">
+    {{if .SessionFormError}}
+    <div class="form-alert form-alert-error">{{.SessionFormError}}</div>
+    {{end}}
+
+    <form method="POST"
+          action="{{if .Session}}/sessions/{{.Session.ID}}/edit{{else}}/sessions/new{{end}}"
+          class="form-stack">
+      <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+
+      <div class="form-group">
+        <label for="scheduled_date" class="form-label">Scheduled Date</label>
+        <input type="date" name="scheduled_date" id="scheduled_date"
+               class="form-input" required
+               value="{{.SessionFormValues.ScheduledDate}}">
+      </div>
+
+      <div class="form-group">
+        <label for="notes" class="form-label">Notes (optional)</label>
+        <textarea name="notes" id="notes" class="form-input" rows="4"
+                  placeholder="e.g. Focus on bouldering cave reset, strip overhang wall">{{.SessionFormValues.Notes}}</textarea>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">
+          {{if .Session}}Update Session{{else}}Create Session{{end}}
+        </button>
+        <a href="/sessions" class="btn btn-ghost"
+           hx-get="/sessions" hx-target="#main-content" hx-push-url="true">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+{{end}}

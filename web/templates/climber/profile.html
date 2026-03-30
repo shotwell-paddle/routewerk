@@ -1,0 +1,237 @@
+{{define "title"}}My Profile — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="profile-header">
+    <div class="profile-avatar-wrap">
+      {{if and .User .User.AvatarURL}}
+      <img src="{{deref .User.AvatarURL}}" alt="{{.User.DisplayName}}" class="profile-avatar">
+      {{else if .User}}
+      <div class="profile-avatar profile-avatar-initials">{{.User.DisplayName | initial}}</div>
+      {{end}}
+    </div>
+    <div>
+      <h1 class="page-title">{{if .User}}{{.User.DisplayName}}{{else}}My Profile{{end}}</h1>
+      {{if and .User .User.Bio}}<p class="page-subtitle">{{deref .User.Bio}}</p>{{end}}
+    </div>
+    <div style="margin-left: auto;">
+      <a href="/profile/settings" class="btn btn-ghost btn-sm"
+         hx-get="/profile/settings" hx-target="#main-content" hx-push-url="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        Settings
+      </a>
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <!-- Stats overview -->
+  <div class="stats-grid mb-6" style="grid-template-columns: repeat(4, 1fr);">
+    <div class="stat-card" style="--stat-accent: var(--rw-green)">
+      <div class="stat-value">{{.ClimberStats.TotalSends}}</div>
+      <div class="stat-label">Sends</div>
+    </div>
+    <div class="stat-card" style="--stat-accent: var(--rw-orange)">
+      <div class="stat-value">{{.ClimberStats.TotalFlashes}}</div>
+      <div class="stat-label">Flashes</div>
+    </div>
+    <div class="stat-card" style="--stat-accent: var(--rw-blue)">
+      <div class="stat-value">{{.ClimberStats.UniqueRoutes}}</div>
+      <div class="stat-label">Unique Routes</div>
+    </div>
+    <div class="stat-card" style="--stat-accent: var(--rw-charcoal)">
+      <div class="stat-value">{{.ClimberStats.TotalLogged}}</div>
+      <div class="stat-label">Total Logged</div>
+    </div>
+  </div>
+
+  <div class="layout-split">
+    <div class="layout-main">
+      {{template "tick-list-section" .}}
+    </div>
+
+    <!-- Grade pyramid -->
+    <aside class="layout-aside">
+      <div class="card">
+        <h3 class="mb-4">Grade Pyramid</h3>
+        {{if .GradePyramid}}
+        <div class="pyramid">
+          {{range .GradePyramid}}
+          <div class="pyramid-row">
+            <div class="pyramid-grade">{{.Grade}}</div>
+            <div class="pyramid-bar-track">
+              <div class="pyramid-bar" style="width: {{.WidthPct}}%;"></div>
+            </div>
+            <div class="pyramid-count">{{.Count}}</div>
+          </div>
+          {{end}}
+        </div>
+        {{else}}
+        <p class="text-sm text-muted">Log some sends to build your pyramid.</p>
+        {{end}}
+      </div>
+    </aside>
+  </div>
+</div>
+{{end}}
+
+{{/* ── Tick List Section — swapped by filter chip clicks via GET /profile/ticks ── */}}
+{{define "tick-list-section"}}
+<div id="tick-list-section" class="card">
+  <div class="flex items-center justify-between mb-4">
+    <h3>Tick List</h3>
+    <span class="text-sm text-muted">{{.TickListTotal}} total</span>
+  </div>
+
+  <!-- Filter & sort bar -->
+  <div class="tick-filter-bar mb-4">
+    <div class="tick-filters">
+      <a href="/profile" class="filter-chip {{if and (eq .TickFilterType "") (eq .TickFilterAscent "")}}active{{end}}"
+         hx-get="/profile/ticks" hx-target="#tick-list-section" hx-swap="outerHTML" hx-push-url="/profile">All</a>
+      <a href="/profile?type=boulder&sort={{.TickSort}}" class="filter-chip {{if eq .TickFilterType "boulder"}}active{{end}}"
+         hx-get="/profile/ticks?type=boulder&sort={{.TickSort}}" hx-target="#tick-list-section" hx-swap="outerHTML" hx-push-url="/profile?type=boulder&sort={{.TickSort}}">Boulders</a>
+      <a href="/profile?type=route&sort={{.TickSort}}" class="filter-chip {{if eq .TickFilterType "route"}}active{{end}}"
+         hx-get="/profile/ticks?type=route&sort={{.TickSort}}" hx-target="#tick-list-section" hx-swap="outerHTML" hx-push-url="/profile?type=route&sort={{.TickSort}}">Routes</a>
+      <span class="filter-divider"></span>
+      <a href="/profile?ascent=send&sort={{.TickSort}}" class="filter-chip {{if eq .TickFilterAscent "send"}}active{{end}}"
+         hx-get="/profile/ticks?ascent=send&sort={{.TickSort}}" hx-target="#tick-list-section" hx-swap="outerHTML" hx-push-url="/profile?ascent=send&sort={{.TickSort}}">Sends</a>
+      <a href="/profile?ascent=flash&sort={{.TickSort}}" class="filter-chip {{if eq .TickFilterAscent "flash"}}active{{end}}"
+         hx-get="/profile/ticks?ascent=flash&sort={{.TickSort}}" hx-target="#tick-list-section" hx-swap="outerHTML" hx-push-url="/profile?ascent=flash&sort={{.TickSort}}">Flashes</a>
+      <a href="/profile?ascent=project&sort={{.TickSort}}" class="filter-chip {{if eq .TickFilterAscent "project"}}active{{end}}"
+         hx-get="/profile/ticks?ascent=project&sort={{.TickSort}}" hx-target="#tick-list-section" hx-swap="outerHTML" hx-push-url="/profile?ascent=project&sort={{.TickSort}}">Projects</a>
+    </div>
+    <div class="tick-sort">
+      <a href="/profile?type={{.TickFilterType}}&ascent={{.TickFilterAscent}}&sort=date" class="filter-chip {{if eq .TickSort "date"}}active{{end}}"
+         hx-get="/profile/ticks?type={{.TickFilterType}}&ascent={{.TickFilterAscent}}&sort=date" hx-target="#tick-list-section" hx-swap="outerHTML" hx-push-url="/profile?type={{.TickFilterType}}&ascent={{.TickFilterAscent}}&sort=date">Recent</a>
+      <a href="/profile?type={{.TickFilterType}}&ascent={{.TickFilterAscent}}&sort=grade" class="filter-chip {{if eq .TickSort "grade"}}active{{end}}"
+         hx-get="/profile/ticks?type={{.TickFilterType}}&ascent={{.TickFilterAscent}}&sort=grade" hx-target="#tick-list-section" hx-swap="outerHTML" hx-push-url="/profile?type={{.TickFilterType}}&ascent={{.TickFilterAscent}}&sort=grade">By Grade</a>
+    </div>
+  </div>
+
+  {{if .TickList}}
+  <div class="tick-list">
+    {{range .TickList}}
+    <div class="tick-item-wrap" id="tick-{{.ID}}">
+      <div class="tick-item">
+        <a href="/routes/{{.RouteID}}" class="tick-item-link"
+           hx-get="/routes/{{.RouteID}}" hx-target="#main-content" hx-push-url="true">
+          <div class="tick-color" style="background: {{.SafeColor}};"></div>
+          <div class="tick-grade">{{.RouteGrade}}</div>
+          <div class="tick-info">
+            <div class="tick-name">{{if .RouteName}}{{.RouteName}}{{else}}{{.RouteType | title}}{{end}}</div>
+            <div class="tick-meta">{{.TypeLabel}} · {{.ClimbedAt | reltime}}</div>
+          </div>
+          {{if gt .Attempts 1}}
+          <div class="tick-attempts">{{.Attempts}} att.</div>
+          {{end}}
+        </a>
+        <div class="tick-actions">
+          <button class="btn btn-ghost btn-xs" title="Edit"
+                  hx-get="/profile/ticks/{{.ID}}/edit" hx-target="#tick-{{.ID}}" hx-swap="innerHTML">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5z"/>
+            </svg>
+          </button>
+          <form method="POST" action="/profile/ticks/{{.ID}}/delete"
+                hx-post="/profile/ticks/{{.ID}}/delete"
+                hx-target="#tick-{{.ID}}" hx-swap="outerHTML"
+                hx-confirm="Delete this tick?">
+            <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+            <button type="submit" class="btn btn-ghost btn-xs btn-danger-text" title="Delete">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+              </svg>
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty-state" style="padding: var(--sp-8);">
+    <p class="text-muted">No ascents logged yet.</p>
+    <a href="/routes" class="btn btn-secondary mt-4"
+       hx-get="/routes" hx-target="#main-content" hx-push-url="true">Browse Routes</a>
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{/* ── Tick Edit Form — returned by GET /profile/ticks/{id}/edit ── */}}
+{{define "tick-edit-form"}}
+<form class="tick-edit-form" method="POST" action="/profile/ticks/{{.ID}}"
+      hx-post="/profile/ticks/{{.ID}}" hx-target="closest .tick-item-wrap" hx-swap="outerHTML">
+  <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+  <div class="tick-edit-row">
+    <select name="ascent_type" class="form-select form-select-sm">
+      <option value="send" {{if eq .AscentType "send"}}selected{{end}}>Send</option>
+      {{if or .CanFlash (eq .AscentType "flash")}}<option value="flash" {{if eq .AscentType "flash"}}selected{{end}}>Flash</option>{{end}}
+      <option value="attempt" {{if eq .AscentType "attempt"}}selected{{end}}>Attempt</option>
+      <option value="project" {{if eq .AscentType "project"}}selected{{end}}>Project</option>
+    </select>
+    <input type="number" name="attempts" value="{{.Attempts}}" min="1" class="form-input form-input-sm" style="width: 70px;">
+    <input type="text" name="notes" value="{{if .Notes}}{{deref .Notes}}{{end}}" placeholder="Notes" class="form-input form-input-sm" style="flex: 1;">
+  </div>
+  <div class="tick-edit-row mt-2">
+    <label class="text-sm" style="white-space: nowrap;">Rating</label>
+    <select name="rating" class="form-select form-select-sm" style="width: auto;">
+      <option value="">—</option>
+      {{range $i := seq 1 5}}
+      <option value="{{$i}}" {{if eq $i $.UserRating}}selected{{end}}>{{$i}} star{{if gt $i 1}}s{{end}}</option>
+      {{end}}
+    </select>
+    <label class="text-sm" style="white-space: nowrap;">How's the grade?</label>
+    <select name="difficulty" class="form-select form-select-sm" style="width: auto;">
+      <option value="">—</option>
+      <option value="easy" {{if eq .UserDifficulty "easy"}}selected{{end}}>Easy</option>
+      <option value="right" {{if eq .UserDifficulty "right"}}selected{{end}}>Right On</option>
+      <option value="hard" {{if eq .UserDifficulty "hard"}}selected{{end}}>Hard</option>
+    </select>
+    <button type="submit" class="btn btn-primary btn-xs">Save</button>
+    <button type="button" class="btn btn-ghost btn-xs"
+            hx-get="/profile" hx-target="#main-content" hx-push-url="false">Cancel</button>
+  </div>
+</form>
+{{end}}
+
+{{/* ── Tick Item — returned by POST /profile/ticks/{id} after update ── */}}
+{{define "tick-item"}}
+<div class="tick-item-wrap" id="tick-{{.ID}}">
+  <div class="tick-item">
+    <a href="/routes/{{.RouteID}}" class="tick-item-link"
+       hx-get="/routes/{{.RouteID}}" hx-target="#main-content" hx-push-url="true">
+      <div class="tick-color" style="background: {{.SafeColor}};"></div>
+      <div class="tick-grade">{{.RouteGrade}}</div>
+      <div class="tick-info">
+        <div class="tick-name">{{if .RouteName}}{{.RouteName}}{{else}}{{.RouteType | title}}{{end}}</div>
+        <div class="tick-meta">{{.TypeLabel}} · {{.ClimbedAt | reltime}}</div>
+      </div>
+      {{if gt .Attempts 1}}
+      <div class="tick-attempts">{{.Attempts}} att.</div>
+      {{end}}
+    </a>
+    <div class="tick-actions">
+      <button class="btn btn-ghost btn-xs" title="Edit"
+              hx-get="/profile/ticks/{{.ID}}/edit" hx-target="#tick-{{.ID}}" hx-swap="innerHTML">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+          <path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5z"/>
+        </svg>
+      </button>
+      <form method="POST" action="/profile/ticks/{{.ID}}/delete"
+            hx-post="/profile/ticks/{{.ID}}/delete"
+            hx-target="#tick-{{.ID}}" hx-swap="outerHTML"
+            hx-confirm="Delete this tick?">
+        <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn btn-ghost btn-xs btn-danger-text" title="Delete">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+          </svg>
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+{{end}}

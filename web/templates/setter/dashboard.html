@@ -107,7 +107,7 @@
             </div>
             {{if .RoutePreview}}
             <div class="feed-route-preview">
-              <div class="feed-route-dot" style="background: {{.RoutePreview.Color}}"></div>
+              <div class="feed-route-dot" style="background: {{.RoutePreview.SafeColor}}"></div>
               <span>{{.RoutePreview.Grade}} {{if .RoutePreview.Name}}— {{.RoutePreview.Name}}{{end}}</span>
             </div>
             {{end}}

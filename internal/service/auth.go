@@ -113,6 +113,49 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*AuthR
 	return s.generateResult(ctx, u)
 }
 
+// ValidateCredentials checks the user's email and password without generating
+// any tokens. Used by the web session login flow which doesn't need JWTs.
+// Returns the verified User on success.
+func (s *AuthService) ValidateCredentials(ctx context.Context, email, password string) (*model.User, error) {
+	// Check account lockout
+	locked, err := s.attempts.IsLocked(ctx, email)
+	if err != nil {
+		slog.Error("lockout check failed", "email", email, "error", err)
+	} else if locked {
+		slog.Warn("login attempt on locked account", "email", email)
+		return nil, ErrAccountLocked
+	}
+
+	u, err := s.users.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	if u == nil {
+		return nil, ErrInvalidCredentials
+	}
+
+	if !auth.CheckPassword(password, u.PasswordHash) {
+		count, lockedUntil, recErr := s.attempts.RecordFailure(ctx, email, maxLoginAttempts, lockoutDuration)
+		if recErr != nil {
+			slog.Error("failed to record login failure", "email", email, "error", recErr)
+		} else if !lockedUntil.IsZero() {
+			slog.Warn("account locked after failed attempts",
+				"email", email,
+				"attempts", count,
+				"locked_until", lockedUntil,
+			)
+		}
+		return nil, ErrInvalidCredentials
+	}
+
+	// Successful — clear failure counter
+	if err := s.attempts.ClearFailures(ctx, email); err != nil {
+		slog.Error("failed to clear login failures", "email", email, "error", err)
+	}
+
+	return u, nil
+}
+
 func (s *AuthService) Refresh(ctx context.Context, userID, refreshToken string) (*AuthResult, error) {
 	hashes, err := s.users.GetActiveRefreshTokens(ctx, userID)
 	if err != nil {

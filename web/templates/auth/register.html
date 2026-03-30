@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create Account — Routewerk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/routewerk.css">
+</head>
+<body>
+  <div class="auth-shell">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <h1>Routewerk</h1>
+        <p>Create your climbing account</p>
+      </div>
+
+      {{if .Error}}
+      <div class="auth-error">{{.Error}}</div>
+      {{end}}
+
+      <form method="POST" action="/register">
+        <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+        <div class="form-group">
+          <label class="form-label" for="display_name">Display Name</label>
+          <input class="form-input" type="text" id="display_name" name="display_name"
+                 value="{{.DisplayName}}" required autofocus autocomplete="name"
+                 placeholder="Alex Honnold" maxlength="100">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="email">Email</label>
+          <input class="form-input" type="email" id="email" name="email"
+                 value="{{.Email}}" required autocomplete="email"
+                 placeholder="you@gym.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="password">Password</label>
+          <input class="form-input" type="password" id="password" name="password"
+                 required autocomplete="new-password" minlength="8" maxlength="72"
+                 placeholder="At least 8 characters">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="password_confirm">Confirm Password</label>
+          <input class="form-input" type="password" id="password_confirm" name="password_confirm"
+                 required autocomplete="new-password"
+                 placeholder="Repeat your password">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: var(--sp-2);">
+          Create Account
+        </button>
+      </form>
+
+      <div class="auth-footer">
+        Already have an account? <a href="/login">Sign in</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

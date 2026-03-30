@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shotwell-paddle/routewerk/internal/model"
@@ -33,27 +34,119 @@ func (r *AscentRepo) Create(ctx context.Context, a *model.Ascent) error {
 	return nil
 }
 
+// GetByID returns a single ascent by its ID.
+func (r *AscentRepo) GetByID(ctx context.Context, id string) (*model.Ascent, error) {
+	query := `
+		SELECT id, user_id, route_id, ascent_type, attempts, notes, climbed_at, created_at
+		FROM ascents
+		WHERE id = $1`
+
+	var a model.Ascent
+	err := r.db.QueryRow(ctx, query, id).Scan(
+		&a.ID, &a.UserID, &a.RouteID, &a.AscentType, &a.Attempts, &a.Notes, &a.ClimbedAt, &a.CreatedAt,
+	)
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get ascent: %w", err)
+	}
+	return &a, nil
+}
+
+// Update modifies an existing ascent's type, attempts, and notes.
+func (r *AscentRepo) Update(ctx context.Context, a *model.Ascent) error {
+	query := `
+		UPDATE ascents
+		SET ascent_type = $2, attempts = $3, notes = $4
+		WHERE id = $1 AND user_id = $5`
+
+	tag, err := r.db.Exec(ctx, query, a.ID, a.AscentType, a.Attempts, a.Notes, a.UserID)
+	if err != nil {
+		return fmt.Errorf("update ascent: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("ascent not found or not owned by user")
+	}
+	return nil
+}
+
+// Delete removes an ascent. Only the owning user can delete.
+func (r *AscentRepo) Delete(ctx context.Context, ascentID, userID string) error {
+	query := `DELETE FROM ascents WHERE id = $1 AND user_id = $2`
+
+	tag, err := r.db.Exec(ctx, query, ascentID, userID)
+	if err != nil {
+		return fmt.Errorf("delete ascent: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("ascent not found or not owned by user")
+	}
+	return nil
+}
+
+// TickFilter controls filtering and sorting for a user's tick list.
+type TickFilter struct {
+	RouteType  string // "boulder" or "route" — empty means all
+	AscentType string // "send", "flash", "attempt", "project" — empty means all
+	Sort       string // "date", "grade" — default "date"
+}
+
 func (r *AscentRepo) ListByUser(ctx context.Context, userID string, limit, offset int) ([]AscentWithRoute, int, error) {
+	return r.ListByUserFiltered(ctx, userID, TickFilter{}, limit, offset)
+}
+
+func (r *AscentRepo) ListByUserFiltered(ctx context.Context, userID string, f TickFilter, limit, offset int) ([]AscentWithRoute, int, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 
-	countQuery := `SELECT COUNT(*) FROM ascents WHERE user_id = $1`
+	where := []string{"a.user_id = $1"}
+	args := []interface{}{userID}
+	argN := 2
+
+	if f.RouteType != "" {
+		where = append(where, fmt.Sprintf("r.route_type = $%d", argN))
+		args = append(args, f.RouteType)
+		argN++
+	}
+	if f.AscentType != "" {
+		where = append(where, fmt.Sprintf("a.ascent_type = $%d", argN))
+		args = append(args, f.AscentType)
+		argN++
+	}
+
+	whereClause := strings.Join(where, " AND ")
+
+	countQuery := fmt.Sprintf(
+		`SELECT COUNT(*) FROM ascents a JOIN routes r ON r.id = a.route_id WHERE %s`,
+		whereClause,
+	)
 	var total int
-	if err := r.db.QueryRow(ctx, countQuery, userID).Scan(&total); err != nil {
+	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count ascents: %w", err)
 	}
 
-	query := `
+	// Determine sort order
+	orderBy := "a.climbed_at DESC"
+	if f.Sort == "grade" {
+		// Sort by grade descending, then by date. V-scale sorts lexically after V prefix.
+		orderBy = "r.grade DESC, a.climbed_at DESC"
+	}
+
+	query := fmt.Sprintf(`
 		SELECT a.id, a.user_id, a.route_id, a.ascent_type, a.attempts, a.notes, a.climbed_at, a.created_at,
 			r.grade, r.grading_system, r.route_type, r.color, r.name, r.wall_id
 		FROM ascents a
 		JOIN routes r ON r.id = a.route_id
-		WHERE a.user_id = $1
-		ORDER BY a.climbed_at DESC
-		LIMIT $2 OFFSET $3`
+		WHERE %s
+		ORDER BY %s
+		LIMIT $%d OFFSET $%d`,
+		whereClause, orderBy, argN, argN+1,
+	)
+	args = append(args, limit, offset)
 
-	rows, err := r.db.Query(ctx, query, userID, limit, offset)
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list ascents: %w", err)
 	}
@@ -73,7 +166,54 @@ func (r *AscentRepo) ListByUser(ctx context.Context, userID string, limit, offse
 	return ascents, total, nil
 }
 
+// HasPriorAscents returns true if the user has any existing ascent records on this route.
+func (r *AscentRepo) HasPriorAscents(ctx context.Context, userID, routeID string) (bool, error) {
+	var exists bool
+	err := r.db.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM ascents WHERE user_id = $1 AND route_id = $2)`,
+		userID, routeID,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("has prior ascents: %w", err)
+	}
+	return exists, nil
+}
+
+// HasCompletedRoute returns true if the user has a "send" or "flash" on this route.
+func (r *AscentRepo) HasCompletedRoute(ctx context.Context, userID, routeID string) (bool, error) {
+	var exists bool
+	err := r.db.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM ascents WHERE user_id = $1 AND route_id = $2 AND ascent_type IN ('send', 'flash'))`,
+		userID, routeID,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("has completed route: %w", err)
+	}
+	return exists, nil
+}
+
+// RouteAscentStatus returns both "has any ascent" and "has completed (send/flash)" in a single query.
+func (r *AscentRepo) RouteAscentStatus(ctx context.Context, userID, routeID string) (hasAny bool, hasCompleted bool, err error) {
+	err = r.db.QueryRow(ctx,
+		`SELECT
+			EXISTS(SELECT 1 FROM ascents WHERE user_id = $1 AND route_id = $2),
+			EXISTS(SELECT 1 FROM ascents WHERE user_id = $1 AND route_id = $2 AND ascent_type IN ('send', 'flash'))`,
+		userID, routeID,
+	).Scan(&hasAny, &hasCompleted)
+	if err != nil {
+		return false, false, fmt.Errorf("route ascent status: %w", err)
+	}
+	return hasAny, hasCompleted, nil
+}
+
 func (r *AscentRepo) ListByRoute(ctx context.Context, routeID string, limit, offset int) ([]AscentWithUser, error) {
+	return r.ListByRouteForViewer(ctx, routeID, "", limit, offset)
+}
+
+// ListByRouteForViewer lists ascents for a route, respecting user privacy settings.
+// The viewer always sees their own ascents regardless of privacy. Other users'
+// ascents are hidden if they have set show_profile = false.
+func (r *AscentRepo) ListByRouteForViewer(ctx context.Context, routeID, viewerID string, limit, offset int) ([]AscentWithUser, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -84,10 +224,14 @@ func (r *AscentRepo) ListByRoute(ctx context.Context, routeID string, limit, off
 		FROM ascents a
 		JOIN users u ON u.id = a.user_id
 		WHERE a.route_id = $1
+		  AND (
+		    a.user_id = $4
+		    OR COALESCE(u.settings_json->'privacy'->>'show_profile', 'true') = 'true'
+		  )
 		ORDER BY a.climbed_at DESC
 		LIMIT $2 OFFSET $3`
 
-	rows, err := r.db.Query(ctx, query, routeID, limit, offset)
+	rows, err := r.db.Query(ctx, query, routeID, limit, offset, viewerID)
 	if err != nil {
 		return nil, fmt.Errorf("list route ascents: %w", err)
 	}

@@ -32,13 +32,29 @@ func GetMembership(ctx context.Context) *Membership {
 	return v
 }
 
+// Role constants avoid magic strings throughout the codebase.
+const (
+	RoleClimber    = "climber"
+	RoleSetter     = "setter"
+	RoleHeadSetter = "head_setter"
+	RoleGymManager = "gym_manager"
+	RoleOrgAdmin   = "org_admin"
+)
+
 // roleRank maps roles to a numeric rank for >= comparisons.
 // Higher rank = more privileges.
 var roleRank = map[string]int{
-	"climber":     1,
-	"setter":      2,
-	"head_setter": 3,
-	"org_admin":   4,
+	RoleClimber:    1,
+	RoleSetter:     2,
+	RoleHeadSetter: 3,
+	RoleGymManager: 4,
+	RoleOrgAdmin:   5,
+}
+
+// RoleRankValue returns the numeric rank for a role string.
+// Exported for use by the web handler's view-as-role feature.
+func RoleRankValue(role string) int {
+	return roleRank[role]
 }
 
 // hasRole checks whether the user's role is at least as privileged as one of the required roles.
@@ -131,7 +147,8 @@ func (a *Authorizer) resolveOrgMembership(w http.ResponseWriter, r *http.Request
 		WHERE user_id = $1 AND org_id = $2 AND deleted_at IS NULL
 		ORDER BY
 			CASE role
-				WHEN 'org_admin'   THEN 4
+				WHEN 'org_admin'   THEN 5
+				WHEN 'gym_manager' THEN 4
 				WHEN 'head_setter' THEN 3
 				WHEN 'setter'      THEN 2
 				WHEN 'climber'     THEN 1
@@ -218,7 +235,8 @@ func (a *Authorizer) resolveLocationMembership(w http.ResponseWriter, r *http.Re
 		WHERE l.id = $2 AND l.deleted_at IS NULL
 		ORDER BY
 			CASE um.role
-				WHEN 'org_admin'   THEN 4
+				WHEN 'org_admin'   THEN 5
+				WHEN 'gym_manager' THEN 4
 				WHEN 'head_setter' THEN 3
 				WHEN 'setter'      THEN 2
 				WHEN 'climber'     THEN 1

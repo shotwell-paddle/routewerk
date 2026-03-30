@@ -85,6 +85,55 @@ func (r *WallRepo) ListByLocation(ctx context.Context, locationID string) ([]mod
 	return walls, nil
 }
 
+// WallWithCounts extends Wall with aggregate route counts.
+type WallWithCounts struct {
+	model.Wall
+	ActiveRoutes   int `json:"active_routes"`
+	FlaggedRoutes  int `json:"flagged_routes"`
+	ArchivedRoutes int `json:"archived_routes"`
+	TotalRoutes    int `json:"total_routes"`
+}
+
+// ListWithCounts returns walls with per-status route counts.
+func (r *WallRepo) ListWithCounts(ctx context.Context, locationID string) ([]WallWithCounts, error) {
+	query := `
+		SELECT w.id, w.location_id, w.name, w.wall_type, w.angle, w.height_meters,
+			w.num_anchors, w.surface_type, w.sort_order,
+			w.map_x, w.map_y, w.map_width, w.map_height,
+			w.created_at, w.updated_at,
+			COUNT(*) FILTER (WHERE r.status = 'active' AND r.deleted_at IS NULL) AS active_routes,
+			COUNT(*) FILTER (WHERE r.status = 'flagged' AND r.deleted_at IS NULL) AS flagged_routes,
+			COUNT(*) FILTER (WHERE r.status = 'archived' AND r.deleted_at IS NULL) AS archived_routes,
+			COUNT(*) FILTER (WHERE r.deleted_at IS NULL) AS total_routes
+		FROM walls w
+		LEFT JOIN routes r ON r.wall_id = w.id
+		WHERE w.location_id = $1 AND w.deleted_at IS NULL
+		GROUP BY w.id
+		ORDER BY w.sort_order, w.name`
+
+	rows, err := r.db.Query(ctx, query, locationID)
+	if err != nil {
+		return nil, fmt.Errorf("list walls with counts: %w", err)
+	}
+	defer rows.Close()
+
+	var walls []WallWithCounts
+	for rows.Next() {
+		var wc WallWithCounts
+		if err := rows.Scan(
+			&wc.ID, &wc.LocationID, &wc.Name, &wc.WallType, &wc.Angle, &wc.HeightMeters,
+			&wc.NumAnchors, &wc.SurfaceType, &wc.SortOrder,
+			&wc.MapX, &wc.MapY, &wc.MapWidth, &wc.MapHeight,
+			&wc.CreatedAt, &wc.UpdatedAt,
+			&wc.ActiveRoutes, &wc.FlaggedRoutes, &wc.ArchivedRoutes, &wc.TotalRoutes,
+		); err != nil {
+			return nil, fmt.Errorf("scan wall with counts: %w", err)
+		}
+		walls = append(walls, wc)
+	}
+	return walls, nil
+}
+
 func (r *WallRepo) Update(ctx context.Context, w *model.Wall) error {
 	query := `
 		UPDATE walls

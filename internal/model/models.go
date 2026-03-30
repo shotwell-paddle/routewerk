@@ -107,6 +107,7 @@ type Route struct {
 	RatingCount        int                `json:"rating_count"`
 	AscentCount        int                `json:"ascent_count"`
 	AttemptCount       int                `json:"attempt_count"`
+	SessionID          *string            `json:"session_id,omitempty"`
 	Tags               []Tag              `json:"tags,omitempty"`
 	CreatedAt          time.Time          `json:"created_at"`
 	UpdatedAt          time.Time          `json:"updated_at"`
@@ -122,6 +123,20 @@ type Tag struct {
 }
 
 // ============================================================
+// Route Photos
+// ============================================================
+
+type RoutePhoto struct {
+	ID         string    `json:"id"`
+	RouteID    string    `json:"route_id"`
+	PhotoURL   string    `json:"photo_url"`
+	Caption    *string   `json:"caption,omitempty"`
+	UploadedBy *string   `json:"uploaded_by,omitempty"`
+	SortOrder  int       `json:"sort_order"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// ============================================================
 // Setting Sessions & Labor
 // ============================================================
 
@@ -129,6 +144,7 @@ type SettingSession struct {
 	ID            string                     `json:"id"`
 	LocationID    string                     `json:"location_id"`
 	ScheduledDate time.Time                  `json:"scheduled_date"`
+	Status        string                     `json:"status"`
 	Notes         *string                    `json:"notes,omitempty"`
 	CreatedBy     string                     `json:"created_by"`
 	Assignments   []SettingSessionAssignment `json:"assignments,omitempty"`
@@ -143,6 +159,36 @@ type SettingSessionAssignment struct {
 	WallID       *string  `json:"wall_id,omitempty"`
 	TargetGrades []string `json:"target_grades,omitempty"`
 	Notes        *string  `json:"notes,omitempty"`
+}
+
+// SessionStripTarget represents a wall or individual route to strip during a session.
+type SessionStripTarget struct {
+	ID        string    `json:"id"`
+	SessionID string    `json:"session_id"`
+	WallID    string    `json:"wall_id"`
+	RouteID   *string   `json:"route_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// SessionChecklistItem is a single step in a session's playbook checklist.
+type SessionChecklistItem struct {
+	ID          string     `json:"id"`
+	SessionID   string     `json:"session_id"`
+	SortOrder   int        `json:"sort_order"`
+	Title       string     `json:"title"`
+	Completed   bool       `json:"completed"`
+	CompletedBy *string    `json:"completed_by,omitempty"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
+// LocationPlaybookStep is a default checklist step template for a location.
+type LocationPlaybookStep struct {
+	ID         string    `json:"id"`
+	LocationID string    `json:"location_id"`
+	SortOrder  int       `json:"sort_order"`
+	Title      string    `json:"title"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type SetterLaborLog struct {
@@ -179,6 +225,15 @@ type RouteRating struct {
 	RouteID   string    `json:"route_id"`
 	Rating    int       `json:"rating"`
 	Comment   *string   `json:"comment,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type DifficultyVote struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	RouteID   string    `json:"route_id"`
+	Vote      string    `json:"vote"` // "easy", "right", "hard"
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -237,6 +292,22 @@ type TrainingPlanItem struct {
 	Completed   bool       `json:"completed"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
+}
+
+// ============================================================
+// Web Sessions (cookie-based auth for HTMX frontend)
+// ============================================================
+
+type WebSession struct {
+	ID         string    `json:"id"`
+	UserID     string    `json:"user_id"`
+	LocationID *string   `json:"location_id,omitempty"`
+	TokenHash  string    `json:"-"`
+	IPAddress  *string   `json:"ip_address,omitempty"`
+	UserAgent  *string   `json:"user_agent,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	LastSeenAt time.Time `json:"last_seen_at"`
 }
 
 // ============================================================

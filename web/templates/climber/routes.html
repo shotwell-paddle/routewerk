@@ -8,17 +8,26 @@
       <p class="page-subtitle">{{.TotalRoutes}} active at {{if .Location}}{{.Location.Name}}{{end}}</p>
     </div>
     <div class="flex gap-3">
-      <div class="filter-chip" style="border: none; padding: 0;">
-        <select class="form-select" style="width: auto; padding: 6px 12px; font-size: var(--text-sm);"
-                hx-get="/routes" hx-target="#route-list" hx-include="[name='filter']"
-                name="sort">
-          <option value="newest">Newest first</option>
-          <option value="popular">Most popular</option>
-          <option value="rating">Highest rated</option>
-          <option value="grade-asc">Grade ↑</option>
-          <option value="grade-desc">Grade ↓</option>
-        </select>
-      </div>
+      {{if .FormWalls}}
+      <select class="form-select" style="width: auto; padding: 6px 12px; font-size: var(--text-sm);"
+              hx-get="/routes" hx-target="#main-content" hx-push-url="true"
+              hx-include="[name='type']"
+              name="wall">
+        <option value="">All walls</option>
+        {{range .FormWalls}}
+        <option value="{{.ID}}" {{if eq $.WallFilter .ID}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+      {{end}}
+      <select class="form-select" style="width: auto; padding: 6px 12px; font-size: var(--text-sm);"
+              hx-get="/routes" hx-target="#route-list" hx-include="[name='filter']"
+              name="sort">
+        <option value="newest">Newest first</option>
+        <option value="popular">Most popular</option>
+        <option value="rating">Highest rated</option>
+        <option value="grade-asc">Grade ↑</option>
+        <option value="grade-desc">Grade ↓</option>
+      </select>
     </div>
   </div>
 </div>
@@ -26,19 +35,19 @@
 <div class="page-body">
   <!-- Filter chips — circuit colors + grade ranges -->
   <div class="filter-bar">
-    <button class="filter-chip active"
-            hx-get="/routes" hx-target="#route-list" hx-include="[name='filter']"
-            name="filter" value="">
+    <a href="/routes{{if .RouteType}}?type={{.RouteType}}{{end}}"
+       class="filter-chip {{if eq .GradeFilter ""}}active{{end}}"
+       hx-get="/routes{{if .RouteType}}?type={{.RouteType}}{{end}}" hx-target="#main-content" hx-push-url="true">
       All
-    </button>
+    </a>
     {{range .GradeGroups}}
-    <button class="filter-chip"
-            hx-get="/routes?grade={{.Value}}" hx-target="#route-list"
-            name="filter" value="{{.Value}}">
-      {{if .IsColor}}<span class="color-dot" style="background: {{.Color}}"></span>{{end}}
+    <a href="/routes?grade={{.Value}}{{if $.RouteType}}&type={{$.RouteType}}{{end}}"
+       class="filter-chip {{if eq $.GradeFilter .Value}}active{{end}}"
+       hx-get="/routes?grade={{.Value}}{{if $.RouteType}}&type={{$.RouteType}}{{end}}" hx-target="#main-content" hx-push-url="true">
+      {{if .IsColor}}<span class="color-dot" style="background: {{.SafeColor}}"></span>{{end}}
       {{.Label}}
       <span class="text-muted" style="font-size: 0.6875rem; margin-left: 2px;">({{.Count}})</span>
-    </button>
+    </a>
     {{end}}
   </div>
 

@@ -1,0 +1,203 @@
+{{define "title"}}Manage Routes — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>Manage Routes</h1>
+      <p class="page-subtitle">{{if .Location}}{{.Location.Name}}{{end}} — {{.TotalRoutes}} routes</p>
+    </div>
+    <a href="/routes/new" class="btn btn-primary"
+       hx-get="/routes/new" hx-target="#main-content" hx-push-url="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      New Route
+    </a>
+  </div>
+</div>
+
+<div class="page-body">
+  <!-- Filters -->
+  <div class="filter-bar mb-4">
+    <div class="flex gap-2 flex-wrap">
+      <button class="filter-chip {{if eq .StatusFilter ""}}active{{end}}"
+              hx-get="/routes/manage" hx-target="#main-content" hx-push-url="true">All</button>
+      <button class="filter-chip {{if eq .StatusFilter "active"}}active{{end}}"
+              hx-get="/routes/manage?status=active" hx-target="#main-content" hx-push-url="true">Active</button>
+      <button class="filter-chip {{if eq .StatusFilter "flagged"}}active{{end}}"
+              hx-get="/routes/manage?status=flagged" hx-target="#main-content" hx-push-url="true">Flagged</button>
+      <button class="filter-chip {{if eq .StatusFilter "archived"}}active{{end}}"
+              hx-get="/routes/manage?status=archived" hx-target="#main-content" hx-push-url="true">Archived</button>
+    </div>
+
+    {{if .FormWalls}}
+    <select class="form-select form-select-inline"
+            hx-get="/routes/manage" hx-target="#main-content" hx-push-url="true"
+            name="wall_id" hx-include="this">
+      <option value="">All Walls</option>
+      {{range .FormWalls}}
+      <option value="{{.ID}}" {{if eq $.WallFilter .ID}}selected{{end}}>{{.Name}}</option>
+      {{end}}
+    </select>
+    {{end}}
+  </div>
+
+  <!-- Route table -->
+  <div class="manage-table">
+    <div class="manage-header">
+      <div class="manage-col manage-col-color"></div>
+      <div class="manage-col manage-col-grade">Grade</div>
+      <div class="manage-col manage-col-name">Name</div>
+      <div class="manage-col manage-col-wall">Wall</div>
+      <div class="manage-col manage-col-setter">Setter</div>
+      <div class="manage-col manage-col-date">Set Date</div>
+      <div class="manage-col manage-col-stats">Sends</div>
+      <div class="manage-col manage-col-status">Status</div>
+      <div class="manage-col manage-col-actions"></div>
+    </div>
+
+    {{$csrf := .CSRFToken}}
+    {{range .Routes}}
+    <div class="manage-row" id="route-row-{{.ID}}">
+      <div class="manage-col manage-col-color">
+        <div class="manage-color-dot" style="background: {{.SafeColor}}"></div>
+      </div>
+      <div class="manage-col manage-col-grade">
+        <span class="manage-grade">{{.DisplayGrade}}</span>
+      </div>
+      <div class="manage-col manage-col-name">
+        {{if .Name}}{{deref .Name}}{{else}}<span class="text-muted">—</span>{{end}}
+      </div>
+      <div class="manage-col manage-col-wall">{{.WallName}}</div>
+      <div class="manage-col manage-col-setter">{{.SetterName}}</div>
+      <div class="manage-col manage-col-date">{{.DateSet.Format "Jan 2"}}</div>
+      <div class="manage-col manage-col-stats">{{.AscentCount}}</div>
+      <div class="manage-col manage-col-status">
+        <span class="status-badge status-{{.Status}}">{{.Status}}</span>
+      </div>
+      <div class="manage-col manage-col-actions">
+        <div class="manage-actions">
+          <a href="/routes/{{.ID}}/edit" class="btn btn-ghost btn-sm"
+             hx-get="/routes/{{.ID}}/edit" hx-target="#main-content" hx-push-url="true"
+             title="Edit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </a>
+          {{if ne .Status "archived"}}
+          <form method="POST" action="/routes/{{.ID}}/status" style="display:inline"
+                hx-post="/routes/{{.ID}}/status" hx-target="#route-row-{{.ID}}" hx-swap="outerHTML">
+            <input type="hidden" name="_csrf_token" value="{{$csrf}}">
+            <input type="hidden" name="status" value="{{if eq .Status "active"}}flagged{{else}}active{{end}}">
+            <button type="submit" class="btn btn-ghost btn-sm"
+                    title="{{if eq .Status "active"}}Flag{{else}}Unflag{{end}}">
+              {{if eq .Status "active"}}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
+              </svg>
+              {{else}}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              {{end}}
+            </button>
+          </form>
+          <form method="POST" action="/routes/{{.ID}}/status" style="display:inline"
+                hx-post="/routes/{{.ID}}/status" hx-target="#route-row-{{.ID}}" hx-swap="outerHTML"
+                hx-confirm="Archive this route? This will remove it from active display.">
+            <input type="hidden" name="_csrf_token" value="{{$csrf}}">
+            <input type="hidden" name="status" value="archived">
+            <button type="submit" class="btn btn-ghost btn-sm" title="Archive">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                <polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>
+              </svg>
+            </button>
+          </form>
+          {{end}}
+        </div>
+      </div>
+    </div>
+    {{end}}
+
+    {{if not .Routes}}
+    <div class="empty-state" style="padding: var(--sp-12)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+      </svg>
+      <h3>No routes found</h3>
+      <p>{{if .StatusFilter}}No {{.StatusFilter}} routes. Try a different filter.{{else}}Create your first route to get started.{{end}}</p>
+      <a href="/routes/new" class="btn btn-primary mt-4"
+         hx-get="/routes/new" hx-target="#main-content" hx-push-url="true">New Route</a>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+{{/* Standalone row partial for HTMX inline swap — receives PageData with .RowRoute */}}
+{{define "route-manage-row"}}
+{{with .RowRoute}}
+<div class="manage-row" id="route-row-{{.ID}}">
+  <div class="manage-col manage-col-color">
+    <div class="manage-color-dot" style="background: {{.SafeColor}}"></div>
+  </div>
+  <div class="manage-col manage-col-grade">
+    <span class="manage-grade">{{.DisplayGrade}}</span>
+  </div>
+  <div class="manage-col manage-col-name">
+    {{if .Name}}{{deref .Name}}{{else}}<span class="text-muted">—</span>{{end}}
+  </div>
+  <div class="manage-col manage-col-wall">{{.WallName}}</div>
+  <div class="manage-col manage-col-setter">{{.SetterName}}</div>
+  <div class="manage-col manage-col-date">{{.DateSet.Format "Jan 2"}}</div>
+  <div class="manage-col manage-col-stats">{{.AscentCount}}</div>
+  <div class="manage-col manage-col-status">
+    <span class="status-badge status-{{.Status}}">{{.Status}}</span>
+  </div>
+  <div class="manage-col manage-col-actions">
+    <div class="manage-actions">
+      <a href="/routes/{{.ID}}/edit" class="btn btn-ghost btn-sm"
+         hx-get="/routes/{{.ID}}/edit" hx-target="#main-content" hx-push-url="true"
+         title="Edit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+      </a>
+      {{if ne .Status "archived"}}
+      <form method="POST" action="/routes/{{.ID}}/status" style="display:inline"
+            hx-post="/routes/{{.ID}}/status" hx-target="#route-row-{{.ID}}" hx-swap="outerHTML">
+        <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="status" value="{{if eq .Status "active"}}flagged{{else}}active{{end}}">
+        <button type="submit" class="btn btn-ghost btn-sm"
+                title="{{if eq .Status "active"}}Flag{{else}}Unflag{{end}}">
+          {{if eq .Status "active"}}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
+          </svg>
+          {{else}}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          {{end}}
+        </button>
+      </form>
+      <form method="POST" action="/routes/{{.ID}}/status" style="display:inline"
+            hx-post="/routes/{{.ID}}/status" hx-target="#route-row-{{.ID}}" hx-swap="outerHTML"
+            hx-confirm="Archive this route? This will remove it from active display.">
+        <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="status" value="archived">
+        <button type="submit" class="btn btn-ghost btn-sm" title="Archive">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+            <polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>
+          </svg>
+        </button>
+      </form>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}
+{{end}}

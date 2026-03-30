@@ -1,0 +1,119 @@
+{{define "title"}}Profile Settings — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="page-title">Profile Settings</h1>
+      <p class="page-subtitle">Manage your display name, avatar, and privacy</p>
+    </div>
+    <a href="/profile" class="btn btn-ghost"
+       hx-get="/profile" hx-target="#main-content" hx-push-url="true">Back to Profile</a>
+  </div>
+</div>
+
+<div class="page-body">
+  {{if .FormSuccess}}
+  <div class="form-alert form-alert-success mb-4">{{.FormSuccess}}</div>
+  {{end}}
+  {{if .FormError}}
+  <div class="form-alert form-alert-error mb-4">{{.FormError}}</div>
+  {{end}}
+
+  <form method="POST" action="/profile/settings" enctype="multipart/form-data"
+        hx-post="/profile/settings" hx-target="#main-content" hx-push-url="false" hx-encoding="multipart/form-data">
+    <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+
+    <div class="form-card">
+      <h2 class="form-card-title">Profile</h2>
+
+      <div class="form-group">
+        <label class="form-label">Avatar</label>
+        <div class="avatar-upload-row">
+          {{if and .User .User.AvatarURL}}
+          <img src="{{deref .User.AvatarURL}}" alt="" class="profile-avatar profile-avatar-lg">
+          {{else if .User}}
+          <div class="profile-avatar profile-avatar-lg profile-avatar-initials">{{.User.DisplayName | initial}}</div>
+          {{end}}
+          <div>
+            <input type="file" name="avatar" accept="image/png,image/jpeg,image/webp" class="form-input" style="max-width: 300px;">
+            <p class="form-hint mt-1">JPG, PNG, or WebP. Max 2 MB.</p>
+            {{if and .User .User.AvatarURL}}
+            <label class="form-hint mt-1" style="cursor: pointer;">
+              <input type="checkbox" name="remove_avatar" value="1"> Remove current avatar
+            </label>
+            {{end}}
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="display_name">Display Name</label>
+        <input type="text" class="form-input" id="display_name" name="display_name"
+               value="{{if .User}}{{.User.DisplayName}}{{end}}" maxlength="50" required
+               style="max-width: 400px;">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="bio">About <span class="form-hint">(optional)</span></label>
+        <textarea class="form-input" id="bio" name="bio" rows="3" maxlength="300"
+                  placeholder="Tell other climbers a bit about yourself...">{{if and .User .User.Bio}}{{deref .User.Bio}}{{end}}</textarea>
+      </div>
+    </div>
+
+    <div class="form-card">
+      <h2 class="form-card-title">Privacy</h2>
+      <p class="text-sm text-muted mb-4">Control what other climbers can see on your profile.</p>
+
+      <div class="settings-section-body">
+        <div class="settings-field">
+          <label class="settings-toggle">
+            <input type="checkbox" name="show_profile" {{if .UserSettings.Privacy.ShowProfile}}checked{{end}}>
+            <span class="settings-toggle-track"></span>
+            <div class="settings-toggle-content">
+              <span class="settings-toggle-label">Public profile</span>
+              <span class="settings-toggle-desc">Other climbers can find and view your profile</span>
+            </div>
+          </label>
+        </div>
+        <div class="settings-field">
+          <label class="settings-toggle">
+            <input type="checkbox" name="show_tick_list" {{if .UserSettings.Privacy.ShowTickList}}checked{{end}}>
+            <span class="settings-toggle-track"></span>
+            <div class="settings-toggle-content">
+              <span class="settings-toggle-label">Show tick list</span>
+              <span class="settings-toggle-desc">Your logged sends, flashes, and projects are visible to others</span>
+            </div>
+          </label>
+        </div>
+        <div class="settings-field">
+          <label class="settings-toggle">
+            <input type="checkbox" name="show_stats" {{if .UserSettings.Privacy.ShowStats}}checked{{end}}>
+            <span class="settings-toggle-track"></span>
+            <div class="settings-toggle-content">
+              <span class="settings-toggle-label">Show stats & pyramid</span>
+              <span class="settings-toggle-desc">Your climbing stats and grade pyramid are visible to others</span>
+            </div>
+          </label>
+        </div>
+        <div class="settings-field">
+          <label class="settings-toggle">
+            <input type="checkbox" name="show_on_leaderboard" {{if .UserSettings.Privacy.ShowOnLeaderboard}}checked{{end}}>
+            <span class="settings-toggle-track"></span>
+            <div class="settings-toggle-content">
+              <span class="settings-toggle-label">Appear on leaderboards</span>
+              <span class="settings-toggle-desc">Include your sends in gym leaderboards and rankings</span>
+            </div>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save Settings</button>
+      <a href="/profile" class="btn btn-ghost"
+         hx-get="/profile" hx-target="#main-content" hx-push-url="true">Cancel</a>
+    </div>
+  </form>
+</div>
+{{end}}

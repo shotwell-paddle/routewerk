@@ -132,63 +132,81 @@ func (g *CardGenerator) generateGradedPrintPNG(data CardData) ([]byte, error) {
 	dc := gg.NewContext(printW, printH)
 	routeColor := parseHexColor(data.Route.Color)
 
-	dc.SetColor(color.White)
+	// Dark background — NRC-inspired
+	dc.SetColor(color.RGBA{20, 20, 18, 255})
 	dc.Clear()
 
-	// -- Color band across top --
-	bandH := 48.0
+	// -- Route color accent block (left side) --
+	blockW := 110.0
 	dc.SetColor(routeColor)
-	roundedRectTop(dc, 0, 0, float64(printW), bandH, 10)
+	dc.DrawRoundedRectangle(20, 20, blockW, 180, 14)
 	dc.Fill()
 
-	// -- Color name on the band (accessibility) --
+	// -- Grade inside color block --
+	gradeText := data.Route.Grade
+	fontSize := gradeSize(gradeText)
 	dc.SetColor(contrastColor(routeColor))
-	setFont(dc, fontBold, 15)
-	dc.DrawString(strings.ToUpper(data.colorLabel())+" HOLDS", 20, bandH-16)
-
-	// -- Grade — massive, left-aligned --
-	gradeY := bandH + 28
-	dc.SetColor(darken(routeColor, 0.15))
-	fontSize := gradeSize(data.Route.Grade)
 	setFont(dc, fontBold, fontSize)
-	dc.DrawString(data.Route.Grade, 28, gradeY+fontSize*0.8)
+	gw, gh := dc.MeasureString(gradeText)
+	dc.DrawString(gradeText, 20+(blockW-gw)/2, 20+90+(gh/2))
 
-	gw, _ := dc.MeasureString(data.Route.Grade)
-	textX := 28 + gw + 18
-	if textX < 140 {
-		textX = 140
-	}
+	// -- Color name below grade in block --
+	dc.SetColor(withAlpha(contrastColor(routeColor), 180))
+	setFont(dc, fontBold, 10)
+	colorLabel := strings.ToUpper(data.colorLabel())
+	clw, _ := dc.MeasureString(colorLabel)
+	dc.DrawString(colorLabel, 20+(blockW-clw)/2, 170)
 
-	// -- Route name --
-	infoY := bandH + 44
+	// -- Route info (right of block) --
+	textX := 150.0
+	infoY := 46.0
+
+	// Route name
 	if data.Route.Name != nil && *data.Route.Name != "" {
-		dc.SetColor(color.RGBA{30, 30, 30, 255})
-		setFont(dc, fontBold, 22)
-		dc.DrawString(*data.Route.Name, textX, infoY)
-		infoY += 28
+		dc.SetColor(color.RGBA{255, 255, 255, 255})
+		setFont(dc, fontBold, 24)
+		dc.DrawString(truncateText(dc, *data.Route.Name, float64(printW)-textX-20), textX, infoY)
+		infoY += 32
 	}
 
-	// -- Wall name --
-	dc.SetColor(color.RGBA{90, 90, 90, 255})
-	setFont(dc, fontRegular, 17)
+	// Wall name
+	dc.SetColor(color.RGBA{180, 175, 170, 255})
+	setFont(dc, fontRegular, 16)
 	dc.DrawString(data.WallName, textX, infoY)
 	infoY += 24
 
-	// -- Route type badge --
+	// Route type
 	if data.Route.RouteType != "" {
-		typeLabel := formatRouteType(data.Route.RouteType)
+		dc.SetColor(color.RGBA{120, 115, 110, 255})
 		setFont(dc, fontRegular, 13)
-		tw, _ := dc.MeasureString(typeLabel)
-		dc.SetColor(color.RGBA{235, 235, 235, 255})
-		drawPill(dc, textX, infoY-12, tw+16, 22, 11)
-		dc.Fill()
-		dc.SetColor(color.RGBA{90, 90, 90, 255})
-		setFont(dc, fontRegular, 13)
-		dc.DrawString(typeLabel, textX+8, infoY+3)
+		dc.DrawString(formatRouteType(data.Route.RouteType), textX, infoY)
 	}
 
-	// -- QR code --
-	drawPrintFooter(dc, data, 100)
+	// -- Setter + date (right side, lower) --
+	footerY := 170.0
+	if data.SetterName != "" {
+		dc.SetColor(color.RGBA{140, 135, 130, 255})
+		setFont(dc, fontRegular, 12)
+		dc.DrawString("Set by "+data.SetterName, textX, footerY)
+		footerY += 18
+	}
+	dc.SetColor(color.RGBA{100, 96, 92, 255})
+	setFont(dc, fontRegular, 11)
+	dc.DrawString(data.Route.DateSet.Format("Jan 2, 2006"), textX, footerY)
+
+	// -- QR code (bottom right) --
+	qrImg, err := generateQRImage(data.QRTargetURL, 80)
+	if err == nil {
+		dc.DrawImage(qrImg, printW-100, printH-118)
+		dc.SetColor(color.RGBA{100, 96, 92, 255})
+		setFont(dc, fontRegular, 8)
+		dc.DrawStringAnchored("Scan to log", float64(printW)-60, float64(printH)-30, 0.5, 0.5)
+	}
+
+	// -- Branding --
+	dc.SetColor(color.RGBA{70, 67, 64, 255})
+	setFont(dc, fontBold, 9)
+	dc.DrawString("ROUTEWERK", 20, float64(printH)-14)
 
 	return encodePNG(dc)
 }
@@ -218,91 +236,74 @@ func (g *CardGenerator) generateGradedPrintPNG(data CardData) ([]byte, error) {
 func (g *CardGenerator) generateCircuitPrintPNG(data CardData) ([]byte, error) {
 	dc := gg.NewContext(printW, printH)
 	routeColor := parseHexColor(data.Route.Color)
-	textOnColor := contrastColor(routeColor)
 
-	dc.SetColor(color.White)
+	// Dark background with bold color stripe — cheaper to print than full-color
+	dc.SetColor(color.RGBA{20, 20, 18, 255})
 	dc.Clear()
 
-	// -- Color hero fills top ~60% --
-	heroH := 180.0
+	// -- Bold color stripe (left edge) --
+	stripeW := 28.0
 	dc.SetColor(routeColor)
-	roundedRectTop(dc, 0, 0, float64(printW), heroH, 10)
+	dc.DrawRectangle(0, 0, stripeW, float64(printH))
 	dc.Fill()
 
-	// -- Circuit color name — the primary identifier --
-	circuitLabel := strings.ToUpper(data.colorLabel()) + " CIRCUIT"
-	dc.SetColor(textOnColor)
-	setFont(dc, fontBold, 38)
-	dc.DrawString(circuitLabel, 28, 64)
+	// -- Circuit color name — huge, the primary identifier --
+	textX := stripeW + 24
+	circuitLabel := strings.ToUpper(data.colorLabel())
+	dc.SetColor(color.RGBA{255, 255, 255, 255})
+	setFont(dc, fontBold, 52)
+	dc.DrawString(circuitLabel, textX, 72)
+
+	// "CIRCUIT" subtitle
+	dc.SetColor(color.RGBA{120, 115, 110, 255})
+	setFont(dc, fontBold, 14)
+	dc.DrawString("CIRCUIT", textX, 94)
 
 	// -- Route name (if set) --
-	infoY := 98.0
+	infoY := 130.0
 	if data.Route.Name != nil && *data.Route.Name != "" {
-		dc.SetColor(withAlpha(textOnColor, 220))
+		dc.SetColor(color.RGBA{220, 215, 210, 255})
 		setFont(dc, fontBold, 20)
-		dc.DrawString(*data.Route.Name, 28, infoY)
+		dc.DrawString(*data.Route.Name, textX, infoY)
 		infoY += 28
 	}
 
 	// -- Wall name --
-	dc.SetColor(withAlpha(textOnColor, 190))
-	setFont(dc, fontRegular, 17)
-	dc.DrawString(data.WallName, 28, infoY)
-	infoY += 24
+	dc.SetColor(color.RGBA{180, 175, 170, 255})
+	setFont(dc, fontRegular, 16)
+	dc.DrawString(data.WallName, textX, infoY)
+	infoY += 22
 
-	// -- Route type + grade (if present, shown small) --
-	dc.SetColor(withAlpha(textOnColor, 160))
-	setFont(dc, fontRegular, 14)
-	meta := formatRouteType(data.Route.RouteType)
+	// -- Grade (if present, secondary) --
 	if data.Route.Grade != "" {
-		meta += "  •  " + data.Route.Grade
+		dc.SetColor(color.RGBA{120, 115, 110, 255})
+		setFont(dc, fontRegular, 13)
+		dc.DrawString(formatRouteType(data.Route.RouteType)+"  ·  "+data.Route.Grade, textX, infoY)
 	}
-	dc.DrawString(meta, 28, infoY)
 
-	// -- QR code + footer --
-	drawPrintFooter(dc, data, 90)
+	// -- QR code (bottom right) --
+	qrImg, err := generateQRImage(data.QRTargetURL, 80)
+	if err == nil {
+		dc.DrawImage(qrImg, printW-100, printH-118)
+		dc.SetColor(color.RGBA{100, 96, 92, 255})
+		setFont(dc, fontRegular, 8)
+		dc.DrawStringAnchored("Scan to log", float64(printW)-60, float64(printH)-30, 0.5, 0.5)
+	}
+
+	// -- Setter + branding --
+	if data.SetterName != "" {
+		dc.SetColor(color.RGBA{140, 135, 130, 255})
+		setFont(dc, fontRegular, 11)
+		dc.DrawString("Set by "+data.SetterName+"  ·  "+data.Route.DateSet.Format("Jan 2, 2006"), textX, float64(printH)-34)
+	}
+
+	dc.SetColor(color.RGBA{70, 67, 64, 255})
+	setFont(dc, fontBold, 9)
+	dc.DrawString("ROUTEWERK", textX, float64(printH)-14)
 
 	return encodePNG(dc)
 }
 
-// drawPrintFooter renders the QR code, setter, date, and branding
-// shared by both graded and circuit print cards.
-func drawPrintFooter(dc *gg.Context, data CardData, qrSize int) {
-	// QR code — bottom right
-	qrImg, err := generateQRImage(data.QRTargetURL, qrSize)
-	if err == nil {
-		qrX := printW - qrSize - 20
-		qrY := printH - qrSize - 36
-		dc.DrawImage(qrImg, qrX, qrY)
-
-		dc.SetColor(color.RGBA{140, 140, 140, 255})
-		setFont(dc, fontRegular, 9)
-		dc.DrawStringAnchored("Scan to log climb", float64(qrX)+float64(qrSize)/2, float64(qrY+qrSize)+12, 0.5, 0.5)
-	}
-
-	// Setter + date — bottom left
-	footerY := float64(printH) - 52
-	if data.SetterName != "" {
-		dc.SetColor(color.RGBA{110, 110, 110, 255})
-		setFont(dc, fontRegular, 13)
-		dc.DrawString("Set by "+data.SetterName, 28, footerY)
-		footerY += 18
-	}
-	dc.SetColor(color.RGBA{150, 150, 150, 255})
-	setFont(dc, fontRegular, 12)
-	dc.DrawString(data.Route.DateSet.Format("Jan 2, 2006"), 28, footerY)
-
-	// Branding
-	dc.SetColor(color.RGBA{200, 200, 200, 255})
-	setFont(dc, fontRegular, 9)
-	dc.DrawString("routewerk", 28, float64(printH)-12)
-
-	// Border
-	dc.SetColor(color.RGBA{210, 210, 210, 255})
-	dc.SetLineWidth(1)
-	dc.DrawRoundedRectangle(0.5, 0.5, float64(printW)-1, float64(printH)-1, 10)
-	dc.Stroke()
-}
 
 // ============================================================
 // DIGITAL CARD — shareable, landscape 640×360
@@ -331,62 +332,87 @@ func (g *CardGenerator) generateGradedDigitalPNG(data CardData) ([]byte, error) 
 	dc := gg.NewContext(digitalW, digitalH)
 	routeColor := parseHexColor(data.Route.Color)
 
-	dc.SetColor(color.White)
+	// Dark background
+	bgColor := color.RGBA{20, 20, 18, 255}
+	dc.SetColor(bgColor)
 	dc.Clear()
 
-	// -- Color hero section (top ~47%) --
-	heroH := 170.0
+	// -- Left color accent block --
+	blockW := 120.0
+	blockH := float64(digitalH) - 80
 	dc.SetColor(routeColor)
-	dc.DrawRectangle(0, 0, float64(digitalW), heroH)
+	dc.DrawRoundedRectangle(28, 28, blockW, blockH, 16)
 	dc.Fill()
-	drawGradientBottom(dc, heroH, float64(digitalW))
 
+	// -- Grade inside color block --
 	textOnColor := contrastColor(routeColor)
+	gradeText := data.Route.Grade
+	setFont(dc, fontBold, 48)
+	gw, gh := dc.MeasureString(gradeText)
+	dc.SetColor(textOnColor)
+	dc.DrawString(gradeText, 28+(blockW-gw)/2, 28+(blockH/2)-(gh/2)+gh*0.3)
 
-	// -- Color name label (accessibility) — top-left --
+	// -- Color name below grade --
 	dc.SetColor(withAlpha(textOnColor, 160))
 	setFont(dc, fontBold, 10)
-	dc.DrawString(strings.ToUpper(data.colorLabel())+" HOLDS", 36, 24)
+	colorLabel := strings.ToUpper(data.colorLabel())
+	clw, _ := dc.MeasureString(colorLabel)
+	dc.DrawString(colorLabel, 28+(blockW-clw)/2, 28+blockH-16)
 
-	// -- Grade — large, left side --
-	dc.SetColor(textOnColor)
-	setFont(dc, fontBold, 52)
-	dc.DrawString(data.Route.Grade, 36, 88)
+	// -- Route info (right side) --
+	textX := 172.0
+	infoY := 52.0
 
-	gw, _ := dc.MeasureString(data.Route.Grade)
-	labelX := 36 + gw + 24
-
-	// -- Route name --
-	nameY := 62.0
-	if data.Route.Name != nil && *data.Route.Name != "" {
-		dc.SetColor(textOnColor)
-		setFont(dc, fontBold, 22)
-		dc.DrawString(*data.Route.Name, labelX, nameY)
-		nameY += 28
+	// Route type label
+	if data.Route.RouteType != "" {
+		dc.SetColor(color.RGBA{252, 82, 0, 255}) // accent orange
+		setFont(dc, fontBold, 10)
+		dc.DrawString(formatRouteType(data.Route.RouteType), textX, infoY)
+		infoY += 22
 	}
 
-	// -- Wall + Location --
-	dc.SetColor(withAlpha(textOnColor, 200))
+	// Route name
+	if data.Route.Name != nil && *data.Route.Name != "" {
+		dc.SetColor(color.RGBA{255, 255, 255, 255})
+		setFont(dc, fontBold, 24)
+		dc.DrawString(truncateText(dc, *data.Route.Name, float64(digitalW)-textX-30), textX, infoY)
+		infoY += 32
+	}
+
+	// Wall + Location
+	dc.SetColor(color.RGBA{180, 175, 170, 255})
 	setFont(dc, fontRegular, 14)
 	loc := data.WallName
 	if data.LocationName != "" {
-		loc = data.WallName + "  •  " + data.LocationName
+		loc = data.WallName + "  ·  " + data.LocationName
 	}
-	dc.DrawString(loc, labelX, nameY)
-	nameY += 22
+	dc.DrawString(loc, textX, infoY)
+	infoY += 22
 
-	// -- Setter + date --
+	// Setter + date
 	if data.SetterName != "" {
-		dc.SetColor(withAlpha(textOnColor, 170))
+		dc.SetColor(color.RGBA{120, 115, 110, 255})
 		setFont(dc, fontRegular, 12)
-		dc.DrawString("Set by "+data.SetterName+"  •  "+data.Route.DateSet.Format("Jan 2, 2006"), labelX, nameY)
+		dc.DrawString("Set by "+data.SetterName+"  ·  "+data.Route.DateSet.Format("Jan 2, 2006"), textX, infoY)
 	}
 
-	// -- Route type pill --
-	drawTypePill(dc, data.Route.RouteType, textOnColor)
+	// -- Stats row --
+	drawDigitalStats(dc, data, textX)
 
-	// -- Stats + tags + footer (shared) --
-	drawDigitalBottom(dc, data, routeColor, heroH)
+	// -- Tags --
+	drawDigitalTags(dc, data, textX)
+
+	// -- Route link (bottom right, replacing QR — QR is useless on phones) --
+	if data.QRTargetURL != "" {
+		dc.SetColor(color.RGBA{90, 86, 82, 255})
+		setFont(dc, fontRegular, 9)
+		dc.DrawStringAnchored(data.QRTargetURL, float64(digitalW)-20, float64(digitalH)-16, 1.0, 0.5)
+	}
+
+	// -- Branding --
+	dc.SetColor(color.RGBA{70, 67, 64, 255})
+	setFont(dc, fontBold, 9)
+	dc.DrawString("ROUTEWERK", 28, float64(digitalH)-14)
 
 	return encodePNG(dc)
 }
@@ -395,31 +421,38 @@ func (g *CardGenerator) generateCircuitDigitalPNG(data CardData) ([]byte, error)
 	dc := gg.NewContext(digitalW, digitalH)
 	routeColor := parseHexColor(data.Route.Color)
 
-	dc.SetColor(color.White)
+	// Full route color background — color IS the identity
+	dc.SetColor(routeColor)
 	dc.Clear()
 
-	// -- Color hero — taller for circuit since color is the identity --
-	heroH := 180.0
-	dc.SetColor(routeColor)
-	dc.DrawRectangle(0, 0, float64(digitalW), heroH)
-	dc.Fill()
-	drawGradientBottom(dc, heroH, float64(digitalW))
+	// Gradient overlay at bottom for depth + text readability
+	for y := float64(digitalH) - 120; y < float64(digitalH); y++ {
+		alpha := uint8((y - (float64(digitalH) - 120)) / 120 * 100)
+		dc.SetColor(color.RGBA{0, 0, 0, alpha})
+		dc.DrawLine(0, y, float64(digitalW), y)
+		dc.Stroke()
+	}
 
 	textOnColor := contrastColor(routeColor)
 
-	// -- Circuit color name — the primary identifier, huge --
-	circuitLabel := strings.ToUpper(data.colorLabel()) + " CIRCUIT"
+	// -- Circuit color name — huge, the primary identifier --
+	circuitLabel := strings.ToUpper(data.colorLabel())
 	dc.SetColor(textOnColor)
-	setFont(dc, fontBold, 36)
-	dc.DrawString(circuitLabel, 36, 64)
+	setFont(dc, fontBold, 56)
+	dc.DrawString(circuitLabel, 36, 80)
+
+	// "CIRCUIT" subtitle
+	dc.SetColor(withAlpha(textOnColor, 160))
+	setFont(dc, fontBold, 14)
+	dc.DrawString("CIRCUIT", 38, 104)
 
 	// -- Route name --
-	nameY := 92.0
+	nameY := 140.0
 	if data.Route.Name != nil && *data.Route.Name != "" {
-		dc.SetColor(withAlpha(textOnColor, 220))
-		setFont(dc, fontBold, 18)
+		dc.SetColor(withAlpha(textOnColor, 240))
+		setFont(dc, fontBold, 20)
 		dc.DrawString(*data.Route.Name, 36, nameY)
-		nameY += 26
+		nameY += 28
 	}
 
 	// -- Wall + Location --
@@ -427,33 +460,70 @@ func (g *CardGenerator) generateCircuitDigitalPNG(data CardData) ([]byte, error)
 	setFont(dc, fontRegular, 14)
 	loc := data.WallName
 	if data.LocationName != "" {
-		loc = data.WallName + "  •  " + data.LocationName
+		loc = data.WallName + "  ·  " + data.LocationName
 	}
 	dc.DrawString(loc, 36, nameY)
-	nameY += 22
 
-	// -- Setter + grade (if present, secondary) --
-	meta := ""
-	if data.SetterName != "" {
-		meta = "Set by " + data.SetterName
-	}
-	if data.Route.Grade != "" {
-		if meta != "" {
-			meta += "  •  "
+	// -- Stats row (bottom left) --
+	statsY := float64(digitalH) - 56
+	stats := buildStatPairs(data)
+	statX := 36.0
+	for i, s := range stats {
+		setFont(dc, fontBold, 18)
+		dc.SetColor(withAlpha(textOnColor, 240))
+		dc.DrawString(s.value, statX, statsY)
+		vw, _ := dc.MeasureString(s.value)
+
+		setFont(dc, fontRegular, 10)
+		dc.SetColor(withAlpha(textOnColor, 140))
+		dc.DrawString(s.label, statX+vw+5, statsY)
+		lw, _ := dc.MeasureString(s.label)
+
+		statX += vw + lw + 10
+		if i < len(stats)-1 {
+			dc.SetColor(withAlpha(textOnColor, 80))
+			setFont(dc, fontRegular, 10)
+			dc.DrawString("·", statX, statsY)
+			statX += 14
 		}
-		meta += data.Route.Grade
-	}
-	if meta != "" {
-		dc.SetColor(withAlpha(textOnColor, 160))
-		setFont(dc, fontRegular, 12)
-		dc.DrawString(meta, 36, nameY)
 	}
 
-	// -- Route type pill --
-	drawTypePill(dc, data.Route.RouteType, textOnColor)
+	// -- Tags (bottom, above stats) --
+	if len(data.Route.Tags) > 0 {
+		tagY := float64(digitalH) - 80
+		tagX := 36.0
+		for _, tag := range data.Route.Tags {
+			setFont(dc, fontBold, 10)
+			tw, _ := dc.MeasureString(tag.Name)
+			pillW := tw + 14
 
-	// -- Stats + tags + footer --
-	drawDigitalBottom(dc, data, routeColor, heroH)
+			// Dark semi-transparent pill
+			dc.SetColor(color.RGBA{0, 0, 0, 80})
+			drawPill(dc, tagX, tagY-10, pillW, 20, 10)
+			dc.Fill()
+
+			dc.SetColor(withAlpha(textOnColor, 220))
+			setFont(dc, fontBold, 10)
+			dc.DrawString(tag.Name, tagX+7, tagY+3)
+
+			tagX += pillW + 6
+			if tagX > float64(digitalW)-80 {
+				break
+			}
+		}
+	}
+
+	// -- Route link (bottom right, replacing QR) --
+	if data.QRTargetURL != "" {
+		dc.SetColor(withAlpha(textOnColor, 80))
+		setFont(dc, fontRegular, 9)
+		dc.DrawStringAnchored(data.QRTargetURL, float64(digitalW)-20, float64(digitalH)-16, 1.0, 0.5)
+	}
+
+	// -- Branding --
+	dc.SetColor(withAlpha(textOnColor, 60))
+	setFont(dc, fontBold, 9)
+	dc.DrawString("ROUTEWERK", 36, float64(digitalH)-14)
 
 	return encodePNG(dc)
 }
@@ -462,115 +532,86 @@ func (g *CardGenerator) generateCircuitDigitalPNG(data CardData) ([]byte, error)
 // Shared rendering components
 // ============================================================
 
-func drawGradientBottom(dc *gg.Context, heroH, w float64) {
-	for y := heroH - 40; y < heroH; y++ {
-		alpha := uint8((y - (heroH - 40)) / 40 * 50)
-		dc.SetColor(color.RGBA{0, 0, 0, alpha})
-		dc.DrawLine(0, y, w, y)
-		dc.Stroke()
-	}
-}
+type statPair struct{ label, value string }
 
-func drawTypePill(dc *gg.Context, routeType string, textOnColor color.Color) {
-	if routeType == "" {
-		return
-	}
-	typeLabel := formatRouteType(routeType)
-	setFont(dc, fontBold, 10)
-	tw, _ := dc.MeasureString(typeLabel)
-	pillX := float64(digitalW) - tw - 54
-	pillY := 22.0
-	dc.SetColor(color.RGBA{255, 255, 255, 40})
-	drawPill(dc, pillX, pillY, tw+20, 22, 11)
-	dc.Fill()
-	dc.SetColor(withAlpha(textOnColor, 220))
-	setFont(dc, fontBold, 10)
-	dc.DrawString(typeLabel, pillX+10, pillY+15)
-}
-
-func drawDigitalBottom(dc *gg.Context, data CardData, routeColor color.Color, heroH float64) {
-	// -- Stats row --
-	statsY := heroH + 36
-
-	stats := []struct{ label, value string }{}
-	stats = append(stats, struct{ label, value string }{"ascents", fmt.Sprintf("%d", data.Route.AscentCount)})
+func buildStatPairs(data CardData) []statPair {
+	stats := []statPair{}
+	stats = append(stats, statPair{"sends", fmt.Sprintf("%d", data.Route.AscentCount)})
 	if data.Route.RatingCount > 0 {
-		stats = append(stats, struct{ label, value string }{"avg rating", fmt.Sprintf("%.1f", data.Route.AvgRating)})
-		stats = append(stats, struct{ label, value string }{"ratings", fmt.Sprintf("%d", data.Route.RatingCount)})
+		stats = append(stats, statPair{"rating", fmt.Sprintf("%.1f", data.Route.AvgRating)})
 	}
 	if data.Route.AttemptCount > 0 {
-		stats = append(stats, struct{ label, value string }{"attempts", fmt.Sprintf("%d", data.Route.AttemptCount)})
+		stats = append(stats, statPair{"attempts", fmt.Sprintf("%d", data.Route.AttemptCount)})
 	}
+	return stats
+}
 
-	statX := 36.0
+func drawDigitalStats(dc *gg.Context, data CardData, textX float64) {
+	statsY := float64(digitalH) - 56
+	stats := buildStatPairs(data)
+
+	statX := textX
 	for i, s := range stats {
 		setFont(dc, fontBold, 20)
-		dc.SetColor(color.RGBA{40, 40, 40, 255})
+		dc.SetColor(color.RGBA{255, 255, 255, 255})
 		dc.DrawString(s.value, statX, statsY)
 		vw, _ := dc.MeasureString(s.value)
 
-		setFont(dc, fontRegular, 11)
-		dc.SetColor(color.RGBA{140, 140, 140, 255})
-		dc.DrawString(s.label, statX+vw+6, statsY)
+		setFont(dc, fontRegular, 10)
+		dc.SetColor(color.RGBA{120, 115, 110, 255})
+		dc.DrawString(s.label, statX+vw+5, statsY)
 		lw, _ := dc.MeasureString(s.label)
 
-		statX += vw + lw + 12
+		statX += vw + lw + 10
 		if i < len(stats)-1 {
-			dc.SetColor(color.RGBA{200, 200, 200, 255})
-			setFont(dc, fontRegular, 11)
+			dc.SetColor(color.RGBA{80, 77, 74, 255})
+			setFont(dc, fontRegular, 10)
 			dc.DrawString("·", statX, statsY)
-			statX += 16
+			statX += 14
 		}
 	}
+}
 
-	// -- Tags --
-	if len(data.Route.Tags) > 0 {
-		tagY := statsY + 36
-		tagX := 36.0
-		for _, tag := range data.Route.Tags {
-			setFont(dc, fontRegular, 11)
-			tw, _ := dc.MeasureString(tag.Name)
-			pillW := tw + 16
+func drawDigitalTags(dc *gg.Context, data CardData, textX float64) {
+	if len(data.Route.Tags) == 0 {
+		return
+	}
+	tagY := float64(digitalH) - 80
+	tagX := textX
+	for _, tag := range data.Route.Tags {
+		setFont(dc, fontBold, 10)
+		tw, _ := dc.MeasureString(tag.Name)
+		pillW := tw + 14
 
-			// White pill background
-			dc.SetColor(color.White)
-			drawPill(dc, tagX, tagY-11, pillW, 22, 11)
-			dc.Fill()
+		// Light pill on dark bg
+		dc.SetColor(color.RGBA{255, 255, 255, 25})
+		drawPill(dc, tagX, tagY-10, pillW, 20, 10)
+		dc.Fill()
 
-			// Subtle border
-			dc.SetColor(color.RGBA{200, 200, 200, 255})
-			dc.SetLineWidth(1)
-			drawPill(dc, tagX, tagY-11, pillW, 22, 11)
-			dc.Stroke()
+		dc.SetColor(color.RGBA{220, 215, 210, 255})
+		setFont(dc, fontBold, 10)
+		dc.DrawString(tag.Name, tagX+7, tagY+3)
 
-			// Dark text for readability
-			dc.SetColor(color.RGBA{60, 60, 60, 255})
-			setFont(dc, fontRegular, 11)
-			dc.DrawString(tag.Name, tagX+8, tagY+4)
-
-			tagX += pillW + 8
-			if tagX > float64(digitalW)-40 {
-				break
-			}
+		tagX += pillW + 6
+		if tagX > float64(digitalW)-80 {
+			break
 		}
 	}
+}
 
-	// -- QR code --
-	qrImg, err := generateQRImage(data.QRTargetURL, 64)
-	if err == nil {
-		dc.DrawImage(qrImg, digitalW-84, digitalH-84)
+func truncateText(dc *gg.Context, text string, maxWidth float64) string {
+	w, _ := dc.MeasureString(text)
+	if w <= maxWidth {
+		return text
 	}
-
-	// -- Branding --
-	dc.SetColor(color.RGBA{190, 190, 190, 255})
-	setFont(dc, fontRegular, 9)
-	dc.DrawString("routewerk", 36, float64(digitalH)-16)
-
-	// -- Border --
-	dc.SetColor(color.RGBA{220, 220, 220, 255})
-	dc.SetLineWidth(1)
-	dc.DrawRoundedRectangle(0.5, 0.5, float64(digitalW)-1, float64(digitalH)-1, 8)
-	dc.Stroke()
+	for i := len(text) - 1; i > 0; i-- {
+		candidate := text[:i] + "…"
+		cw, _ := dc.MeasureString(candidate)
+		if cw <= maxWidth {
+			return candidate
+		}
+	}
+	return text
 }
 
 // ============================================================
@@ -626,15 +667,6 @@ func encodePNG(dc *gg.Context) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func roundedRectTop(dc *gg.Context, x, y, w, h, r float64) {
-	dc.NewSubPath()
-	dc.DrawArc(x+r, y+r, r, math.Pi, 1.5*math.Pi)
-	dc.LineTo(x+w-r, y)
-	dc.DrawArc(x+w-r, y+r, r, 1.5*math.Pi, 2*math.Pi)
-	dc.LineTo(x+w, y+h)
-	dc.LineTo(x, y+h)
-	dc.ClosePath()
-}
 
 func drawPill(dc *gg.Context, x, y, w, h, r float64) {
 	dc.NewSubPath()
@@ -686,17 +718,6 @@ func contrastColor(c color.Color) color.Color {
 func withAlpha(c color.Color, a uint8) color.Color {
 	r, g, b, _ := c.RGBA()
 	return color.RGBA{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8), a}
-}
-
-func darken(c color.Color, amount float64) color.Color {
-	r, g, b, _ := c.RGBA()
-	factor := 1.0 - amount
-	return color.RGBA{
-		uint8(float64(r>>8) * factor),
-		uint8(float64(g>>8) * factor),
-		uint8(float64(b>>8) * factor),
-		255,
-	}
 }
 
 // hexToName maps common climbing hold hex colors to readable names.

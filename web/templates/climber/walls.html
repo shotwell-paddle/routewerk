@@ -1,0 +1,64 @@
+{{define "title"}}Walls — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Walls</h1>
+    <p class="page-subtitle">{{if .Location}}{{.Location.Name}}{{end}}</p>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="wall-grid">
+    {{range .WallList}}
+    <a href="/routes?wall={{.ID}}" class="wall-card card-interactive"
+       hx-get="/routes?wall={{.ID}}" hx-target="#main-content" hx-push-url="true"
+       style="text-decoration: none; color: inherit;">
+      <div class="wall-card-header">
+        <div class="wall-card-icon">
+          {{if eq .WallType "boulder"}}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+            <path d="M2 22L7 2l5 10 5-6 5 16"/>
+          </svg>
+          {{else}}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+            <path d="M2 20h20"/><path d="M5 20V8l7-5 7 5v12"/>
+          </svg>
+          {{end}}
+        </div>
+        <div>
+          <h3 class="wall-card-title">{{.Name}}</h3>
+          <div class="wall-card-meta">
+            {{.WallType | title}}{{if .Angle}} · {{deref .Angle}}{{end}}
+          </div>
+        </div>
+      </div>
+
+      <div class="wall-card-stats">
+        <div class="wall-card-stat">
+          <span class="wall-card-stat-value">{{.ActiveRoutes}}</span>
+          <span class="wall-card-stat-label">active routes</span>
+        </div>
+      </div>
+
+      {{if or .HeightMeters .SurfaceType}}
+      <div class="wall-card-details">
+        {{if .HeightMeters}}<span>{{printf "%.1f" (derefFloat .HeightMeters)}}m</span>{{end}}
+        {{if .SurfaceType}}<span>{{deref .SurfaceType}}</span>{{end}}
+      </div>
+      {{end}}
+    </a>
+    {{end}}
+
+    {{if not .WallList}}
+    <div class="empty-state" style="grid-column: 1 / -1">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 20h20"/><path d="M5 20V8l7-5 7 5v12"/>
+      </svg>
+      <h3>No walls yet</h3>
+      <p>Check back soon — the setting team is working on it.</p>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}

@@ -1,19 +1,19 @@
 {{define "route-card"}}
 <div class="route-card card-interactive"
      hx-get="/routes/{{.ID}}" hx-target="#main-content" hx-push-url="true"
-     style="--route-color: {{.Color}}">
+     style="--route-color: {{.SafeColor}}">
   <div class="route-color-bar"></div>
   <div class="route-card-body">
     {{if .IsCircuit}}
-    <div class="circuit-badge" style="--circuit-color: {{.Color}}">
+    <div class="circuit-badge" style="--circuit-color: {{.SafeColor}}">
       <div class="circuit-dot"></div>
-      <span>{{.DisplayGrade}}</span>
+      <span>{{.DisplayGrade}}{{if .CircuitVGrade}} · {{.CircuitVGrade}}{{end}}</span>
     </div>
     {{else}}
     <div class="route-grade">{{.DisplayGrade}}</div>
     {{end}}
     <div class="route-info">
-      <div class="route-name">{{if .Name}}{{deref .Name}}{{else}}{{.RouteType | title}}{{if not .IsCircuit}} — {{.Grade}}{{end}}{{end}}</div>
+      <div class="route-name">{{if .Name}}{{deref .Name}}{{else}}{{.RouteType | title}}{{end}}</div>
       <div class="route-meta">
         <span>{{.WallName}}</span>
         {{if .SetterName}}<span class="route-meta-dot">{{.SetterName}}</span>{{end}}

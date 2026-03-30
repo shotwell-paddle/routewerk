@@ -83,6 +83,130 @@ func (r *LocationRepo) ListByOrg(ctx context.Context, orgID string) ([]model.Loc
 	return locations, nil
 }
 
+// SearchPublic finds locations by name (case-insensitive substring match).
+// Returns up to `limit` results with org name included. Used for the
+// "find your gym" page — no auth context needed.
+func (r *LocationRepo) SearchPublic(ctx context.Context, query string, limit int) ([]LocationSearchResult, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	q := `
+		SELECT l.id, l.org_id, l.name, l.address, o.name AS org_name
+		FROM locations l
+		JOIN organizations o ON o.id = l.org_id
+		WHERE l.deleted_at IS NULL
+		  AND o.deleted_at IS NULL
+		  AND l.name ILIKE '%' || $1 || '%'
+		ORDER BY l.name
+		LIMIT $2`
+
+	rows, err := r.db.Query(ctx, q, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("search locations: %w", err)
+	}
+	defer rows.Close()
+
+	var results []LocationSearchResult
+	for rows.Next() {
+		var sr LocationSearchResult
+		if err := rows.Scan(&sr.ID, &sr.OrgID, &sr.Name, &sr.Address, &sr.OrgName); err != nil {
+			return nil, fmt.Errorf("scan location search result: %w", err)
+		}
+		results = append(results, sr)
+	}
+	return results, nil
+}
+
+// ListAllPublic returns all locations (no search filter), for the initial
+// gym selection page before the user types a query.
+func (r *LocationRepo) ListAllPublic(ctx context.Context, limit int) ([]LocationSearchResult, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	q := `
+		SELECT l.id, l.org_id, l.name, l.address, o.name AS org_name
+		FROM locations l
+		JOIN organizations o ON o.id = l.org_id
+		WHERE l.deleted_at IS NULL
+		  AND o.deleted_at IS NULL
+		ORDER BY l.name
+		LIMIT $1`
+
+	rows, err := r.db.Query(ctx, q, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list public locations: %w", err)
+	}
+	defer rows.Close()
+
+	var results []LocationSearchResult
+	for rows.Next() {
+		var sr LocationSearchResult
+		if err := rows.Scan(&sr.ID, &sr.OrgID, &sr.Name, &sr.Address, &sr.OrgName); err != nil {
+			return nil, fmt.Errorf("scan location: %w", err)
+		}
+		results = append(results, sr)
+	}
+	return results, nil
+}
+
+// LocationSearchResult is a lightweight location view for search results.
+type LocationSearchResult struct {
+	ID      string  `json:"id"`
+	OrgID   string  `json:"org_id"`
+	Name    string  `json:"name"`
+	Address *string `json:"address,omitempty"`
+	OrgName string  `json:"org_name"`
+}
+
+// UserLocationItem is a lightweight location view for the location switcher.
+type UserLocationItem struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Role string `json:"role"` // user's best role at this location
+}
+
+// ListForUser returns all locations the user has access to, with their best role
+// at each location. Includes locations from direct memberships and locations
+// belonging to orgs where the user has org-wide roles.
+func (r *LocationRepo) ListForUser(ctx context.Context, userID string) ([]UserLocationItem, error) {
+	query := `
+		SELECT DISTINCT ON (l.id) l.id, l.name, um.role
+		FROM locations l
+		JOIN user_memberships um ON (
+			um.location_id = l.id
+			OR (um.location_id IS NULL AND um.org_id = l.org_id)
+		)
+		WHERE um.user_id = $1
+		  AND um.deleted_at IS NULL
+		  AND l.deleted_at IS NULL
+		ORDER BY l.id, CASE um.role
+			WHEN 'org_admin' THEN 1
+			WHEN 'gym_manager' THEN 2
+			WHEN 'head_setter' THEN 3
+			WHEN 'setter' THEN 4
+			WHEN 'climber' THEN 5
+			ELSE 6
+		END`
+
+	rows, err := r.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list locations for user: %w", err)
+	}
+	defer rows.Close()
+
+	var locations []UserLocationItem
+	for rows.Next() {
+		var li UserLocationItem
+		if err := rows.Scan(&li.ID, &li.Name, &li.Role); err != nil {
+			return nil, fmt.Errorf("scan user location: %w", err)
+		}
+		locations = append(locations, li)
+	}
+	return locations, nil
+}
+
 func (r *LocationRepo) Update(ctx context.Context, l *model.Location) error {
 	query := `
 		UPDATE locations

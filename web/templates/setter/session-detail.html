@@ -1,0 +1,461 @@
+{{define "title"}}Session {{.Session.ScheduledDate.Format "Jan 2"}} — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <div class="flex items-center gap-3">
+        <a href="/sessions" class="btn btn-ghost btn-sm"
+           hx-get="/sessions" hx-target="#main-content" hx-push-url="true"
+           title="Back to sessions">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+        </a>
+        <div>
+          <h1>{{.Session.ScheduledDate.Format "Monday, January 2, 2006"}}</h1>
+          <p class="page-subtitle">
+            Setting Session
+            {{if eq .Session.Status "complete"}}
+            <span class="status-badge status-complete">Complete</span>
+            {{else if eq .Session.Status "in_progress"}}
+            <span class="status-badge status-active">In Progress</span>
+            {{else}}
+            <span class="status-badge status-planning">Planning</span>
+            {{end}}
+          </p>
+        </div>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      {{if or (ne .Session.Status "complete") .IsHeadSetter}}
+      <a href="/sessions/{{.Session.ID}}/edit" class="btn btn-ghost"
+         hx-get="/sessions/{{.Session.ID}}/edit" hx-target="#main-content" hx-push-url="true">
+        Edit
+      </a>
+      {{end}}
+      {{if ne .Session.Status "complete"}}
+      {{if .SessionRoutes}}
+      <a href="/sessions/{{.Session.ID}}/complete" class="btn btn-primary"
+         hx-get="/sessions/{{.Session.ID}}/complete" hx-target="#main-content" hx-push-url="true">
+        Review &amp; Publish
+      </a>
+      {{end}}
+      <form method="POST" action="/sessions/{{.Session.ID}}/delete"
+            hx-confirm="Delete this session and all its draft routes?">
+        <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn btn-ghost btn-danger-text" title="Delete session">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+          </svg>
+        </button>
+      </form>
+      {{end}}
+      {{if and (eq .Session.Status "complete") .IsHeadSetter}}
+      <form method="POST" action="/sessions/{{.Session.ID}}/reopen"
+            hx-confirm="Reopen this session? Published routes will remain active.">
+        <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn btn-ghost">Reopen Session</button>
+      </form>
+      {{end}}
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="layout-split">
+    <div class="layout-main">
+      <!-- Notes -->
+      {{if .Session.Notes}}
+      <div class="session-notes-block">
+        <h3>Notes</h3>
+        <p>{{deref .Session.Notes}}</p>
+      </div>
+      {{end}}
+
+      <!-- New Routes (created in this session) -->
+      <div class="session-section">
+        <div class="flex items-center justify-between mb-3">
+          <h3>New Routes</h3>
+          <span class="badge">{{len .SessionRoutes}}</span>
+        </div>
+
+        {{if .SessionRoutes}}
+        <div class="session-route-list">
+          {{range .SessionRoutes}}
+          <details class="session-route-card {{if eq .Status "draft"}}session-route-draft{{end}}">
+            <summary class="session-route-row">
+              <div class="session-route-color-dot" style="background:{{.Color}}"></div>
+              <div class="session-route-info">
+                <div class="session-route-grade">{{if .CircuitColor}}{{deref .CircuitColor | title}}{{if ne .Grade (deref .CircuitColor)}} · {{.Grade}}{{end}}{{else}}{{.Grade}}{{end}}</div>
+                <div class="session-route-meta">
+                  {{.WallName}} · {{.RouteType}} · {{.SetterName}}
+                  {{if .Name}} · {{deref .Name}}{{end}}
+                </div>
+              </div>
+              <div class="session-route-status">
+                {{if eq .Status "draft"}}
+                <span class="status-badge status-draft">Draft</span>
+                {{else}}
+                <span class="status-badge status-complete">Published</span>
+                {{end}}
+              </div>
+              {{if eq .Status "draft"}}
+              <form method="POST" action="/sessions/{{deref .SessionID}}/routes/{{.ID}}/delete"
+                    hx-confirm="Delete this route?" class="session-route-remove">
+                <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+                <button type="submit" class="btn btn-ghost btn-sm" title="Delete route">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </form>
+              {{end}}
+            </summary>
+            {{if eq .Status "draft"}}
+            <form class="review-edit-form" method="POST"
+                  action="/sessions/{{deref .SessionID}}/routes/{{.ID}}/edit">
+              <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+              <div class="review-edit-row">
+                <div class="form-group" style="flex: 0 0 auto;">
+                  <label class="form-label">Grade</label>
+                  <input type="text" name="grade" value="{{.Grade}}" class="form-input form-input-sm" style="width: 80px;">
+                </div>
+                <div class="form-group" style="flex: 0 0 auto;">
+                  <label class="form-label">Color</label>
+                  <select name="color" class="form-select form-select-sm">
+                    {{range $.HoldColors}}
+                    <option value="{{.Hex}}" style="color: {{.Hex}};">{{.Name}}</option>
+                    {{end}}
+                  </select>
+                </div>
+                <div class="form-group" style="flex: 1;">
+                  <label class="form-label">Name</label>
+                  <input type="text" name="name" value="{{if .Name}}{{deref .Name}}{{end}}" placeholder="Optional name" class="form-input form-input-sm">
+                </div>
+                <div class="form-group" style="flex: 0 0 auto; align-self: flex-end;">
+                  <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                </div>
+              </div>
+            </form>
+            {{end}}
+          </details>
+          {{end}}
+        </div>
+        {{else}}
+        <p class="text-muted">No routes created yet. Use the form to add routes set during this session.</p>
+        {{end}}
+      </div>
+
+      <!-- Strip Targets -->
+      <div class="session-section">
+        <div class="flex items-center justify-between mb-3">
+          <h3>Strip List</h3>
+          <span class="badge">{{len .StripTargets}}</span>
+        </div>
+
+        {{if .StripTargets}}
+        <div class="strip-target-list">
+          {{range .StripTargets}}
+          <div class="strip-target-card">
+            <div class="strip-target-icon">
+              {{if .RouteID}}
+              <div class="strip-color-dot" style="background:{{deref .RouteColor}}"></div>
+              {{else}}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <path d="M3 9h18M9 3v18"/>
+              </svg>
+              {{end}}
+            </div>
+            <div class="strip-target-info">
+              {{if .RouteID}}
+              <div class="strip-target-name">
+                {{deref .RouteGrade}} — {{.WallName}}
+                {{if .RouteName}} · {{deref .RouteName}}{{end}}
+              </div>
+              <div class="strip-target-meta">
+                {{deref .RouteColor}} {{deref .RouteType}}
+              </div>
+              {{else}}
+              <div class="strip-target-name">{{.WallName}}</div>
+              <div class="strip-target-meta">Entire wall · {{.WallType}}</div>
+              {{end}}
+            </div>
+            <form method="POST" action="/sessions/{{.SessionID}}/strip/{{.ID}}/delete" class="strip-target-remove">
+              <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn-ghost btn-sm" title="Remove">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </form>
+          </div>
+          {{end}}
+        </div>
+        {{else}}
+        <p class="text-muted">No walls or routes selected for stripping yet.</p>
+        {{end}}
+      </div>
+
+      <!-- Playbook Checklist -->
+      {{if .ChecklistItems}}
+      <div class="session-section">
+        <div class="flex items-center justify-between mb-3">
+          <h3>Playbook</h3>
+          <span class="badge">{{len .ChecklistItems}} steps</span>
+        </div>
+        <div class="checklist">
+          {{range .ChecklistItems}}
+          <div class="checklist-item {{if .Completed}}checklist-done{{end}}"
+               hx-post="/sessions/{{.SessionID}}/checklist/{{.ID}}/toggle"
+               hx-vals='{"_csrf_token": "{{$.CSRFToken}}"}'
+               hx-target="#main-content"
+               style="cursor: pointer;">
+            <div class="checklist-toggle" title="{{if .Completed}}Mark incomplete{{else}}Mark complete{{end}}">
+              {{if .Completed}}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+                <rect x="3" y="3" width="18" height="18" rx="3" fill="var(--rw-accent, #e65100)" stroke="var(--rw-accent, #e65100)"/>
+                <polyline points="7 13 10 16 17 9" stroke="#fff"/>
+              </svg>
+              {{else}}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+                <rect x="3" y="3" width="18" height="18" rx="3"/>
+              </svg>
+              {{end}}
+            </div>
+            <div class="checklist-label">
+              <span class="checklist-title">{{.Title}}</span>
+              {{if .Completed}}
+              <span class="checklist-meta">{{if .CompletedByName}}{{deref .CompletedByName}}{{end}}</span>
+              {{end}}
+            </div>
+          </div>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+
+      <!-- Assignments -->
+      <div class="session-section">
+        <div class="flex items-center justify-between mb-3">
+          <h3>Assigned Setters</h3>
+          <span class="badge">{{len .SessionAssignments}}</span>
+        </div>
+
+        {{if .SessionAssignments}}
+        <div class="assignment-list">
+          {{range .SessionAssignments}}
+          <div class="assignment-card">
+            <div class="assignment-avatar">{{printf "%.1s" .SetterName}}</div>
+            <div class="assignment-info">
+              <div class="assignment-name">{{.SetterName}}</div>
+              <div class="assignment-meta">
+                {{if .WallName}}Wall: {{deref .WallName}}{{else}}No wall assigned{{end}}
+                {{if .TargetGrades}} · Grades: {{range $i, $g := .TargetGrades}}{{if $i}}, {{end}}{{$g}}{{end}}{{end}}
+                {{if .Notes}} · {{deref .Notes}}{{end}}
+              </div>
+            </div>
+            <form method="POST" action="/sessions/{{.SessionID}}/unassign/{{.ID}}" class="assignment-remove">
+              <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn-ghost btn-sm" title="Remove assignment">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </form>
+          </div>
+          {{end}}
+        </div>
+        {{else}}
+        <p class="text-muted">No setters assigned yet. Use the form to add setters.</p>
+        {{end}}
+      </div>
+    </div>
+
+    <aside class="layout-aside">
+      {{if or (ne .Session.Status "complete") .IsHeadSetter}}
+      <!-- Add new route form -->
+      <div class="session-section">
+        <h3>Add Route</h3>
+        <form method="POST" action="/sessions/{{.Session.ID}}/routes" class="form-stack">
+          <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+
+          <div class="form-group">
+            <label for="route_wall_id" class="form-label">Wall</label>
+            <select name="wall_id" id="route_wall_id" class="form-input" required
+                    hx-get="/sessions/{{.Session.ID}}/route-fields"
+                    hx-target="#route-fields"
+                    hx-trigger="change">
+              <option value="">Select wall…</option>
+              {{range .FormWalls}}
+              <option value="{{.ID}}">{{.Name}}</option>
+              {{end}}
+            </select>
+          </div>
+
+          {{template "route-fields" .RouteFields}}
+        </form>
+      </div>
+
+      <!-- Strip target picker -->
+      <div class="session-section">
+        <h3>Add to Strip List</h3>
+        <div class="strip-picker">
+          {{range .WallsWithRoutes}}
+          <div class="strip-picker-wall">
+            <div class="strip-picker-wall-header">
+              <span class="strip-picker-wall-name">{{.Wall.Name}}</span>
+              <span class="strip-picker-wall-type">{{.Wall.WallType}}</span>
+              <form method="POST" action="/sessions/{{$.Session.ID}}/strip" class="strip-picker-action">
+                <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+                <input type="hidden" name="wall_id" value="{{.Wall.ID}}">
+                <button type="submit" class="btn btn-ghost btn-xs" title="Strip entire wall">
+                  Whole wall
+                </button>
+              </form>
+            </div>
+            {{if .Routes}}
+            <div class="strip-picker-routes">
+              {{range .Routes}}
+              <form method="POST" action="/sessions/{{$.Session.ID}}/strip" class="strip-picker-route">
+                <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+                <input type="hidden" name="wall_id" value="{{.WallID}}">
+                <input type="hidden" name="route_id" value="{{.ID}}">
+                <button type="submit" class="strip-route-pill" title="Add to strip list">
+                  <span class="strip-route-color" style="background:{{.Color}}"></span>
+                  <span class="strip-route-grade">{{.Grade}}</span>
+                </button>
+              </form>
+              {{end}}
+            </div>
+            {{else}}
+            <div class="strip-picker-empty">No active routes</div>
+            {{end}}
+          </div>
+          {{end}}
+        </div>
+      </div>
+
+      <!-- Add setter assignment form -->
+      <div class="session-section">
+        <h3>Add Setter</h3>
+        <form method="POST" action="/sessions/{{.Session.ID}}/assign" class="form-stack">
+          <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+
+          <div class="form-group">
+            <label for="setter_id" class="form-label">Setter</label>
+            <select name="setter_id" id="setter_id" class="form-input" required>
+              <option value="">Select a setter…</option>
+              {{range .Setters}}
+              <option value="{{.UserID}}">{{.DisplayName}}</option>
+              {{end}}
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="wall_id" class="form-label">Wall (optional)</label>
+            <select name="wall_id" id="wall_id" class="form-input">
+              <option value="">Any wall</option>
+              {{range .FormWalls}}
+              <option value="{{.ID}}">{{.Name}}</option>
+              {{end}}
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="assign_notes" class="form-label">Notes (optional)</label>
+            <input type="text" name="notes" id="assign_notes" class="form-input" placeholder="e.g. Focus on V4-V6">
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add
+          </button>
+        </form>
+      </div>
+      {{end}}
+    </aside>
+  </div>
+</div>
+
+{{end}}
+
+{{define "route-fields"}}
+<div id="route-fields">
+  {{if .WallType}}
+  <div class="form-group">
+    <label for="route_type" class="form-label">Type</label>
+    <select name="route_type" id="route_type" class="form-input" required
+            hx-get="/sessions/{{.SessionID}}/route-fields"
+            hx-target="#route-fields"
+            hx-trigger="change"
+            hx-include="[name='wall_id']">
+      {{range .TypeOptions}}
+      <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
+      {{end}}
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label for="route_grade" class="form-label">{{.GradeLabel}}</label>
+    <select name="grade" id="route_grade" class="form-input" required>
+      <option value="">Select {{.GradePlaceholder}}…</option>
+      {{range .GradeOptions}}
+      <option value="{{.}}">{{.}}</option>
+      {{end}}
+    </select>
+  </div>
+
+  {{if .ShowVGrade}}
+  <div class="form-group">
+    <label for="circuit_vgrade" class="form-label">V-Grade (optional)</label>
+    <select name="circuit_vgrade" id="circuit_vgrade" class="form-input">
+      <option value="">No grade</option>
+      {{range .VScaleGrades}}
+      <option value="{{.}}">{{.}}</option>
+      {{end}}
+    </select>
+  </div>
+  {{end}}
+
+  <div class="form-group">
+    <label class="form-label">Hold Color</label>
+    <div class="color-picker-grid">
+      {{range .HoldColors}}
+      <label class="color-swatch" title="{{.Name}}">
+        <input type="radio" name="color" value="{{.Hex}}" required>
+        <span class="color-dot" style="background: {{.Hex | safeCSS}}"></span>
+      </label>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label for="route_setter_id" class="form-label">Setter</label>
+    <select name="setter_id" id="route_setter_id" class="form-input">
+      <option value="">Unassigned</option>
+      {{range .Setters}}
+      <option value="{{.UserID}}">{{.DisplayName}}</option>
+      {{end}}
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label for="route_name" class="form-label">Name (optional)</label>
+    <input type="text" name="name" id="route_name" class="form-input" placeholder="e.g. Crimpy Corner">
+  </div>
+
+  <button type="submit" class="btn btn-primary btn-sm">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+    Add Route
+  </button>
+  {{else}}
+  <p class="text-muted text-sm">Select a wall to continue.</p>
+  {{end}}
+</div>
+{{end}}

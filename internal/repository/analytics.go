@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -15,10 +16,51 @@ func NewAnalyticsRepo(db *pgxpool.Pool) *AnalyticsRepo {
 	return &AnalyticsRepo{db: db}
 }
 
+// LocationDashboardStats returns the summary numbers for the setter dashboard.
+func (r *AnalyticsRepo) LocationDashboardStats(ctx context.Context, locationID string) (*LocationDashboard, error) {
+	d := &LocationDashboard{}
+
+	// Route summary
+	routeQuery := `
+		SELECT
+			COUNT(*) FILTER (WHERE status = 'active') as active_routes,
+			COUNT(*) FILTER (WHERE status = 'active' AND projected_strip_date IS NOT NULL AND projected_strip_date <= CURRENT_DATE) as due_for_strip,
+			COALESCE(AVG(avg_rating) FILTER (WHERE status = 'active' AND rating_count > 0), 0) as avg_rating,
+			COUNT(*) FILTER (WHERE status = 'active' AND date_set >= CURRENT_DATE - 7) as set_this_week,
+			COUNT(*) FILTER (WHERE status = 'active' AND date_set >= CURRENT_DATE - 14 AND date_set < CURRENT_DATE - 7) as set_last_week
+		FROM routes
+		WHERE location_id = $1 AND deleted_at IS NULL`
+
+	if err := r.db.QueryRow(ctx, routeQuery, locationID).Scan(
+		&d.ActiveRoutes, &d.DueForStrip, &d.AvgRating, &d.SetThisWeek, &d.SetLastWeek,
+	); err != nil {
+		return nil, fmt.Errorf("dashboard route stats: %w", err)
+	}
+
+	d.ActiveDelta = d.SetThisWeek - d.SetLastWeek
+
+	// Sends in last 30 days
+	sendsQuery := `
+		SELECT COUNT(*)
+		FROM ascents a
+		JOIN routes r ON r.id = a.route_id
+		WHERE r.location_id = $1
+			AND a.ascent_type IN ('send', 'flash')
+			AND a.climbed_at >= NOW() - interval '30 days'`
+
+	if err := r.db.QueryRow(ctx, sendsQuery, locationID).Scan(&d.TotalSends30d); err != nil {
+		return nil, fmt.Errorf("dashboard sends: %w", err)
+	}
+
+	return d, nil
+}
+
 // GradeDistribution returns route counts by grade for a location, optionally filtered by wall.
 func (r *AnalyticsRepo) GradeDistribution(ctx context.Context, locationID, wallID string) ([]GradeCount, error) {
 	query := `
-		SELECT grading_system, grade, route_type, COUNT(*) as count
+		SELECT grading_system,
+			CASE WHEN grading_system = 'circuit' THEN COALESCE(circuit_color, grade) ELSE grade END AS grade,
+			route_type, COUNT(*) as count
 		FROM routes
 		WHERE location_id = $1 AND status = 'active' AND deleted_at IS NULL`
 	args := []interface{}{locationID}
@@ -28,7 +70,8 @@ func (r *AnalyticsRepo) GradeDistribution(ctx context.Context, locationID, wallI
 		args = append(args, wallID)
 	}
 
-	query += ` GROUP BY grading_system, grade, route_type ORDER BY grading_system, grade`
+	query += ` GROUP BY grading_system, CASE WHEN grading_system = 'circuit' THEN COALESCE(circuit_color, grade) ELSE grade END, route_type
+		ORDER BY grading_system, grade`
 
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
@@ -171,6 +214,42 @@ func (r *AnalyticsRepo) SetterProductivity(ctx context.Context, locationID strin
 	return stats, nil
 }
 
+// RecentActivity returns the latest climber actions at a location for the activity feed.
+func (r *AnalyticsRepo) RecentActivity(ctx context.Context, locationID string, limit int) ([]ActivityEntry, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	query := `
+		SELECT u.display_name, a.ascent_type, a.climbed_at,
+			r.color, r.grade, r.grading_system, r.circuit_color, r.name
+		FROM ascents a
+		JOIN routes r ON r.id = a.route_id
+		JOIN users u ON u.id = a.user_id
+		WHERE r.location_id = $1
+		ORDER BY a.climbed_at DESC
+		LIMIT $2`
+
+	rows, err := r.db.Query(ctx, query, locationID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("recent activity: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []ActivityEntry
+	for rows.Next() {
+		var e ActivityEntry
+		if err := rows.Scan(
+			&e.UserName, &e.AscentType, &e.Time,
+			&e.RouteColor, &e.RouteGrade, &e.RouteGradingSystem, &e.RouteCircuitColor, &e.RouteName,
+		); err != nil {
+			return nil, fmt.Errorf("scan activity: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	return entries, nil
+}
+
 // OrgOverview returns high-level metrics across all locations in an org.
 func (r *AnalyticsRepo) OrgOverview(ctx context.Context, orgID string) ([]LocationOverview, error) {
 	query := `
@@ -208,6 +287,16 @@ func (r *AnalyticsRepo) OrgOverview(ctx context.Context, orgID string) ([]Locati
 }
 
 // Types
+
+type LocationDashboard struct {
+	ActiveRoutes  int     `json:"active_routes"`
+	ActiveDelta   int     `json:"active_delta"`
+	TotalSends30d int     `json:"total_sends_30d"`
+	AvgRating     float64 `json:"avg_rating"`
+	DueForStrip   int     `json:"due_for_strip"`
+	SetThisWeek   int     `json:"set_this_week"`
+	SetLastWeek   int     `json:"set_last_week"`
+}
 
 type GradeCount struct {
 	GradingSystem string `json:"grading_system"`
@@ -251,6 +340,17 @@ type SetterStats struct {
 	RoutesSet      int     `json:"routes_set"`
 	AvgRouteRating float64 `json:"avg_route_rating"`
 	TotalHours     float64 `json:"total_hours"`
+}
+
+type ActivityEntry struct {
+	UserName          string    `json:"user_name"`
+	AscentType        string    `json:"ascent_type"`
+	Time              time.Time `json:"time"`
+	RouteColor        string    `json:"route_color"`
+	RouteGrade        string    `json:"route_grade"`
+	RouteGradingSystem string   `json:"route_grading_system"`
+	RouteCircuitColor *string   `json:"route_circuit_color,omitempty"`
+	RouteName         *string   `json:"route_name,omitempty"`
 }
 
 type LocationOverview struct {

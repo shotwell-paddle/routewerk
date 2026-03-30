@@ -1,10 +1,14 @@
-.PHONY: build run dev test migrate docker-build docker-run
+.PHONY: build build-admin run dev test migrate migrate-down migrate-version docker-build docker-run
 
 # Build the API binary
 build:
 	go build -o bin/api ./cmd/api
 
-# Run the API
+# Build the admin CLI
+build-admin:
+	go build -o bin/admin ./cmd/admin
+
+# Run the API (auto-migrates on startup)
 run: build
 	./bin/api
 
@@ -16,9 +20,15 @@ dev:
 test:
 	go test ./... -v -cover
 
-# Run database migrations (requires psql)
-migrate:
-	psql $(DATABASE_URL) -f internal/database/migrations/001_initial_schema.sql
+# Database migrations via the admin CLI
+migrate: build-admin
+	./bin/admin migrate
+
+migrate-down: build-admin
+	./bin/admin migrate-down
+
+migrate-version: build-admin
+	./bin/admin migrate-version
 
 # Docker
 docker-build:

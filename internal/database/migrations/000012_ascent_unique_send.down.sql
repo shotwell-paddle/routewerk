@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_ascents_one_completion_per_user_route;

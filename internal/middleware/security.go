@@ -1,23 +1,123 @@
 package middleware
 
 import (
+	"compress/gzip"
+	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
 
-// SecureHeaders adds security-related HTTP headers to every response.
+// commonSecurityHeaders sets headers shared by both API and web responses.
+func commonSecurityHeaders(w http.ResponseWriter) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("X-XSS-Protection", "0") // modern best practice: disable legacy XSS filter
+	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+}
+
+// SecureHeaders adds security headers tuned for JSON API responses.
+// CSP is restrictive (default-src 'none') since APIs serve no HTML resources.
 func SecureHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("X-XSS-Protection", "0") // modern best practice: disable legacy XSS filter
-		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		commonSecurityHeaders(w)
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
 		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-
 		next.ServeHTTP(w, r)
+	})
+}
+
+// SecureHeadersWeb adds security headers tuned for the HTML frontend.
+// CSP allows self-hosted assets plus Google Fonts for the Inter typeface.
+func SecureHeadersWeb(next http.Handler) http.Handler {
+	csp := strings.Join([]string{
+		"default-src 'none'",
+		"script-src 'self'",
+		"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+		"font-src 'self' https://fonts.gstatic.com",
+		"img-src 'self' data:",
+		"connect-src 'self'",
+		"frame-ancestors 'none'",
+		"base-uri 'self'",
+		"form-action 'self'",
+	}, "; ")
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		commonSecurityHeaders(w)
+		w.Header().Set("Content-Security-Policy", csp)
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// SecureHeadersStatic adds headers for immutable embedded static assets.
+// Long-lived cache since assets are versioned by the binary build.
+func SecureHeadersStatic(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// HSTS adds Strict-Transport-Security for production deployments.
+// Only applied when isDev is false to avoid breaking local HTTP development.
+func HSTS(isDev bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		if isDev {
+			return next
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// ── Gzip Compression ─────────────────────────────────────────────
+
+type gzipResponseWriter struct {
+	io.Writer
+	http.ResponseWriter
+	wroteHeader bool
+}
+
+func (w *gzipResponseWriter) Write(b []byte) (int, error) {
+	return w.Writer.Write(b)
+}
+
+func (w *gzipResponseWriter) WriteHeader(code int) {
+	if !w.wroteHeader {
+		// Remove Content-Length since gzip changes it
+		w.ResponseWriter.Header().Del("Content-Length")
+		w.wroteHeader = true
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+// Gzip compresses responses for clients that accept gzip encoding.
+// Only compresses text content types (HTML, CSS, JS, JSON, SVG).
+func Gzip(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		gz, err := gzip.NewWriterLevel(w, gzip.DefaultCompression)
+		if err != nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		defer gz.Close()
+
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Vary", "Accept-Encoding")
+
+		gzw := &gzipResponseWriter{Writer: gz, ResponseWriter: w}
+		next.ServeHTTP(gzw, r)
 	})
 }
 

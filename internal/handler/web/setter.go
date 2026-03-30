@@ -2,6 +2,7 @@ package webhandler
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
+	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
 // ── Route Management ──────────────────────────────────────────
@@ -108,6 +110,7 @@ func (h *Handler) RouteNew(w http.ResponseWriter, r *http.Request) {
 		YDSGrades:     ydsGrades,
 		CircuitColors: circuitColors,
 		RouteFields:   routeFields,
+		PhotosEnabled: h.storageService.IsConfigured(),
 		FormValues: RouteFormValues{
 			SetterID: currentUserID,
 			DateSet:  time.Now().Format("2006-01-02"),
@@ -162,9 +165,13 @@ func (h *Handler) RouteCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.ParseForm(); err != nil {
-		h.renderError(w, r, http.StatusBadRequest, "Invalid form", "Could not parse form data.")
-		return
+	// Parse as multipart to support optional photo upload.
+	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		// Fall back to regular form parse (no file attached).
+		if err := r.ParseForm(); err != nil {
+			h.renderError(w, r, http.StatusBadRequest, "Invalid form", "Could not parse form data.")
+			return
+		}
 	}
 
 	fv := parseRouteForm(r)
@@ -262,6 +269,9 @@ func (h *Handler) RouteCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Process optional photo upload.
+	h.processRoutePhoto(ctx, r, rt)
+
 	// Redirect to manage page with success indicator
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("HX-Redirect", "/routes/manage")
@@ -269,6 +279,76 @@ func (h *Handler) RouteCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/routes/manage", http.StatusSeeOther)
+}
+
+// processRoutePhoto handles an optional photo upload attached to a route form.
+// It logs errors but never fails the request — the route is already created.
+func (h *Handler) processRoutePhoto(ctx context.Context, r *http.Request, route *model.Route) {
+	file, header, err := r.FormFile("photo")
+	if err != nil {
+		return // no file attached — normal case
+	}
+	defer file.Close()
+
+	if !h.storageService.IsConfigured() {
+		return
+	}
+
+	contentType := header.Header.Get("Content-Type")
+	if !allowedImageTypes[contentType] {
+		slog.Warn("route create photo: invalid type", "type", contentType)
+		return
+	}
+	if header.Size > maxUploadSize {
+		slog.Warn("route create photo: too large", "size", header.Size)
+		return
+	}
+
+	// Acquire upload semaphore.
+	select {
+	case h.uploadSem <- struct{}{}:
+		defer func() { <-h.uploadSem }()
+	case <-ctx.Done():
+		return
+	}
+
+	processed, err := service.ProcessImage(file, contentType)
+	if err != nil {
+		slog.Error("route create photo: processing failed", "route_id", route.ID, "error", err)
+		return
+	}
+
+	uploadFilename := strings.TrimSuffix(header.Filename, ".webp") + processed.Extension
+	photoURL, err := h.storageService.Upload(ctx, route.ID, uploadFilename, processed.ContentType, processed.Data)
+	if err != nil {
+		slog.Error("route create photo: upload failed", "route_id", route.ID, "error", err)
+		return
+	}
+
+	user := middleware.GetWebUser(ctx)
+	var uploaderID *string
+	if user != nil {
+		uploaderID = &user.ID
+	}
+
+	photo := &model.RoutePhoto{
+		RouteID:    route.ID,
+		PhotoURL:   photoURL,
+		UploadedBy: uploaderID,
+		SortOrder:  0,
+	}
+	if err := h.photoRepo.Create(ctx, photo); err != nil {
+		slog.Error("route create photo: save failed", "route_id", route.ID, "error", err)
+		_ = h.storageService.Delete(ctx, photoURL)
+		return
+	}
+
+	// Set as primary photo.
+	route.PhotoURL = &photoURL
+	if err := h.routeRepo.Update(ctx, route); err != nil {
+		slog.Error("route create photo: set primary failed", "route_id", route.ID, "error", err)
+	}
+	slog.Info("route photo uploaded during creation", "route_id", route.ID, "url", fmt.Sprintf("%.40s…", photoURL))
 }
 
 // RouteEdit renders the route edit form (GET /routes/{routeID}/edit).
@@ -632,6 +712,7 @@ func (h *Handler) renderRouteForm(w http.ResponseWriter, r *http.Request, locati
 		YDSGrades:     ydsGrades,
 		CircuitColors: circuitColors,
 		RouteFields:   routeFields,
+		PhotosEnabled: h.storageService.IsConfigured(),
 	}
 
 	h.render(w, r, "setter/route-form.html", data)

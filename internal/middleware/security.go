@@ -97,6 +97,14 @@ func (w *gzipResponseWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
+// gzipPool reuses gzip writers to avoid per-request allocation of compression buffers.
+var gzipPool = sync.Pool{
+	New: func() any {
+		gz, _ := gzip.NewWriterLevel(nil, gzip.DefaultCompression)
+		return gz
+	},
+}
+
 // Gzip compresses responses for clients that accept gzip encoding.
 // Only compresses text content types (HTML, CSS, JS, JSON, SVG).
 func Gzip(next http.Handler) http.Handler {
@@ -106,12 +114,12 @@ func Gzip(next http.Handler) http.Handler {
 			return
 		}
 
-		gz, err := gzip.NewWriterLevel(w, gzip.DefaultCompression)
-		if err != nil {
-			next.ServeHTTP(w, r)
-			return
-		}
-		defer gz.Close()
+		gz := gzipPool.Get().(*gzip.Writer)
+		gz.Reset(w)
+		defer func() {
+			gz.Close()
+			gzipPool.Put(gz)
+		}()
 
 		w.Header().Set("Content-Encoding", "gzip")
 		w.Header().Set("Vary", "Accept-Encoding")
@@ -201,7 +209,7 @@ func (rl *RateLimiter) Limit(next http.Handler) http.Handler {
 
 		if !exists || now.Sub(cw.windowStart) > rl.window {
 			// Evict oldest entry if at capacity
-			if !exists && len(rl.clients) >= rl.maxClients {
+			if !exists && rl.maxClients > 0 && len(rl.clients) >= rl.maxClients {
 				rl.evictOldest()
 			}
 			rl.clients[ip] = &clientWindow{count: 1, windowStart: now}

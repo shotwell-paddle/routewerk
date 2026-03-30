@@ -42,30 +42,29 @@
     </div>
     <p class="text-muted mb-3">Review each route. Delete any that didn't make the cut. When ready, hit "Publish All" to go live.</p>
 
-    <div class="review-route-list">
+    <div class="session-route-pills">
       {{range .SessionRoutes}}
-      <details class="review-route-card" id="review-route-{{.ID}}">
-        <summary class="review-route-header">
-          <div class="session-route-color-dot" style="background:{{.Color}}"></div>
-          <span class="review-route-grade">{{.Grade}}</span>
-          <span class="review-route-wall">{{.WallName}}</span>
-          <span class="review-route-type">{{.RouteType}}</span>
-          <span class="review-route-setter">{{.SetterName}}</span>
-          {{if .Name}}<span class="review-route-name">{{deref .Name}}</span>{{end}}
-          {{if eq .Status "draft"}}
-          <span class="status-badge status-draft">Draft</span>
-          {{else}}
-          <span class="status-badge status-complete">Published</span>
-          {{end}}
-
-          <div class="review-route-buttons">
+      <details class="session-route-pill {{if eq .Status "draft"}}session-route-pill-draft{{end}}" id="review-route-{{.ID}}">
+        <summary class="session-route-pill-row" style="--route-color: {{.Color}}">
+          <div class="session-pill-color"></div>
+          <div class="session-pill-grade">{{if .CircuitColor}}{{deref .CircuitColor | title}}{{if ne .Grade (deref .CircuitColor)}} · {{.Grade}}{{end}}{{else}}{{.Grade}}{{end}}</div>
+          <div class="session-pill-info">
+            <div class="session-pill-name">{{if .Name}}{{deref .Name}}{{else}}{{.RouteType | title}}{{end}}</div>
+            <div class="session-pill-meta">
+              <span>{{.WallName}}</span>
+              <span class="route-meta-dot">{{.SetterName}}</span>
+            </div>
+          </div>
+          <div class="session-pill-status">
+            <span class="route-status {{.Status}}">{{.Status}}</span>
+          </div>
+          <div class="review-route-buttons" onclick="event.stopPropagation();">
             <a href="/routes/{{.ID}}/card/print.png"
                target="_blank" class="btn btn-ghost btn-sm" title="Print card">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
                 <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/>
                 <rect x="6" y="14" width="12" height="8"/>
               </svg>
-              Print
             </a>
             <a href="/routes/{{.ID}}/card/share.png"
                target="_blank" class="btn btn-ghost btn-sm" title="Share card">
@@ -73,17 +72,15 @@
                 <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
                 <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
               </svg>
-              Share
             </a>
             {{if eq .Status "draft"}}
             <form method="POST" action="/sessions/{{deref .SessionID}}/routes/{{.ID}}/delete"
-                  hx-confirm="Delete this route?">
+                  hx-confirm="Delete this route?" style="display: inline;">
               <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
               <button type="submit" class="btn btn-ghost btn-sm btn-danger-text" title="Delete route">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
                   <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
                 </svg>
-                Delete
               </button>
             </form>
             {{end}}

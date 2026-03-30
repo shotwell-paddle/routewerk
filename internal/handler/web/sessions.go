@@ -619,6 +619,12 @@ func (h *Handler) SessionPublish(w http.ResponseWriter, r *http.Request) {
 		slog.Error("update session status failed", "error", err)
 	}
 
+	// Redirect to photos page so the setter can upload route photos.
+	// Fall back to session detail if storage isn't configured.
+	if h.storageService.IsConfigured() {
+		http.Redirect(w, r, "/sessions/"+sessionID+"/photos", http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, "/sessions/"+sessionID, http.StatusSeeOther)
 }
 
@@ -654,6 +660,54 @@ func (h *Handler) SessionReopen(w http.ResponseWriter, r *http.Request) {
 }
 
 // Session route management handlers are in session_routes.go
+
+// ── Session Photos ──────────────────────────────────────────
+
+// SessionPhotos renders the photo upload page for a completed session (GET /sessions/{sessionID}/photos).
+func (h *Handler) SessionPhotos(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	sessionID := chi.URLParam(r, "sessionID")
+
+	session, sErr := h.sessionRepo.GetByID(ctx, sessionID)
+	if sErr != nil || session == nil {
+		h.renderError(w, r, http.StatusNotFound, "Session not found", "That session doesn't exist.")
+		return
+	}
+	if !h.checkLocationOwnership(w, r, session.LocationID) {
+		return
+	}
+
+	// Load routes from this session
+	sessionRoutes, err := h.sessionRepo.ListSessionRoutes(ctx, sessionID)
+	if err != nil {
+		slog.Error("load session routes for photos failed", "error", err)
+		h.renderError(w, r, http.StatusInternalServerError, "Something went wrong", "Could not load session routes.")
+		return
+	}
+
+	// Count how many already have photos
+	photosUploaded := 0
+	for _, rt := range sessionRoutes {
+		if rt.PhotoURL != nil {
+			photosUploaded++
+		}
+	}
+	photosPercent := 0
+	if len(sessionRoutes) > 0 {
+		photosPercent = photosUploaded * 100 / len(sessionRoutes)
+	}
+
+	data := &PageData{
+		TemplateData:   templateDataFromContext(r, "sessions"),
+		Session:        session,
+		SessionRoutes:  sessionRoutes,
+		PhotosEnabled:  h.storageService.IsConfigured(),
+		PhotosUploaded: photosUploaded,
+		PhotosPercent:  photosPercent,
+	}
+
+	h.render(w, r, "setter/session-photos.html", data)
+}
 
 // ── Helper ───────────────────────────────────────────────────
 

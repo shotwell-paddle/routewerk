@@ -543,6 +543,7 @@ func (r *SessionRepo) ListSessionRoutes(ctx context.Context, sessionID string) (
 	query := `
 		SELECT rt.id, rt.location_id, rt.wall_id, rt.setter_id, rt.route_type, rt.status,
 			rt.grading_system, rt.grade, rt.color, rt.name, rt.date_set, rt.session_id,
+			rt.circuit_color, rt.photo_url,
 			rt.created_at, rt.updated_at,
 			COALESCE(u.display_name, 'Unknown') AS setter_name,
 			w.name AS wall_name
@@ -564,6 +565,7 @@ func (r *SessionRepo) ListSessionRoutes(ctx context.Context, sessionID string) (
 		if err := rows.Scan(
 			&d.ID, &d.LocationID, &d.WallID, &d.SetterID, &d.RouteType, &d.Status,
 			&d.GradingSystem, &d.Grade, &d.Color, &d.Name, &d.DateSet, &d.SessionID,
+			&d.CircuitColor, &d.PhotoURL,
 			&d.CreatedAt, &d.UpdatedAt,
 			&d.SetterName, &d.WallName,
 		); err != nil {
@@ -571,7 +573,7 @@ func (r *SessionRepo) ListSessionRoutes(ctx context.Context, sessionID string) (
 		}
 		routes = append(routes, d)
 	}
-	return routes, nil
+	return routes, rows.Err()
 }
 
 // PublishSessionRoutes sets all draft routes in a session to 'active'.

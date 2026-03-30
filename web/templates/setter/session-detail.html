@@ -51,12 +51,23 @@
         </button>
       </form>
       {{end}}
-      {{if and (eq .Session.Status "complete") .IsHeadSetter}}
+      {{if eq .Session.Status "complete"}}
+      {{if .SessionRoutes}}
+      <a href="/sessions/{{.Session.ID}}/photos" class="btn btn-secondary"
+         hx-get="/sessions/{{.Session.ID}}/photos" hx-target="#main-content" hx-push-url="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+        </svg>
+        Add Photos
+      </a>
+      {{end}}
+      {{if .IsHeadSetter}}
       <form method="POST" action="/sessions/{{.Session.ID}}/reopen"
             hx-confirm="Reopen this session? Published routes will remain active.">
         <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
         <button type="submit" class="btn btn-ghost">Reopen Session</button>
       </form>
+      {{end}}
       {{end}}
     </div>
   </div>
@@ -81,28 +92,26 @@
         </div>
 
         {{if .SessionRoutes}}
-        <div class="session-route-list">
+        <div class="session-route-pills">
           {{range .SessionRoutes}}
-          <details class="session-route-card {{if eq .Status "draft"}}session-route-draft{{end}}">
-            <summary class="session-route-row">
-              <div class="session-route-color-dot" style="background:{{.Color}}"></div>
-              <div class="session-route-info">
-                <div class="session-route-grade">{{if .CircuitColor}}{{deref .CircuitColor | title}}{{if ne .Grade (deref .CircuitColor)}} · {{.Grade}}{{end}}{{else}}{{.Grade}}{{end}}</div>
-                <div class="session-route-meta">
-                  {{.WallName}} · {{.RouteType}} · {{.SetterName}}
-                  {{if .Name}} · {{deref .Name}}{{end}}
+          <details class="session-route-pill {{if eq .Status "draft"}}session-route-pill-draft{{end}}">
+            <summary class="session-route-pill-row" style="--route-color: {{.Color}}">
+              <div class="session-pill-color"></div>
+              <div class="session-pill-grade">{{if .CircuitColor}}{{deref .CircuitColor | title}}{{if ne .Grade (deref .CircuitColor)}} · {{.Grade}}{{end}}{{else}}{{.Grade}}{{end}}</div>
+              <div class="session-pill-info">
+                <div class="session-pill-name">{{if .Name}}{{deref .Name}}{{else}}{{.RouteType | title}}{{end}}</div>
+                <div class="session-pill-meta">
+                  <span>{{.WallName}}</span>
+                  <span class="route-meta-dot">{{.SetterName}}</span>
                 </div>
               </div>
-              <div class="session-route-status">
-                {{if eq .Status "draft"}}
-                <span class="status-badge status-draft">Draft</span>
-                {{else}}
-                <span class="status-badge status-complete">Published</span>
-                {{end}}
+              <div class="session-pill-status">
+                <span class="route-status {{.Status}}">{{.Status}}</span>
               </div>
               {{if eq .Status "draft"}}
               <form method="POST" action="/sessions/{{deref .SessionID}}/routes/{{.ID}}/delete"
-                    hx-confirm="Delete this route?" class="session-route-remove">
+                    hx-confirm="Delete this route?" class="session-pill-remove"
+                    onclick="event.stopPropagation();">
                 <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
                 <button type="submit" class="btn btn-ghost btn-sm" title="Delete route">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">

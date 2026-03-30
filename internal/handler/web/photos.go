@@ -12,7 +12,7 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
-const maxUploadSize = 10 << 20 // 10 MB
+const maxUploadSize = 5 << 20 // 5 MB
 
 // allowedImageTypes is the allow-list of MIME types for photo uploads.
 var allowedImageTypes = map[string]bool{
@@ -56,7 +56,7 @@ func (h *Handler) PhotoUpload(w http.ResponseWriter, r *http.Request) {
 
 	// Parse multipart form
 	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
-		http.Error(w, "File too large (max 10 MB)", http.StatusBadRequest)
+		http.Error(w, "File too large (max 5 MB)", http.StatusBadRequest)
 		return
 	}
 
@@ -76,7 +76,7 @@ func (h *Handler) PhotoUpload(w http.ResponseWriter, r *http.Request) {
 
 	// Validate file size
 	if header.Size > maxUploadSize {
-		http.Error(w, "File too large (max 10 MB)", http.StatusBadRequest)
+		http.Error(w, "File too large (max 5 MB)", http.StatusBadRequest)
 		return
 	}
 
@@ -89,6 +89,15 @@ func (h *Handler) PhotoUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if count >= 20 {
 		http.Error(w, "Maximum 20 photos per route", http.StatusBadRequest)
+		return
+	}
+
+	// Acquire upload semaphore to cap concurrent image processing memory.
+	select {
+	case h.uploadSem <- struct{}{}:
+		defer func() { <-h.uploadSem }()
+	case <-ctx.Done():
+		http.Error(w, "Request cancelled", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -136,7 +145,9 @@ func (h *Handler) PhotoUpload(w http.ResponseWriter, r *http.Request) {
 	if err := h.photoRepo.Create(ctx, photo); err != nil {
 		slog.Error("failed to save photo record", "route_id", routeID, "error", err)
 		// Try to clean up the uploaded file
-		_ = h.storageService.Delete(ctx, photoURL)
+		if delErr := h.storageService.Delete(ctx, photoURL); delErr != nil {
+			slog.Error("failed to clean up orphaned S3 photo", "route_id", routeID, "url", photoURL, "error", delErr)
+		}
 		http.Error(w, "Something went wrong", http.StatusInternalServerError)
 		return
 	}
@@ -149,8 +160,17 @@ func (h *Handler) PhotoUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Redirect back to route detail — HTMX or full page
+	// Redirect back to the page the upload came from.
+	// If the referer is a session photos page, go back there.
 	redirect := fmt.Sprintf("/routes/%s", routeID)
+	if ref := r.Header.Get("Referer"); ref != "" {
+		if idx := strings.Index(ref, "/sessions/"); idx >= 0 {
+			tail := ref[idx:]
+			if strings.HasSuffix(tail, "/photos") || strings.Contains(tail, "/photos?") {
+				redirect = tail
+			}
+		}
+	}
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("HX-Redirect", redirect)
 		w.WriteHeader(http.StatusOK)

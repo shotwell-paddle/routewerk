@@ -15,10 +15,11 @@
 </div>
 
 <div class="page-body">
-  <form class="route-form" method="POST"
+  <form class="route-form" method="POST" enctype="multipart/form-data"
         action="{{if .Route}}/routes/{{.Route.ID}}/edit{{else}}/routes/new{{end}}"
         hx-post="{{if .Route}}/routes/{{.Route.ID}}/edit{{else}}/routes/new{{end}}"
-        hx-target="#main-content" hx-push-url="false">
+        hx-target="#main-content" hx-push-url="false"
+        hx-encoding="multipart/form-data">
     <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
 
     {{if .FormError}}
@@ -107,6 +108,26 @@
         {{end}}
       </div>
     </div>
+    {{end}}
+
+    {{if not .Route}}
+    {{if .PhotosEnabled}}
+    <div class="form-card">
+      <h2 class="form-card-title">Photo <span class="form-hint">(optional)</span></h2>
+      <div class="photo-upload-row">
+        <label class="photo-upload-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+          </svg>
+          Choose photo
+          <input type="file" name="photo" accept="image/jpeg,image/png,image/webp"
+                 style="display: none;" onchange="this.closest('.photo-upload-row').querySelector('.photo-filename').textContent = this.files[0]?.name || ''">
+        </label>
+        <span class="photo-filename text-sm text-muted"></span>
+      </div>
+      <p class="form-hint mt-2">JPEG, PNG, or WebP — max 5 MB</p>
+    </div>
+    {{end}}
     {{end}}
 
     <div class="form-actions">

@@ -95,6 +95,8 @@ type RouteFilter struct {
 	GradeIn      []string // grade IN (...) filter for grade ranges
 	CircuitColor string   // filter by circuit_color (for circuit grade chips)
 	SetterID     string
+	DateFrom     string   // YYYY-MM-DD inclusive lower bound on date_set
+	DateTo       string   // YYYY-MM-DD inclusive upper bound on date_set
 	Limit        int
 	Offset       int
 }
@@ -141,6 +143,16 @@ func (r *RouteRepo) List(ctx context.Context, f RouteFilter) ([]model.Route, int
 	if f.SetterID != "" {
 		where = append(where, fmt.Sprintf("r.setter_id = $%d", argN))
 		args = append(args, f.SetterID)
+		argN++
+	}
+	if f.DateFrom != "" {
+		where = append(where, fmt.Sprintf("r.date_set >= $%d", argN))
+		args = append(args, f.DateFrom)
+		argN++
+	}
+	if f.DateTo != "" {
+		where = append(where, fmt.Sprintf("r.date_set <= $%d", argN))
+		args = append(args, f.DateTo)
 		argN++
 	}
 
@@ -251,6 +263,16 @@ func (r *RouteRepo) ListWithDetails(ctx context.Context, f RouteFilter) ([]Route
 	if f.SetterID != "" {
 		where = append(where, fmt.Sprintf("r.setter_id = $%d", argN))
 		args = append(args, f.SetterID)
+		argN++
+	}
+	if f.DateFrom != "" {
+		where = append(where, fmt.Sprintf("r.date_set >= $%d", argN))
+		args = append(args, f.DateFrom)
+		argN++
+	}
+	if f.DateTo != "" {
+		where = append(where, fmt.Sprintf("r.date_set <= $%d", argN))
+		args = append(args, f.DateTo)
 		argN++
 	}
 

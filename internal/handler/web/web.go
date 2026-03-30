@@ -116,6 +116,9 @@ type PageData struct {
 	StatusFilter string
 	WallFilter   string
 	GradeFilter  string
+	DateFrom     string
+	DateTo       string
+	TypeFilter   string
 
 	// Manage row partial (for HTMX swap of a single row)
 	RowRoute *RouteView
@@ -172,6 +175,8 @@ type PageData struct {
 	Photos         []repository.PhotoWithUploader
 	PhotosEnabled  bool // true if S3 storage is configured
 	CanUploadPhoto bool // true if user can upload photos for this route
+	PhotosUploaded int  // count of session routes that already have a photo
+	PhotosPercent  int  // percentage of session routes with photos (0-100)
 
 	// Team management
 	TeamMembers    []repository.LocationMember
@@ -587,6 +592,7 @@ type Handler struct {
 	profanity      *service.ProfanityFilter
 	sessionMgr     *middleware.SessionManager
 	cfg            *config.Config
+	uploadSem      chan struct{} // limits concurrent image processing
 }
 
 func NewHandler(
@@ -633,6 +639,7 @@ func NewHandler(
 		cardGen:        cardGen,
 		sessionMgr:     sessionMgr,
 		cfg:            cfg,
+		uploadSem:      make(chan struct{}, 3), // limit concurrent image processing
 	}
 	h.loadTemplates()
 	return h
@@ -689,6 +696,7 @@ func (h *Handler) loadTemplates() {
 		"setter/session-detail.html",
 		"setter/session-form.html",
 		"setter/session-complete.html",
+		"setter/session-photos.html",
 		"setter/settings.html",
 		"setter/org-settings.html",
 		"setter/team.html",
@@ -696,6 +704,7 @@ func (h *Handler) loadTemplates() {
 		"setter/gym-new.html",
 		"setter/gym-edit.html",
 		"climber/routes.html",
+		"climber/archive.html",
 		"climber/route-detail.html",
 		"climber/walls.html",
 		"climber/profile.html",
@@ -1026,6 +1035,110 @@ func (h *Handler) Routes(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, "climber/routes.html", data)
 }
 
+// Archive renders the archived routes browser (GET /archive).
+func (h *Handler) Archive(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	locationID := middleware.GetWebLocationID(ctx)
+	if locationID == "" {
+		h.renderError(w, r, http.StatusBadRequest, "No location selected", "Please select a location.")
+		return
+	}
+
+	routeType := r.URL.Query().Get("type")
+	if !validRouteTypes[routeType] {
+		routeType = ""
+	}
+	wallID := r.URL.Query().Get("wall")
+	gradeFilter := r.URL.Query().Get("grade")
+	dateFrom := r.URL.Query().Get("from")
+	dateTo := r.URL.Query().Get("to")
+
+	// Validate date format if provided
+	if dateFrom != "" {
+		if _, err := time.Parse("2006-01-02", dateFrom); err != nil {
+			dateFrom = ""
+		}
+	}
+	if dateTo != "" {
+		if _, err := time.Parse("2006-01-02", dateTo); err != nil {
+			dateTo = ""
+		}
+	}
+
+	filter := repository.RouteFilter{
+		LocationID: locationID,
+		WallID:     wallID,
+		Status:     "archived",
+		RouteType:  routeType,
+		DateFrom:   dateFrom,
+		DateTo:     dateTo,
+		Limit:      50,
+	}
+
+	if gradeFilter != "" {
+		if cc, ok := strings.CutPrefix(gradeFilter, "circuit:"); ok {
+			filter.CircuitColor = cc
+		} else {
+			filter.GradeIn = expandGradeRange(gradeFilter)
+		}
+	}
+
+	routes, total, err := h.routeRepo.ListWithDetails(ctx, filter)
+	if err != nil {
+		slog.Error("archive list failed", "location_id", locationID, "error", err)
+		h.renderError(w, r, http.StatusInternalServerError, "Something went wrong", "Could not load archived routes.")
+		return
+	}
+
+	locSettings, settErr := h.settingsRepo.GetLocationSettings(ctx, locationID)
+	if settErr != nil {
+		locSettings = model.DefaultLocationSettings()
+	}
+
+	effectiveRole := middleware.GetWebRole(ctx)
+	isSetter := effectiveRole != "climber"
+	hideCircuitGrade := !isSetter && !locSettings.Grading.ShowGradesOnCircuit
+
+	var routeViews []RouteView
+	for _, rd := range routes {
+		routeViews = append(routeViews, RouteView{
+			Route:            rd.Route,
+			WallName:         rd.WallName,
+			SetterName:       rd.SetterName,
+			HideCircuitGrade: hideCircuitGrade,
+		})
+	}
+
+	// Load walls for filter dropdown
+	walls, wallErr := h.wallRepo.ListByLocation(ctx, locationID)
+	if wallErr != nil {
+		slog.Error("load walls for archive filter failed", "error", wallErr)
+	}
+
+	// Build grade groups from distribution (all routes, not just archived, for consistent chips)
+	gradeDist, err := h.analyticsRepo.GradeDistribution(ctx, locationID, "")
+	if err != nil {
+		slog.Error("archive grade distribution failed", "location_id", locationID, "error", err)
+	}
+	gradeGroups := buildGradeGroups(gradeDist, &locSettings)
+
+	data := &PageData{
+		TemplateData:        templateDataFromContext(r, "archive"),
+		Routes:              routeViews,
+		TotalRoutes:         total,
+		RouteType:           routeType,
+		GradeGroups:         gradeGroups,
+		GradeFilter:         gradeFilter,
+		FormWalls:           walls,
+		WallFilter:          wallID,
+		DateFrom:            dateFrom,
+		DateTo:              dateTo,
+		TypeFilter:          routeType,
+		ShowGradesOnCircuit: locSettings.Grading.ShowGradesOnCircuit,
+	}
+	h.render(w, r, "climber/archive.html", data)
+}
+
 func (h *Handler) RouteDetail(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	routeID := chi.URLParam(r, "routeID")
@@ -1148,7 +1261,11 @@ func (h *Handler) RouteDetail(w http.ResponseWriter, r *http.Request) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		photos, _ = h.photoRepo.ListByRoute(ctx, routeID)
+		var err error
+		photos, err = h.photoRepo.ListByRoute(ctx, routeID)
+		if err != nil {
+			slog.Error("load route photos failed", "route_id", routeID, "error", err)
+		}
 	}()
 
 	var communityTags []repository.AggregatedTag
@@ -1159,7 +1276,11 @@ func (h *Handler) RouteDetail(w http.ResponseWriter, r *http.Request) {
 		if user != nil {
 			viewerID = user.ID
 		}
-		communityTags, _ = h.userTagRepo.ListByRoute(ctx, routeID, viewerID)
+		var err error
+		communityTags, err = h.userTagRepo.ListByRoute(ctx, routeID, viewerID)
+		if err != nil {
+			slog.Error("load community tags failed", "route_id", routeID, "error", err)
+		}
 	}()
 
 	wg.Wait()

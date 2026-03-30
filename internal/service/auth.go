@@ -219,7 +219,9 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, oldPassword, n
 	}
 
 	// Revoke all refresh tokens so other sessions must re-authenticate
-	_ = s.users.RevokeRefreshTokens(ctx, userID)
+	if err := s.users.RevokeRefreshTokens(ctx, userID); err != nil {
+		slog.Error("revoke tokens after password change failed", "user_id", userID, "error", err)
+	}
 
 	return nil
 }
@@ -236,7 +238,9 @@ func (s *AuthService) ResetPassword(ctx context.Context, userID, newPassword str
 		return err
 	}
 
-	_ = s.users.RevokeRefreshTokens(ctx, userID)
+	if err := s.users.RevokeRefreshTokens(ctx, userID); err != nil {
+		slog.Error("revoke tokens after password reset failed", "user_id", userID, "error", err)
+	}
 	return nil
 }
 

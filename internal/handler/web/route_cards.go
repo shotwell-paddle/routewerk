@@ -13,12 +13,31 @@ import (
 
 // ── Route Cards ──────────────────────────────────────────────
 
+// acquireUploadSem blocks until a slot is available in the shared image-processing
+// semaphore, or returns false if the request context is cancelled.
+func (h *Handler) acquireUploadSem(w http.ResponseWriter, r *http.Request) bool {
+	select {
+	case h.uploadSem <- struct{}{}:
+		return true
+	case <-r.Context().Done():
+		http.Error(w, "Request cancelled", http.StatusServiceUnavailable)
+		return false
+	}
+}
+
+func (h *Handler) releaseUploadSem() { <-h.uploadSem }
+
 // RouteCardPrintPNG serves the print-ready route card as PNG.
 func (h *Handler) RouteCardPrintPNG(w http.ResponseWriter, r *http.Request) {
 	data, ok := h.resolveCardData(w, r)
 	if !ok {
 		return
 	}
+	if !h.acquireUploadSem(w, r) {
+		return
+	}
+	defer h.releaseUploadSem()
+
 	pngBytes, err := h.cardGen.GeneratePrintPNG(data)
 	if err != nil {
 		slog.Error("print card generation failed", "error", err)
@@ -36,6 +55,11 @@ func (h *Handler) RouteCardPrintPDF(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.acquireUploadSem(w, r) {
+		return
+	}
+	defer h.releaseUploadSem()
+
 	pdfBytes, err := h.cardGen.GeneratePrintPDF(data)
 	if err != nil {
 		slog.Error("print card PDF generation failed", "error", err)
@@ -54,6 +78,11 @@ func (h *Handler) RouteCardSharePNG(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.acquireUploadSem(w, r) {
+		return
+	}
+	defer h.releaseUploadSem()
+
 	pngBytes, err := h.cardGen.GenerateDigitalPNG(data)
 	if err != nil {
 		slog.Error("share card generation failed", "error", err)
@@ -71,6 +100,11 @@ func (h *Handler) RouteCardSharePDF(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.acquireUploadSem(w, r) {
+		return
+	}
+	defer h.releaseUploadSem()
+
 	pdfBytes, err := h.cardGen.GenerateDigitalPDF(data)
 	if err != nil {
 		slog.Error("share card PDF generation failed", "error", err)

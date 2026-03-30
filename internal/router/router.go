@@ -173,6 +173,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 			// Climber routes — any authenticated user
 			r.Get("/explore/walls", webHandler.ClimberWalls)
 			r.Get("/routes", webHandler.Routes)
+			r.Get("/archive", webHandler.Archive)
 			r.Get("/routes/{routeID}", webHandler.RouteDetail)
 			r.Get("/routes/{routeID}/card/print.png", webHandler.RouteCardPrintPNG)
 			r.Get("/routes/{routeID}/card/print.pdf", webHandler.RouteCardPrintPDF)
@@ -235,6 +236,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 				r.Post("/sessions/{sessionID}/checklist/{itemID}/toggle", webHandler.SessionToggleChecklist)
 				r.Post("/sessions/{sessionID}/delete", webHandler.SessionDelete)
 				r.Get("/sessions/{sessionID}/complete", webHandler.SessionComplete)
+			r.Get("/sessions/{sessionID}/photos", webHandler.SessionPhotos)
 				r.Post("/sessions/{sessionID}/publish", webHandler.SessionPublish)
 				r.Post("/sessions/{sessionID}/reopen", webHandler.SessionReopen)
 				r.Get("/sessions/{sessionID}/route-fields", webHandler.SessionRouteFields)

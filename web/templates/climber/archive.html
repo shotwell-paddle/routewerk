@@ -1,0 +1,92 @@
+{{define "title"}}Archive — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>Archive</h1>
+      <p class="page-subtitle">{{.TotalRoutes}} archived route{{if ne .TotalRoutes 1}}s{{end}} at {{if .Location}}{{.Location.Name}}{{end}}</p>
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  <!-- Filter bar -->
+  <div class="archive-filters">
+    <div class="archive-filter-row">
+      {{if .FormWalls}}
+      <select class="form-select form-select-sm"
+              hx-get="/archive" hx-target="#main-content" hx-push-url="true"
+              hx-include=".archive-filter-input"
+              name="wall">
+        <option value="">All walls</option>
+        {{range .FormWalls}}
+        <option value="{{.ID}}" {{if eq $.WallFilter .ID}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+      {{end}}
+
+      <select class="form-select form-select-sm archive-filter-input"
+              hx-get="/archive" hx-target="#main-content" hx-push-url="true"
+              hx-include=".archive-filter-input"
+              name="type">
+        <option value="">All types</option>
+        <option value="boulder" {{if eq .TypeFilter "boulder"}}selected{{end}}>Boulder</option>
+        <option value="sport" {{if eq .TypeFilter "sport"}}selected{{end}}>Sport</option>
+        <option value="top_rope" {{if eq .TypeFilter "top_rope"}}selected{{end}}>Top Rope</option>
+      </select>
+
+      <div class="archive-date-range">
+        <input type="date" name="from" value="{{.DateFrom}}" class="form-input form-input-sm archive-filter-input"
+               placeholder="From"
+               hx-get="/archive" hx-target="#main-content" hx-push-url="true"
+               hx-include=".archive-filter-input"
+               hx-trigger="change">
+        <span class="archive-date-sep">—</span>
+        <input type="date" name="to" value="{{.DateTo}}" class="form-input form-input-sm archive-filter-input"
+               placeholder="To"
+               hx-get="/archive" hx-target="#main-content" hx-push-url="true"
+               hx-include=".archive-filter-input"
+               hx-trigger="change">
+      </div>
+    </div>
+
+    {{if .GradeGroups}}
+    <div class="filter-bar mt-3">
+      <a href="/archive{{if .TypeFilter}}?type={{.TypeFilter}}{{end}}{{if .DateFrom}}&from={{.DateFrom}}{{end}}{{if .DateTo}}&to={{.DateTo}}{{end}}"
+         class="filter-chip {{if eq .GradeFilter ""}}active{{end}}"
+         hx-get="/archive{{if .TypeFilter}}?type={{.TypeFilter}}{{end}}{{if .DateFrom}}&from={{.DateFrom}}{{end}}{{if .DateTo}}&to={{.DateTo}}{{end}}"
+         hx-target="#main-content" hx-push-url="true">
+        All grades
+      </a>
+      {{range .GradeGroups}}
+      <a href="/archive?grade={{.Value}}{{if $.TypeFilter}}&type={{$.TypeFilter}}{{end}}{{if $.DateFrom}}&from={{$.DateFrom}}{{end}}{{if $.DateTo}}&to={{$.DateTo}}{{end}}"
+         class="filter-chip {{if eq $.GradeFilter .Value}}active{{end}}"
+         hx-get="/archive?grade={{.Value}}{{if $.TypeFilter}}&type={{$.TypeFilter}}{{end}}{{if $.DateFrom}}&from={{$.DateFrom}}{{end}}{{if $.DateTo}}&to={{$.DateTo}}{{end}}"
+         hx-target="#main-content" hx-push-url="true">
+        {{if .IsColor}}<span class="color-dot" style="background: {{.SafeColor}}"></span>{{end}}
+        {{.Label}}
+      </a>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+
+  <!-- Route list -->
+  <div id="route-list" class="flex flex-col gap-3 mt-4">
+    {{range .Routes}}
+    {{template "route-card" .}}
+    {{end}}
+
+    {{if not .Routes}}
+    <div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>
+      </svg>
+      <h3>No archived routes</h3>
+      <p>{{if or .GradeFilter .WallFilter .TypeFilter .DateFrom .DateTo}}No routes match these filters. Try adjusting your search.{{else}}Archived routes will appear here after they've been stripped.{{end}}</p>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}

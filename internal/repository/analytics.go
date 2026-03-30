@@ -98,7 +98,8 @@ func (r *AnalyticsRepo) RouteLifecycle(ctx context.Context, locationID string) (
 			avg_rating, ascent_count
 		FROM routes
 		WHERE location_id = $1 AND status = 'active' AND deleted_at IS NULL
-		ORDER BY date_set ASC`
+		ORDER BY date_set ASC
+		LIMIT 500`
 
 	rows, err := r.db.Query(ctx, query, locationID)
 	if err != nil {
@@ -264,7 +265,8 @@ func (r *AnalyticsRepo) OrgOverview(ctx context.Context, orgID string) ([]Locati
 			AND r2.projected_strip_date <= CURRENT_DATE AND r2.deleted_at IS NULL
 		WHERE l.org_id = $1 AND l.deleted_at IS NULL
 		GROUP BY l.id, l.name
-		ORDER BY l.name`
+		ORDER BY l.name
+		LIMIT 100`
 
 	rows, err := r.db.Query(ctx, query, orgID)
 	if err != nil {

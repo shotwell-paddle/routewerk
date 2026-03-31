@@ -144,7 +144,7 @@ func TestBuildGradeGroups_CircuitColors(t *testing.T) {
 		{GradingSystem: "circuit", Grade: "green", RouteType: "boulder", Count: 7},
 	}
 
-	groups := buildGradeGroups(dist, &settings)
+	groups := buildGradeGroups(dist, &settings, true)
 
 	// Circuit groups should be first, in the gym's configured order
 	if len(groups) != 3 {
@@ -190,7 +190,7 @@ func TestBuildGradeGroups_CircuitsBeforeGrades(t *testing.T) {
 		{GradingSystem: "yds", Grade: "5.10a", RouteType: "route", Count: 3},
 	}
 
-	groups := buildGradeGroups(dist, &settings)
+	groups := buildGradeGroups(dist, &settings, true)
 
 	if len(groups) != 3 {
 		t.Fatalf("expected 3 groups, got %d", len(groups))
@@ -218,7 +218,7 @@ func TestBuildGradeGroups_UnknownCircuitColorIgnored(t *testing.T) {
 		{GradingSystem: "circuit", Grade: "purple", RouteType: "boulder", Count: 5}, // not in settings
 	}
 
-	groups := buildGradeGroups(dist, &settings)
+	groups := buildGradeGroups(dist, &settings, true)
 	if len(groups) != 0 {
 		t.Errorf("expected 0 groups for unconfigured circuit color, got %d", len(groups))
 	}
@@ -825,6 +825,6 @@ func BenchmarkBuildGradeGroups(b *testing.B) {
 	settings := model.DefaultLocationSettings()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		buildGradeGroups(dist, &settings)
+		buildGradeGroups(dist, &settings, true)
 	}
 }

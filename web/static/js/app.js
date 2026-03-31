@@ -74,15 +74,15 @@ document.addEventListener('htmx:afterRequest', function(e) {
 });
 
 // ── Smooth page transitions ──────────────────────────────────
-// Use the View Transitions API (HTMX 2.0 built-in) for a
-// crossfade between old and new page content.
-htmx.config.globalViewTransitions = true;
+// Prevent the bounce/flicker when hx-boost navigates between pages.
+// Scroll to top BEFORE the swap so the content change happens at the
+// top of the viewport — no visible reflow or jump.
+htmx.config.scrollIntoViewOnBoost = false;
 
-// Scroll to top after full-page navigations
-document.addEventListener('htmx:afterSwap', function(e) {
+document.addEventListener('htmx:beforeSwap', function(e) {
   var target = e.detail.target;
   if (!target || target.id !== 'main-content') return;
-  window.scrollTo(0, 0);
+  window.scrollTo({ top: 0, behavior: 'instant' });
 });
 
 // ── Filter chip toggle ────────────────────────────────────────

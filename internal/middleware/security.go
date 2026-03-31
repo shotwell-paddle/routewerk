@@ -199,10 +199,24 @@ func (rl *RateLimiter) evictOldest() {
 	}
 }
 
+// clientIP extracts the real client IP, preferring the value set by chi's
+// RealIP middleware (X-Real-IP / X-Forwarded-For) over r.RemoteAddr which
+// is often just the proxy IP when running behind Fly.io or similar.
+func clientIP(r *http.Request) string {
+	// chi's RealIP middleware sets X-Real-IP from X-Forwarded-For then
+	// overwrites r.RemoteAddr. However, RemoteAddr keeps the port suffix
+	// (e.g. "1.2.3.4:12345") so strip it for a clean map key.
+	ip := r.RemoteAddr
+	if i := strings.LastIndex(ip, ":"); i != -1 {
+		ip = ip[:i]
+	}
+	return ip
+}
+
 // Limit returns middleware that rejects requests over the rate limit with 429.
 func (rl *RateLimiter) Limit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr // chi's RealIP middleware normalizes this
+		ip := clientIP(r)
 
 		rl.mu.Lock()
 		cw, exists := rl.clients[ip]

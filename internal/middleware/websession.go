@@ -252,6 +252,25 @@ func RequireSetterSession(next http.Handler) http.Handler {
 	})
 }
 
+// RequireAppAdmin is middleware that gates routes to users with the is_app_admin
+// flag set on their user record. Must be applied after RequireSession so that
+// WebUserKey is already in context.
+func RequireAppAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := GetWebUser(r.Context())
+		if user == nil || !user.IsAppAdmin {
+			if r.Header.Get("HX-Request") == "true" {
+				w.Header().Set("HX-Redirect", "/routes")
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			http.Redirect(w, r, "/routes", http.StatusSeeOther)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // GetWebUser extracts the authenticated user from context.
 func GetWebUser(ctx context.Context) *model.User {
 	v, _ := ctx.Value(WebUserKey).(*model.User)

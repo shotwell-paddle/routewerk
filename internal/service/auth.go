@@ -74,10 +74,12 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*AuthR
 	locked, err := s.attempts.IsLocked(ctx, email)
 	if err != nil {
 		slog.Error("lockout check failed", "email", email, "error", err)
-		// Fail open on DB error — don't block legitimate users because
-		// the login_attempts table is unavailable. The IP rate limiter
-		// still protects against brute force.
-	} else if locked {
+		// Fail closed — if we can't verify lockout state, deny the
+		// attempt. The IP rate limiter provides a secondary layer, but
+		// we don't want to bypass account lockout on DB hiccups.
+		return nil, ErrAccountLocked
+	}
+	if locked {
 		slog.Warn("login attempt on locked account", "email", email)
 		return nil, ErrAccountLocked
 	}
@@ -121,7 +123,9 @@ func (s *AuthService) ValidateCredentials(ctx context.Context, email, password s
 	locked, err := s.attempts.IsLocked(ctx, email)
 	if err != nil {
 		slog.Error("lockout check failed", "email", email, "error", err)
-	} else if locked {
+		return nil, ErrAccountLocked
+	}
+	if locked {
 		slog.Warn("login attempt on locked account", "email", email)
 		return nil, ErrAccountLocked
 	}

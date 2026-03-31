@@ -38,6 +38,7 @@ type Config struct {
 	SMTPUsername string
 	SMTPPassword string
 	SMTPFrom     string
+
 }
 
 func Load() *Config {

@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 )
@@ -44,7 +46,7 @@ func (r *DifficultyRepo) GetByUserAndRoute(ctx context.Context, userID, routeID 
 		&v.ID, &v.UserID, &v.RouteID, &v.Vote, &v.CreatedAt, &v.UpdatedAt,
 	)
 	if err != nil {
-		if err.Error() == "no rows in result set" {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get difficulty vote: %w", err)

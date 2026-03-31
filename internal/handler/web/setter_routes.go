@@ -249,21 +249,16 @@ func (h *Handler) RouteCreate(w http.ResponseWriter, r *http.Request) {
 		ProjectedStripDate: projectedStrip,
 	}
 
-	if err := h.routeRepo.Create(ctx, rt); err != nil {
-		slog.Error("route create failed", "error", err)
-		h.renderRouteForm(w, r, locationID, nil, fv, "Failed to create route. Please try again.")
-		return
-	}
-
-	// Set tags
+	// Collect tags for atomic creation
 	var tagIDs []string
 	for id := range fv.TagIDs {
 		tagIDs = append(tagIDs, id)
 	}
-	if len(tagIDs) > 0 {
-		if err := h.routeRepo.SetTags(ctx, rt.ID, tagIDs); err != nil {
-			slog.Error("route set tags failed", "route_id", rt.ID, "error", err)
-		}
+
+	if err := h.routeRepo.CreateWithTags(ctx, rt, tagIDs); err != nil {
+		slog.Error("route create failed", "error", err)
+		h.renderRouteForm(w, r, locationID, nil, fv, "Failed to create route. Please try again.")
+		return
 	}
 
 	// Process optional photo upload.

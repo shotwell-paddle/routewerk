@@ -97,6 +97,41 @@ func (r *RouteRepo) Create(ctx context.Context, rt *model.Route) error {
 	).Scan(&rt.ID, &rt.AvgRating, &rt.RatingCount, &rt.AscentCount, &rt.AttemptCount, &rt.CreatedAt, &rt.UpdatedAt)
 }
 
+// CreateWithTags inserts a route and its tags in a single transaction.
+// If tag insertion fails, the route insert is rolled back.
+func (r *RouteRepo) CreateWithTags(ctx context.Context, rt *model.Route, tagIDs []string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	query := `
+		INSERT INTO routes (location_id, wall_id, setter_id, route_type, status,
+			grading_system, grade, grade_low, grade_high, circuit_color,
+			name, color, description, photo_url, date_set, projected_strip_date, session_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		RETURNING id, avg_rating, rating_count, ascent_count, attempt_count, created_at, updated_at`
+
+	err = tx.QueryRow(ctx, query,
+		rt.LocationID, rt.WallID, rt.SetterID, rt.RouteType, rt.Status,
+		rt.GradingSystem, rt.Grade, rt.GradeLow, rt.GradeHigh, rt.CircuitColor,
+		rt.Name, rt.Color, rt.Description, rt.PhotoURL, rt.DateSet, rt.ProjectedStripDate,
+		rt.SessionID,
+	).Scan(&rt.ID, &rt.AvgRating, &rt.RatingCount, &rt.AscentCount, &rt.AttemptCount, &rt.CreatedAt, &rt.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("create route: %w", err)
+	}
+
+	for _, tagID := range tagIDs {
+		if _, err := tx.Exec(ctx, "INSERT INTO route_tags (route_id, tag_id) VALUES ($1, $2)", rt.ID, tagID); err != nil {
+			return fmt.Errorf("insert route tag: %w", err)
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
 func (r *RouteRepo) GetByID(ctx context.Context, id string) (*model.Route, error) {
 	// Single query with LEFT JOIN to load route + tags in one round trip
 	query := `

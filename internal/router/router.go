@@ -107,9 +107,9 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsRepo)
 	cardHandler := handler.NewCardHandler(routeRepo, wallRepo, locationRepo, userRepo, cardGen)
 
-	// Health check and metrics
+	// Health check — public (Fly.io probes need this), but pool details
+	// are only returned for internal IPs (see health.go).
 	r.Get("/health", healthHandler.Check)
-	r.Get("/metrics", metrics.Handler)
 
 	// ── Web Frontend (HTMX) ────────────────────────────────────
 	difficultyRepo := repository.NewDifficultyRepo(db)
@@ -264,6 +264,15 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 				r.Post("/settings/organization/gyms/{gymID}/edit", webHandler.GymUpdate)
 				r.Get("/settings/organization/team", webHandler.OrgTeamPage)
 				r.Post("/settings/organization/team/{membershipID}/role", webHandler.OrgTeamUpdateRole)
+
+			})
+
+			// App admin routes — require is_app_admin flag on user
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireAppAdmin)
+
+				r.Get("/admin/health", healthHandler.Check)
+				r.Get("/admin/metrics", metrics.Handler)
 			})
 		})
 	})

@@ -99,6 +99,23 @@
       {{end}}
     </div>
     {{end}}
+    {{if .IsAppAdmin}}
+    <div class="nav-section">
+      <div class="nav-section-label">Admin</div>
+      <a href="/admin/health" class="nav-item {{if eq .ActiveNav "admin-health"}}active{{end}}">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+        Health
+      </a>
+      <a href="/admin/metrics" class="nav-item {{if eq .ActiveNav "admin-metrics"}}active{{end}}">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+        </svg>
+        Metrics
+      </a>
+    </div>
+    {{end}}
 
     <div class="nav-section">
       <div class="nav-section-label">Climb</div>

@@ -37,10 +37,9 @@ func Migrate(databaseURL string) error {
 
 	version, dirty, _ := m.Version()
 	if dirty {
-		slog.Warn("migration state is dirty", "version", version)
-	} else {
-		slog.Info("migrations applied", "version", version)
+		return fmt.Errorf("migration version %d is dirty — run `migrate force` to fix", version)
 	}
+	slog.Info("migrations applied", "version", version)
 
 	return nil
 }

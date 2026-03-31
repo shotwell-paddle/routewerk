@@ -46,6 +46,7 @@ type User struct {
 	DisplayName  string             `json:"display_name"`
 	AvatarURL    *string            `json:"avatar_url,omitempty"`
 	Bio          *string            `json:"bio,omitempty"`
+	IsAppAdmin   bool               `json:"is_app_admin"`
 	CreatedAt    time.Time          `json:"created_at"`
 	UpdatedAt    time.Time          `json:"updated_at"`
 	DeletedAt    pgtype.Timestamptz `json:"-"`

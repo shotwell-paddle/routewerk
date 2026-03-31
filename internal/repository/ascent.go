@@ -2,9 +2,11 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 )
@@ -46,7 +48,7 @@ func (r *AscentRepo) GetByID(ctx context.Context, id string) (*model.Ascent, err
 		&a.ID, &a.UserID, &a.RouteID, &a.AscentType, &a.Attempts, &a.Notes, &a.ClimbedAt, &a.CreatedAt,
 	)
 	if err != nil {
-		if err.Error() == "no rows in result set" {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get ascent: %w", err)

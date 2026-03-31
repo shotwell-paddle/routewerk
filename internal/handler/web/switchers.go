@@ -3,10 +3,28 @@ package webhandler
 import (
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 )
+
+// safeRedirect returns path only if it is a relative URL on the same host.
+// Falls back to fallback for empty, absolute, or protocol-relative URLs.
+func safeRedirect(raw, fallback string) string {
+	if raw == "" {
+		return fallback
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host != "" || u.Scheme != "" || !pathStartsWithSlash(raw) {
+		return fallback
+	}
+	return u.Path
+}
+
+func pathStartsWithSlash(s string) bool {
+	return len(s) > 0 && s[0] == '/'
+}
 
 
 // SwitchLocation handles POST /switch-location.
@@ -71,6 +89,7 @@ func (h *Handler) SwitchLocation(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   !h.cfg.IsDev(),
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -110,6 +129,7 @@ func (h *Handler) SwitchViewAs(w http.ResponseWriter, r *http.Request) {
 			Path:     "/",
 			MaxAge:   -1,
 			HttpOnly: true,
+			Secure:   !h.cfg.IsDev(),
 			SameSite: http.SameSiteLaxMode,
 		})
 	} else {
@@ -124,22 +144,20 @@ func (h *Handler) SwitchViewAs(w http.ResponseWriter, r *http.Request) {
 			Name:     middleware.ViewAsCookieName,
 			Value:    targetRole,
 			Path:     "/",
-			MaxAge:   int((24 * time.Hour).Seconds()), // expires after 24h
+			MaxAge:   int((1 * time.Hour).Seconds()), // expires after 1h (was 24h)
 			HttpOnly: true,
+			Secure:   !h.cfg.IsDev(),
 			SameSite: http.SameSiteLaxMode,
 		})
 	}
 
-	// Redirect — the page will re-render with the new effective role
-	referer := r.Header.Get("Referer")
-	if referer == "" {
-		referer = "/dashboard"
-	}
+	// Redirect — validate referer to prevent open redirects
+	redirect := safeRedirect(r.Header.Get("Referer"), "/dashboard")
 
 	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", referer)
+		w.Header().Set("HX-Redirect", redirect)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	http.Redirect(w, r, referer, http.StatusSeeOther)
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }

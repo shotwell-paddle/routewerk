@@ -65,6 +65,9 @@ func templateDataFromContext(r *http.Request, activeNav string) TemplateData {
 	td.IsSetter = effectiveRole != middleware.RoleClimber
 	td.IsHeadSetter = middleware.RoleRankValue(effectiveRole) >= 3
 	td.IsOrgAdmin = middleware.RoleRankValue(effectiveRole) >= 5
+	if user != nil {
+		td.IsAppAdmin = user.IsAppAdmin
+	}
 
 	return td
 }

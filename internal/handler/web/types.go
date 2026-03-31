@@ -14,6 +14,7 @@ type TemplateData struct {
 	IsSetter     bool
 	IsHeadSetter bool
 	IsOrgAdmin   bool
+	IsAppAdmin   bool
 	UserName     string
 	UserInitial string
 	UserRole    string

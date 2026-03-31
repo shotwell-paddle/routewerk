@@ -88,18 +88,13 @@ func (h *RouteHandler) Create(w http.ResponseWriter, r *http.Request) {
 		ProjectedStripDate: projectedStrip,
 	}
 
-	if err := h.routes.Create(r.Context(), rt); err != nil {
+	if err := h.routes.CreateWithTags(r.Context(), rt, req.TagIDs); err != nil {
 		Error(w, http.StatusInternalServerError, "failed to create route")
 		return
 	}
 
-	// Set tags if provided, then reload only if tags were set
+	// Reload to include tags in response
 	if len(req.TagIDs) > 0 {
-		if err := h.routes.SetTags(r.Context(), rt.ID, req.TagIDs); err != nil {
-			Error(w, http.StatusInternalServerError, "route created but failed to set tags")
-			return
-		}
-		// Reload to include tags in response
 		rt, _ = h.routes.GetByID(r.Context(), rt.ID)
 	}
 

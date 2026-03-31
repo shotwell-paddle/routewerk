@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -203,17 +204,32 @@ func (q *Queue) processOne(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
-	// Execute handler with a timeout
+	// Execute handler with a timeout and panic recovery
 	execCtx, execCancel := context.WithTimeout(ctx, q.staleTimeout)
 	defer execCancel()
 
-	if err := handler(execCtx, job); err != nil {
-		q.failJob(ctx, job, err.Error())
-		slog.Warn("job failed", "job_type", job.JobType, "job_id", job.ID, "attempt", job.Attempts, "error", err)
-	} else {
-		q.completeJob(ctx, job)
-		slog.Debug("job completed", "job_type", job.JobType, "job_id", job.ID)
-	}
+	func() {
+		defer func() {
+			if rv := recover(); rv != nil {
+				stack := debug.Stack()
+				errMsg := fmt.Sprintf("panic: %v", rv)
+				q.failJob(ctx, job, errMsg)
+				slog.Error("job handler panicked",
+					"job_type", job.JobType,
+					"job_id", job.ID,
+					"panic", rv,
+					"stack", string(stack),
+				)
+			}
+		}()
+		if err := handler(execCtx, job); err != nil {
+			q.failJob(ctx, job, err.Error())
+			slog.Warn("job failed", "job_type", job.JobType, "job_id", job.ID, "attempt", job.Attempts, "error", err)
+		} else {
+			q.completeJob(ctx, job)
+			slog.Debug("job completed", "job_type", job.JobType, "job_id", job.ID)
+		}
+	}()
 
 	return true, nil
 }

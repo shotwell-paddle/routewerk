@@ -30,14 +30,14 @@ func (r *UserRepo) Create(ctx context.Context, u *model.User) error {
 
 func (r *UserRepo) GetByID(ctx context.Context, id string) (*model.User, error) {
 	query := `
-		SELECT id, email, password_hash, display_name, avatar_url, bio, created_at, updated_at
+		SELECT id, email, password_hash, display_name, avatar_url, bio, is_app_admin, created_at, updated_at
 		FROM users
 		WHERE id = $1 AND deleted_at IS NULL`
 
 	u := &model.User{}
 	err := r.db.QueryRow(ctx, query, id).Scan(
 		&u.ID, &u.Email, &u.PasswordHash, &u.DisplayName,
-		&u.AvatarURL, &u.Bio, &u.CreatedAt, &u.UpdatedAt,
+		&u.AvatarURL, &u.Bio, &u.IsAppAdmin, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -50,14 +50,14 @@ func (r *UserRepo) GetByID(ctx context.Context, id string) (*model.User, error) 
 
 func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*model.User, error) {
 	query := `
-		SELECT id, email, password_hash, display_name, avatar_url, bio, created_at, updated_at
+		SELECT id, email, password_hash, display_name, avatar_url, bio, is_app_admin, created_at, updated_at
 		FROM users
 		WHERE email = $1 AND deleted_at IS NULL`
 
 	u := &model.User{}
 	err := r.db.QueryRow(ctx, query, email).Scan(
 		&u.ID, &u.Email, &u.PasswordHash, &u.DisplayName,
-		&u.AvatarURL, &u.Bio, &u.CreatedAt, &u.UpdatedAt,
+		&u.AvatarURL, &u.Bio, &u.IsAppAdmin, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil

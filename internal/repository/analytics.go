@@ -55,18 +55,22 @@ func (r *AnalyticsRepo) LocationDashboardStats(ctx context.Context, locationID s
 	return d, nil
 }
 
-// GradeDistribution returns route counts by grade for a location, optionally filtered by wall.
-func (r *AnalyticsRepo) GradeDistribution(ctx context.Context, locationID, wallID string) ([]GradeCount, error) {
+// GradeDistribution returns route counts by grade for a location, optionally
+// filtered by wall and/or status. An empty status defaults to "active".
+func (r *AnalyticsRepo) GradeDistribution(ctx context.Context, locationID, wallID, status string) ([]GradeCount, error) {
+	if status == "" {
+		status = "active"
+	}
 	query := `
 		SELECT grading_system,
 			CASE WHEN grading_system = 'circuit' THEN COALESCE(circuit_color, grade) ELSE grade END AS grade,
 			route_type, COUNT(*) as count
 		FROM routes
-		WHERE location_id = $1 AND status = 'active' AND deleted_at IS NULL`
-	args := []interface{}{locationID}
+		WHERE location_id = $1 AND status = $2 AND deleted_at IS NULL`
+	args := []interface{}{locationID, status}
 
 	if wallID != "" {
-		query += ` AND wall_id = $2`
+		query += ` AND wall_id = $3`
 		args = append(args, wallID)
 	}
 

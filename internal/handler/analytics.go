@@ -20,7 +20,7 @@ func (h *AnalyticsHandler) GradeDistribution(w http.ResponseWriter, r *http.Requ
 	locationID := chi.URLParam(r, "locationID")
 	wallID := r.URL.Query().Get("wall_id")
 
-	grades, err := h.analytics.GradeDistribution(r.Context(), locationID, wallID)
+	grades, err := h.analytics.GradeDistribution(r.Context(), locationID, wallID, "")
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "internal error")
 		return

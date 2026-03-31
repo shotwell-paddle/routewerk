@@ -1036,12 +1036,12 @@ func (h *Handler) Routes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build grade groups from the grade distribution query
-	gradeDist, err := h.analyticsRepo.GradeDistribution(ctx, locationID, "")
+	gradeDist, err := h.analyticsRepo.GradeDistribution(ctx, locationID, "", "active")
 	if err != nil {
 		slog.Error("grade distribution failed", "location_id", locationID, "error", err)
 	}
 
-	gradeGroups := buildGradeGroups(gradeDist, &locSettings)
+	gradeGroups := buildGradeGroups(gradeDist, &locSettings, isSetter)
 
 	// Load walls for filter dropdown
 	walls, wallErr := h.wallRepo.ListByLocation(ctx, locationID)
@@ -1143,12 +1143,13 @@ func (h *Handler) Archive(w http.ResponseWriter, r *http.Request) {
 		slog.Error("load walls for archive filter failed", "error", wallErr)
 	}
 
-	// Build grade groups from distribution (all routes, not just archived, for consistent chips)
-	gradeDist, err := h.analyticsRepo.GradeDistribution(ctx, locationID, "")
+	// Build grade groups from the actual archived routes so chips reflect
+	// what's in the archive, not what's currently active on the walls.
+	gradeDist, err := h.analyticsRepo.GradeDistribution(ctx, locationID, "", "archived")
 	if err != nil {
 		slog.Error("archive grade distribution failed", "location_id", locationID, "error", err)
 	}
-	gradeGroups := buildGradeGroups(gradeDist, &locSettings)
+	gradeGroups := buildGradeGroups(gradeDist, &locSettings, isSetter)
 
 	data := &PageData{
 		TemplateData:        templateDataFromContext(r, "archive"),

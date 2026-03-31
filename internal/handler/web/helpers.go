@@ -204,9 +204,13 @@ func expandGradeRange(value string) []string {
 	}
 }
 
-// buildGradeGroups converts raw GradeCount rows into display groups.
-// locSettings provides circuit color hex values for the filter chips.
-func buildGradeGroups(dist []repository.GradeCount, locSettings *model.LocationSettings) []GradeGroup {
+// buildGradeGroups converts a raw grade distribution into filter chip groups.
+//
+// The isSetter flag controls V-scale visibility for circuit boulders:
+// when the gym's boulder method is "circuit" and ShowGradesOnCircuit is false,
+// climbers only see circuit color chips (no V-scale) because that's all they
+// see on route cards. Setters always get both.
+func buildGradeGroups(dist []repository.GradeCount, locSettings *model.LocationSettings, isSetter bool) []GradeGroup {
 	// Build a lookup from circuit color name to hex
 	circuitHex := make(map[string]string)
 	var circuitOrder []string // preserve gym's sort order
@@ -214,6 +218,13 @@ func buildGradeGroups(dist []repository.GradeCount, locSettings *model.LocationS
 		circuitHex[cc.Name] = cc.Hex
 		circuitOrder = append(circuitOrder, cc.Name)
 	}
+
+	// Determine whether V-scale chips should be shown for boulders.
+	// When the gym uses circuit grading and hides V-grades from climbers,
+	// only circuit color chips make sense as filter options.
+	showVScale := isSetter ||
+		locSettings.Grading.BoulderMethod == "v_scale" ||
+		locSettings.Grading.ShowGradesOnCircuit
 
 	// Bucket circuit colors
 	colorCounts := make(map[string]int)
@@ -237,17 +248,19 @@ func buildGradeGroups(dist []repository.GradeCount, locSettings *model.LocationS
 	for _, gc := range dist {
 		switch gc.GradingSystem {
 		case "v_scale":
-			switch {
-			case gc.Grade == "VB" || gc.Grade == "V0" || gc.Grade == "V1":
-				vBuckets["vb-v1"].Count += gc.Count
-			case gc.Grade == "V2" || gc.Grade == "V3":
-				vBuckets["v2-v3"].Count += gc.Count
-			case gc.Grade == "V4" || gc.Grade == "V5":
-				vBuckets["v4-v5"].Count += gc.Count
-			case gc.Grade == "V6" || gc.Grade == "V7":
-				vBuckets["v6-v7"].Count += gc.Count
-			default:
-				vBuckets["v8-up"].Count += gc.Count
+			if showVScale {
+				switch {
+				case gc.Grade == "VB" || gc.Grade == "V0" || gc.Grade == "V1":
+					vBuckets["vb-v1"].Count += gc.Count
+				case gc.Grade == "V2" || gc.Grade == "V3":
+					vBuckets["v2-v3"].Count += gc.Count
+				case gc.Grade == "V4" || gc.Grade == "V5":
+					vBuckets["v4-v5"].Count += gc.Count
+				case gc.Grade == "V6" || gc.Grade == "V7":
+					vBuckets["v6-v7"].Count += gc.Count
+				default:
+					vBuckets["v8-up"].Count += gc.Count
+				}
 			}
 		case "circuit":
 			colorCounts[gc.Grade] += gc.Count
@@ -275,10 +288,12 @@ func buildGradeGroups(dist []repository.GradeCount, locSettings *model.LocationS
 		}
 	}
 
-	// V-scale groups (boulders)
-	for _, key := range []string{"vb-v1", "v2-v3", "v4-v5", "v6-v7", "v8-up"} {
-		if vBuckets[key].Count > 0 {
-			groups = append(groups, *vBuckets[key])
+	// V-scale groups (boulders) — only when V-grades are visible
+	if showVScale {
+		for _, key := range []string{"vb-v1", "v2-v3", "v4-v5", "v6-v7", "v8-up"} {
+			if vBuckets[key].Count > 0 {
+				groups = append(groups, *vBuckets[key])
+			}
 		}
 	}
 

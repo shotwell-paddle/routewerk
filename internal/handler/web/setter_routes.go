@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
@@ -136,7 +135,7 @@ func (h *Handler) RouteFormFields(w http.ResponseWriter, r *http.Request) {
 
 	locSettings, err := h.settingsRepo.GetLocationSettings(ctx, locationID)
 	if err != nil {
-		locSettings = defaultLocationSettings()
+		locSettings = model.DefaultLocationSettings()
 	}
 
 	rf := buildRouteFields("", wallID, wallType, locSettings.Grading.BoulderMethod, routeType, locSettings, nil)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
+	"github.com/shotwell-paddle/routewerk/internal/model"
 )
 
 // SessionDelete removes a session and its draft routes (POST /sessions/{sessionID}/delete).
@@ -63,7 +64,7 @@ func (h *Handler) SessionComplete(w http.ResponseWriter, r *http.Request) {
 	locSettings, err := h.settingsRepo.GetLocationSettings(ctx, locationID)
 	if err != nil {
 		slog.Error("load location settings for session complete failed", "location_id", locationID, "error", err)
-		locSettings = defaultLocationSettings()
+		locSettings = model.DefaultLocationSettings()
 	}
 
 	data := &PageData{

@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
+	"github.com/shotwell-paddle/routewerk/internal/model"
 )
 
 // SessionList renders the setting sessions page (GET /sessions).
@@ -117,7 +118,7 @@ func (h *Handler) SessionDetail(w http.ResponseWriter, r *http.Request) {
 	locSettings, settErr := h.settingsRepo.GetLocationSettings(ctx, locationID)
 	if settErr != nil {
 		slog.Error("load location settings failed", "error", settErr)
-		locSettings = defaultLocationSettings()
+		locSettings = model.DefaultLocationSettings()
 	}
 
 	// Default route fields — no wall selected yet

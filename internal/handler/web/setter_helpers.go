@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 )
 

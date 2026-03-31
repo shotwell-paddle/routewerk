@@ -94,3 +94,16 @@ func (s *StorageService) Delete(ctx context.Context, photoURL string) error {
 func (s *StorageService) IsConfigured() bool {
 	return s != nil && s.client != nil
 }
+
+// Healthy checks whether the S3 bucket is reachable.
+func (s *StorageService) Healthy(ctx context.Context) bool {
+	if !s.IsConfigured() {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	_, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: aws.String(s.bucket),
+	})
+	return err == nil
+}

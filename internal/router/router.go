@@ -89,7 +89,8 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 	sessionMgr := middleware.NewSessionManager(webSessionRepo, userRepo, cfg.IsDev())
 
 	// Handlers
-	healthHandler := handler.NewHealthHandler(db)
+	storageSvc := service.NewStorageService(cfg)
+	healthHandler := handler.NewHealthHandler(db, storageSvc)
 	authHandler := handler.NewAuthHandler(authService)
 	orgHandler := handler.NewOrgHandler(orgRepo, auditService)
 	locationHandler := handler.NewLocationHandler(locationRepo)
@@ -115,7 +116,6 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 	photoRepo := repository.NewRoutePhotoRepo(db)
 	settingsRepo := repository.NewSettingsRepo(db)
 	userTagRepo := repository.NewUserTagRepo(db)
-	storageSvc := service.NewStorageService(cfg)
 	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, authService, storageSvc, cardGen, sessionMgr, cfg, db)
 
 	// Rate limiter for web pages: 120 requests per minute per IP

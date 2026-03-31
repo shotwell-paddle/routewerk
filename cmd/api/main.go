@@ -84,7 +84,7 @@ func main() {
 	defer stopJobs()
 
 	// Build router
-	r := router.New(cfg, db)
+	r := router.New(cfg, db, &router.Deps{JobQueue: jobQueue})
 
 	// Start server with timeouts to prevent slowloris and resource exhaustion
 	addr := fmt.Sprintf(":%s", cfg.Port)

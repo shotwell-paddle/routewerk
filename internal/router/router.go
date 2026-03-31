@@ -12,12 +12,18 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/config"
 	"github.com/shotwell-paddle/routewerk/internal/handler"
 	webhandler "github.com/shotwell-paddle/routewerk/internal/handler/web"
+	"github.com/shotwell-paddle/routewerk/internal/jobs"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
 	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
-func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
+// Deps holds optional dependencies passed from main for admin dashboards.
+type Deps struct {
+	JobQueue *jobs.Queue
+}
+
+func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Request metrics (lightweight in-process counters)
@@ -271,8 +277,12 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireAppAdmin)
 
-				r.Get("/admin/health", healthHandler.Check)
-				r.Get("/admin/metrics", metrics.Handler)
+				adminDeps := &webhandler.AdminDeps{
+					Metrics:  metrics,
+					JobQueue: deps.JobQueue,
+				}
+				r.Get("/admin/health", webHandler.AdminHealthPage(adminDeps))
+				r.Get("/admin/metrics", webHandler.AdminMetricsPage(adminDeps))
 			})
 		})
 	})

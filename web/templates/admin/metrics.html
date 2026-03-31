@@ -1,0 +1,371 @@
+{{define "title"}}Metrics — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>Metrics</h1>
+      <p class="page-subtitle">Uptime {{.Uptime}} &middot; Since last deploy</p>
+    </div>
+    <a href="/admin/metrics" class="btn btn-ghost btn-sm" hx-get="/admin/metrics" hx-target="#main-content">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+        <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+      </svg>
+      Refresh
+    </a>
+  </div>
+</div>
+
+<div class="page-body">
+  {{with .MetricsData}}
+  <!-- KPI Cards -->
+  <div class="stats-grid mb-6">
+    <div class="stat-card" style="--stat-accent: var(--rw-blue)">
+      <div class="stat-value">{{.TotalRequests}}</div>
+      <div class="stat-label">Total Requests</div>
+    </div>
+    <div class="stat-card" style="--stat-accent: var(--rw-orange)">
+      <div class="stat-value">{{.ActiveRequests}}</div>
+      <div class="stat-label">In Flight</div>
+    </div>
+    <div class="stat-card" style="--stat-accent: {{if gt .ErrorRate 5.0}}var(--rw-red){{else}}var(--rw-green){{end}}">
+      <div class="stat-value">{{printf "%.2f" .ErrorRate}}%</div>
+      <div class="stat-label">Error Rate (5xx)</div>
+    </div>
+    <div class="stat-card" style="--stat-accent: var(--rw-teal)">
+      <div class="stat-value">{{.TotalErrors}}</div>
+      <div class="stat-label">Server Errors</div>
+    </div>
+  </div>
+
+  <!-- Latency + Status Codes side by side -->
+  <div class="admin-two-col mb-6">
+    <!-- Latency Percentiles -->
+    <div class="card card-spaced">
+      <h3 class="admin-section-title">Response Latency</h3>
+      <div class="admin-latency-cards">
+        <div class="admin-latency-pill">
+          <span class="admin-latency-label">p50</span>
+          <span class="admin-latency-value">{{printf "%.0f" .P50}}ms</span>
+        </div>
+        <div class="admin-latency-pill">
+          <span class="admin-latency-label">p95</span>
+          <span class="admin-latency-value {{if gt .P95 200.0}}admin-latency-warn{{end}}">{{printf "%.0f" .P95}}ms</span>
+        </div>
+        <div class="admin-latency-pill">
+          <span class="admin-latency-label">p99</span>
+          <span class="admin-latency-value {{if gt .P99 500.0}}admin-latency-warn{{end}}">{{printf "%.0f" .P99}}ms</span>
+        </div>
+      </div>
+
+      <h4 class="admin-subsection-title">Distribution</h4>
+      <div class="admin-histogram">
+        {{range .Latency}}
+        <div class="admin-hist-row">
+          <span class="admin-hist-label">{{.Label}}</span>
+          <div class="admin-hist-bar-track">
+            <div class="admin-hist-bar-fill" style="width: {{printf "%.1f" .Pct}}%"></div>
+          </div>
+          <span class="admin-hist-count">{{.Count}}</span>
+        </div>
+        {{end}}
+      </div>
+    </div>
+
+    <!-- Status Codes -->
+    <div class="card card-spaced">
+      <h3 class="admin-section-title">Status Codes</h3>
+      {{if .StatusCodes}}
+      <div class="admin-status-table">
+        {{range .StatusCodes}}
+        <div class="admin-status-row">
+          <span class="admin-code-badge
+            {{if lt .Code 300}}admin-code-2xx
+            {{else if lt .Code 400}}admin-code-3xx
+            {{else if lt .Code 500}}admin-code-4xx
+            {{else}}admin-code-5xx{{end}}">{{.Code}}</span>
+          <div class="admin-code-bar-track">
+            <div class="admin-code-bar-fill
+              {{if lt .Code 300}}admin-bar-2xx
+              {{else if lt .Code 400}}admin-bar-3xx
+              {{else if lt .Code 500}}admin-bar-4xx
+              {{else}}admin-bar-5xx{{end}}" style="width: {{printf "%.1f" .Pct}}%"></div>
+          </div>
+          <span class="admin-code-count">{{.Count}}</span>
+        </div>
+        {{end}}
+      </div>
+      {{else}}
+      <p class="text-sm text-muted">No requests recorded yet.</p>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if .JobStats}}
+  <!-- Job Queue Stats -->
+  <div class="card card-spaced mb-6">
+    <h3 class="admin-section-title">Job Queue</h3>
+    <div class="admin-job-stats">
+      {{range $status, $count := .JobStats}}
+      <div class="admin-job-pill">
+        <span class="admin-job-status admin-job-{{$status}}">{{$status}}</span>
+        <span class="admin-job-count">{{$count}}</span>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{with .MetricsData}}
+  {{if .Routes}}
+  <!-- Top Routes by Traffic -->
+  <div class="card card-spaced">
+    <h3 class="admin-section-title">Routes by Traffic</h3>
+    <div class="admin-routes-table">
+      <div class="admin-routes-header">
+        <span class="admin-rt-pattern">Pattern</span>
+        <span class="admin-rt-num">Requests</span>
+        <span class="admin-rt-num">Errors</span>
+        <span class="admin-rt-num">Avg Latency</span>
+      </div>
+      {{range .Routes}}
+      <div class="admin-routes-row">
+        <span class="admin-rt-pattern"><code>{{.Pattern}}</code></span>
+        <span class="admin-rt-num">{{.Requests}}</span>
+        <span class="admin-rt-num {{if gt .Errors 0}}admin-text-error{{end}}">{{.Errors}}</span>
+        <span class="admin-rt-num">{{printf "%.0f" .AvgMs}}ms</span>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+  {{end}}
+</div>
+
+<style>
+  .admin-two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-4);
+  }
+  @media (max-width: 768px) {
+    .admin-two-col { grid-template-columns: 1fr; }
+  }
+
+  .card-spaced { padding: var(--sp-5); }
+
+  .admin-section-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--rw-charcoal);
+    margin: 0 0 var(--sp-4) 0;
+  }
+  .admin-subsection-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--rw-mid-gray);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: var(--sp-5) 0 var(--sp-3) 0;
+  }
+
+  /* Latency pills */
+  .admin-latency-cards {
+    display: flex;
+    gap: var(--sp-3);
+  }
+  .admin-latency-pill {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--sp-3) var(--sp-2);
+    background: var(--rw-off-white);
+    border-radius: var(--radius-sm);
+  }
+  .admin-latency-label {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--rw-mid-gray);
+    margin-bottom: 2px;
+  }
+  .admin-latency-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--rw-charcoal);
+    font-variant-numeric: tabular-nums;
+  }
+  .admin-latency-warn { color: var(--rw-orange); }
+
+  /* Histogram */
+  .admin-histogram {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+  .admin-hist-row {
+    display: grid;
+    grid-template-columns: 64px 1fr 48px;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+  .admin-hist-label {
+    font-size: var(--text-xs);
+    color: var(--rw-mid-gray);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .admin-hist-bar-track {
+    height: 18px;
+    background: var(--rw-off-white);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .admin-hist-bar-fill {
+    height: 100%;
+    background: var(--rw-blue);
+    border-radius: 3px;
+    min-width: 2px;
+    transition: width 0.3s ease;
+  }
+  .admin-hist-count {
+    font-size: var(--text-xs);
+    color: var(--rw-dark-gray);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  /* Status codes */
+  .admin-status-table {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+  .admin-status-row {
+    display: grid;
+    grid-template-columns: 48px 1fr 56px;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+  .admin-code-badge {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    text-align: center;
+  }
+  .admin-code-2xx { background: #ecfdf5; color: #065f46; }
+  .admin-code-3xx { background: #eff6ff; color: #1e40af; }
+  .admin-code-4xx { background: #fffbeb; color: #92400e; }
+  .admin-code-5xx { background: #fef2f2; color: #991b1b; }
+
+  .admin-code-bar-track {
+    height: 14px;
+    background: var(--rw-off-white);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .admin-code-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    min-width: 2px;
+  }
+  .admin-bar-2xx { background: var(--rw-green); }
+  .admin-bar-3xx { background: var(--rw-blue); }
+  .admin-bar-4xx { background: var(--rw-yellow); }
+  .admin-bar-5xx { background: var(--rw-red); }
+
+  .admin-code-count {
+    font-size: var(--text-xs);
+    color: var(--rw-dark-gray);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  /* Job queue */
+  .admin-job-stats {
+    display: flex;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+  }
+  .admin-job-pill {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-4);
+    background: var(--rw-off-white);
+    border-radius: var(--radius-sm);
+  }
+  .admin-job-status {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .admin-job-completed { color: var(--rw-green); }
+  .admin-job-pending { color: var(--rw-yellow); }
+  .admin-job-running { color: var(--rw-blue); }
+  .admin-job-failed { color: var(--rw-red); }
+  .admin-job-count {
+    font-size: 1.125rem;
+    font-weight: 800;
+    color: var(--rw-charcoal);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Routes table */
+  .admin-routes-table {
+    overflow-x: auto;
+  }
+  .admin-routes-header,
+  .admin-routes-row {
+    display: grid;
+    grid-template-columns: 1fr 100px 80px 100px;
+    gap: var(--sp-2);
+    padding: var(--sp-2) 0;
+    align-items: center;
+  }
+  .admin-routes-header {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--rw-mid-gray);
+    border-bottom: 1px solid var(--rw-warm-gray);
+    padding-bottom: var(--sp-2);
+    margin-bottom: var(--sp-1);
+  }
+  .admin-routes-row {
+    border-bottom: 1px solid rgba(0,0,0,0.04);
+  }
+  .admin-routes-row:last-child { border-bottom: none; }
+
+  .admin-rt-pattern {
+    font-size: var(--text-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .admin-rt-pattern code {
+    font-size: var(--text-xs);
+    color: var(--rw-dark-gray);
+    background: var(--rw-off-white);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .admin-rt-num {
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    color: var(--rw-dark-gray);
+  }
+  .admin-text-error { color: var(--rw-red); font-weight: 600; }
+
+  .text-muted { color: var(--rw-mid-gray); }
+</style>
+{{end}}

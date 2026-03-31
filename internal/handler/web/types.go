@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
 )
@@ -164,6 +165,23 @@ type PageData struct {
 	ErrorCode    int
 	ErrorTitle   string
 	ErrorMessage string
+
+	// Admin — health dashboard
+	HealthChecks []HealthCheckResult
+	OverallHealth string // "healthy", "degraded", "down"
+
+	// Admin — metrics dashboard
+	MetricsData *middleware.MetricsSnapshot
+	Uptime      string // human-readable uptime
+	JobStats    map[string]int64
+}
+
+// HealthCheckResult represents one dependency check.
+type HealthCheckResult struct {
+	Name    string // "Database", "Storage", "Job Queue", etc.
+	Status  string // "ok", "error", "not_configured"
+	Details string // human-readable detail
+	Icon    string // SVG path data for the icon
 }
 
 // ArchiveFilterURL builds a clean /archive URL preserving the current date,

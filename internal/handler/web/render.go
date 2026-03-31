@@ -28,6 +28,8 @@ func (h *Handler) loadTemplates() {
 
 	// Parse each page template with the shared layout
 	pages := []string{
+		"admin/health.html",
+		"admin/metrics.html",
 		"setter/dashboard.html",
 		"setter/route-form.html",
 		"setter/route-manage.html",

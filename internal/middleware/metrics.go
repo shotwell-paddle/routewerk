@@ -162,6 +162,152 @@ func (m *Metrics) percentiles() (p50, p95, p99 float64) {
 	return pct(0.50), pct(0.95), pct(0.99)
 }
 
+// ── Snapshot (exported data for templates) ──────────────────────
+
+// MetricsSnapshot holds a point-in-time copy of all metrics, suitable for
+// rendering in HTML templates or serialising to JSON.
+type MetricsSnapshot struct {
+	UptimeSeconds  int
+	TotalRequests  int64
+	ActiveRequests int64
+	TotalErrors    int64
+	ClientErrors   int64
+	ErrorRate      float64 // percentage of 5xx / total
+	P50            float64
+	P95            float64
+	P99            float64
+	StatusCodes    []StatusCodeCount
+	Latency        []LatencyBucket
+	Routes         []RouteSnapshot
+}
+
+// StatusCodeCount is a (code, count, pct) tuple.
+type StatusCodeCount struct {
+	Code  int
+	Count int64
+	Pct   float64 // percentage of total requests
+}
+
+// LatencyBucket is a histogram bucket.
+type LatencyBucket struct {
+	Label string // e.g. "≤5ms"
+	Count int64
+	Pct   float64 // percentage of total
+}
+
+// RouteSnapshot holds per-route metrics.
+type RouteSnapshot struct {
+	Pattern  string
+	Requests int64
+	Errors   int64
+	AvgMs    float64
+}
+
+// Snapshot returns a point-in-time copy of all collected metrics.
+func (m *Metrics) Snapshot() MetricsSnapshot {
+	total := m.TotalRequests.Load()
+	errors := m.TotalErrors.Load()
+
+	var errorRate float64
+	if total > 0 {
+		errorRate = float64(errors) / float64(total) * 100
+	}
+
+	p50, p95, p99 := m.percentiles()
+
+	snap := MetricsSnapshot{
+		UptimeSeconds:  int(time.Since(m.startedAt).Seconds()),
+		TotalRequests:  total,
+		ActiveRequests: m.ActiveRequests.Load(),
+		TotalErrors:    errors,
+		ClientErrors:   m.TotalClientErrs.Load(),
+		ErrorRate:      errorRate,
+		P50:            p50,
+		P95:            p95,
+		P99:            p99,
+	}
+
+	// Status codes
+	m.statusCodes.Range(func(key, value interface{}) bool {
+		count := value.(*atomic.Int64).Load()
+		var pct float64
+		if total > 0 {
+			pct = float64(count) / float64(total) * 100
+		}
+		snap.StatusCodes = append(snap.StatusCodes, StatusCodeCount{
+			Code:  key.(int),
+			Count: count,
+			Pct:   pct,
+		})
+		return true
+	})
+	sort.Slice(snap.StatusCodes, func(i, j int) bool {
+		return snap.StatusCodes[i].Code < snap.StatusCodes[j].Code
+	})
+
+	// Latency histogram
+	for i, bound := range bucketBounds {
+		count := m.buckets[i].Load()
+		var pct float64
+		if total > 0 {
+			pct = float64(count) / float64(total) * 100
+		}
+		snap.Latency = append(snap.Latency, LatencyBucket{
+			Label: fmt.Sprintf("≤%dms", bound),
+			Count: count,
+			Pct:   pct,
+		})
+	}
+
+	// Per-route
+	m.routeMetrics.Range(func(key, value interface{}) bool {
+		rm := value.(*routeMetrics)
+		reqs := rm.requests.Load()
+		// Estimate avg from bucket midpoints
+		var totalMs int64
+		var counted int64
+		prevBound := int64(0)
+		for i, bound := range bucketBounds {
+			c := rm.buckets[i].Load()
+			midpoint := (prevBound + bound) / 2
+			totalMs += midpoint * c
+			counted += c
+			prevBound = bound
+		}
+		var avg float64
+		if counted > 0 {
+			avg = float64(totalMs) / float64(counted)
+		}
+		snap.Routes = append(snap.Routes, RouteSnapshot{
+			Pattern:  key.(string),
+			Requests: reqs,
+			Errors:   rm.errors.Load(),
+			AvgMs:    avg,
+		})
+		return true
+	})
+	sort.Slice(snap.Routes, func(i, j int) bool {
+		return snap.Routes[i].Requests > snap.Routes[j].Requests
+	})
+
+	return snap
+}
+
+// UptimeFormatted returns a human-readable uptime string.
+func (m *Metrics) UptimeFormatted() string {
+	d := time.Since(m.startedAt)
+	days := int(d.Hours()) / 24
+	hours := int(d.Hours()) % 24
+	mins := int(d.Minutes()) % 60
+	if days > 0 {
+		return fmt.Sprintf("%dd %dh %dm", days, hours, mins)
+	}
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm", hours, mins)
+	}
+	return fmt.Sprintf("%dm", mins)
+}
+
 // ── JSON Handler ────────────────────────────────────────────────
 
 // Handler returns an http.HandlerFunc that serves the metrics as JSON.

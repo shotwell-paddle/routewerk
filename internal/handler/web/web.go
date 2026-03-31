@@ -779,7 +779,7 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, da
 		// HTMX partial swap — render just the "content" block
 		if err := tmpl.ExecuteTemplate(w, "content", data); err != nil {
 			slog.Error("template render failed", "page", page, "error", err)
-			http.Error(w, "Something went wrong", http.StatusInternalServerError)
+			http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
 		}
 		return
 	}
@@ -787,7 +787,7 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, da
 	// Full page — render base.html which includes sidebar + content
 	if err := tmpl.ExecuteTemplate(w, page, data); err != nil {
 		slog.Error("template render failed", "page", page, "error", err)
-		http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
 	}
 }
 
@@ -817,7 +817,7 @@ func (h *Handler) renderError(w http.ResponseWriter, r *http.Request, code int, 
 
 	if err := tmpl.ExecuteTemplate(w, "error.html", data); err != nil {
 		slog.Error("error template render failed", "error", err)
-		http.Error(w, title, code)
+		http.Error(w, "render error: "+err.Error(), code)
 	}
 }
 

@@ -2,11 +2,15 @@ package webhandler
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/shotwell-paddle/routewerk/internal/database"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
@@ -124,7 +128,89 @@ func (h *Handler) GymCreate(w http.ResponseWriter, r *http.Request) {
 		newLoc.DayPassInfo = &dayPassInfo
 	}
 
-	if err := h.locationRepo.Create(ctx, newLoc); err != nil {
+	user := middleware.GetWebUser(ctx)
+
+	// Run location creation, settings defaults, and membership update in a transaction.
+	err := database.RunInTx(ctx, h.db, func(tx pgx.Tx) error {
+		// Create location
+		err := tx.QueryRow(ctx,
+			`INSERT INTO locations (org_id, name, slug, address, timezone, website_url, phone, hours_json, day_pass_info, waiver_url, allow_shared_setters, custom_domain) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id, created_at, updated_at`,
+			newLoc.OrgID, newLoc.Name, newLoc.Slug, newLoc.Address, newLoc.Timezone, newLoc.WebsiteURL, newLoc.Phone, newLoc.HoursJSON, newLoc.DayPassInfo, newLoc.WaiverURL, newLoc.AllowSharedSetters, newLoc.CustomDomain,
+		).Scan(&newLoc.ID, &newLoc.CreatedAt, &newLoc.UpdatedAt)
+		if err != nil {
+			return fmt.Errorf("create location: %w", err)
+		}
+
+		// Apply org-level grading defaults
+		var raw []byte
+		err = tx.QueryRow(ctx,
+			`SELECT COALESCE(settings_json, '{}'::jsonb) FROM organizations WHERE id = $1 AND deleted_at IS NULL`,
+			loc.OrgID,
+		).Scan(&raw)
+		if err != nil {
+			return fmt.Errorf("get org settings: %w", err)
+		}
+
+		orgSettings := model.DefaultOrgSettings()
+		if len(raw) > 2 {
+			if err := json.Unmarshal(raw, &orgSettings); err != nil {
+				return fmt.Errorf("parse org settings: %w", err)
+			}
+		}
+
+		locSettings := model.DefaultLocationSettings()
+		locSettings.Grading.BoulderMethod = orgSettings.Defaults.BoulderMethod
+		locSettings.Grading.RouteGradeFormat = orgSettings.Defaults.RouteGradeFormat
+		locSettings.Grading.ShowGradesOnCircuit = orgSettings.Defaults.ShowGradesOnCircuit
+
+		settingsJSON, _ := json.Marshal(locSettings)
+		_, err = tx.Exec(ctx,
+			`UPDATE locations SET settings_json = $1, updated_at = NOW() WHERE id = $2 AND deleted_at IS NULL`,
+			settingsJSON, newLoc.ID,
+		)
+		if err != nil {
+			return fmt.Errorf("apply defaults: %w", err)
+		}
+
+		// Ensure creator has org-scoped membership
+		if user != nil {
+			// Check if an org-scoped membership already exists
+			var exists bool
+			err = tx.QueryRow(ctx, `
+				SELECT EXISTS(
+					SELECT 1 FROM user_memberships
+					WHERE user_id = $1 AND org_id = $2 AND location_id IS NULL AND deleted_at IS NULL
+				)`, user.ID, loc.OrgID).Scan(&exists)
+			if err != nil {
+				return fmt.Errorf("check org membership: %w", err)
+			}
+
+			if !exists {
+				// Upgrade the user's location-scoped membership to org-scoped
+				_, err = tx.Exec(ctx, `
+					UPDATE user_memberships
+					SET location_id = NULL, role = $3, updated_at = NOW()
+					WHERE id = (
+						SELECT id FROM user_memberships
+						WHERE user_id = $1 AND org_id = $2 AND deleted_at IS NULL
+						ORDER BY CASE role
+							WHEN 'org_admin' THEN 1
+							WHEN 'gym_manager' THEN 2
+							WHEN 'head_setter' THEN 3
+							WHEN 'setter' THEN 4
+							ELSE 5
+						END
+						LIMIT 1
+					)`, user.ID, loc.OrgID, "org_admin")
+				if err != nil {
+					return fmt.Errorf("upgrade to org membership: %w", err)
+				}
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
 		slog.Error("create gym failed", "error", err)
 
 		orgName := ""
@@ -145,19 +231,7 @@ func (h *Handler) GymCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Apply org-level grading defaults to the new location's settings.
-	applyOrgDefaults(ctx, h.settingsRepo, loc.OrgID, newLoc.ID)
-
 	slog.Info("new gym created", "location_id", newLoc.ID, "name", name, "org_id", loc.OrgID)
-
-	// Ensure the creator has an org-scoped membership so the gym switcher
-	// shows all locations (not just the one they were originally tied to).
-	user := middleware.GetWebUser(ctx)
-	if user != nil {
-		if err := h.orgRepo.EnsureOrgScopedMembership(ctx, user.ID, loc.OrgID, "org_admin"); err != nil {
-			slog.Error("ensure org membership failed", "user_id", user.ID, "error", err)
-		}
-	}
 
 	// Redirect to the org settings page with success message
 	w.Header().Set("HX-Redirect", "/settings/organization?gym_created=1")

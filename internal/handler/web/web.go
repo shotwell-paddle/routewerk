@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shotwell-paddle/routewerk/internal/config"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
@@ -621,6 +622,7 @@ type Handler struct {
 	sessionMgr     *middleware.SessionManager
 	cfg            *config.Config
 	uploadSem      chan struct{} // limits concurrent image processing
+	db             *pgxpool.Pool
 }
 
 func NewHandler(
@@ -644,6 +646,7 @@ func NewHandler(
 	cardGen *service.CardGenerator,
 	sessionMgr *middleware.SessionManager,
 	cfg *config.Config,
+	db *pgxpool.Pool,
 ) *Handler {
 	h := &Handler{
 		routeRepo:      routeRepo,
@@ -668,6 +671,7 @@ func NewHandler(
 		sessionMgr:     sessionMgr,
 		cfg:            cfg,
 		uploadSem:      make(chan struct{}, 3), // limit concurrent image processing
+		db:             db,
 	}
 	h.loadTemplates()
 	return h

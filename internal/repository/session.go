@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 )
@@ -165,51 +164,38 @@ func (r *SessionRepo) ListByLocationWithDetails(ctx context.Context, locationID 
 		limit = 50
 	}
 
-	var rows pgx.Rows
-	var err error
-
 	filter := ""
 	if len(statusFilter) > 0 {
 		filter = statusFilter[0]
 	}
 
-	if filter == "open" {
-		query := `
+	// Build query with optional status filter to avoid three near-identical copies.
+	// The assignment count uses a LEFT JOIN + GROUP BY instead of a correlated subquery.
+	query := `
 		SELECT s.id, s.location_id, s.scheduled_date, s.status, s.notes, s.created_by,
 			s.created_at, s.updated_at,
 			COALESCE(u.display_name, 'Unknown') AS creator_name,
-			(SELECT COUNT(*) FROM setting_session_assignments a WHERE a.session_id = s.id) AS assignment_count
+			COUNT(a.id)::int AS assignment_count
 		FROM setting_sessions s
 		LEFT JOIN users u ON u.id = s.created_by
-		WHERE s.location_id = $1 AND s.status != 'complete'
-		ORDER BY s.scheduled_date DESC
-		LIMIT $2 OFFSET $3`
-		rows, err = r.db.Query(ctx, query, locationID, limit, offset)
-	} else if filter == "complete" {
-		query := `
-		SELECT s.id, s.location_id, s.scheduled_date, s.status, s.notes, s.created_by,
-			s.created_at, s.updated_at,
-			COALESCE(u.display_name, 'Unknown') AS creator_name,
-			(SELECT COUNT(*) FROM setting_session_assignments a WHERE a.session_id = s.id) AS assignment_count
-		FROM setting_sessions s
-		LEFT JOIN users u ON u.id = s.created_by
-		WHERE s.location_id = $1 AND s.status = 'complete'
-		ORDER BY s.scheduled_date DESC
-		LIMIT $2 OFFSET $3`
-		rows, err = r.db.Query(ctx, query, locationID, limit, offset)
-	} else {
-		query := `
-		SELECT s.id, s.location_id, s.scheduled_date, s.status, s.notes, s.created_by,
-			s.created_at, s.updated_at,
-			COALESCE(u.display_name, 'Unknown') AS creator_name,
-			(SELECT COUNT(*) FROM setting_session_assignments a WHERE a.session_id = s.id) AS assignment_count
-		FROM setting_sessions s
-		LEFT JOIN users u ON u.id = s.created_by
-		WHERE s.location_id = $1
-		ORDER BY s.scheduled_date DESC
-		LIMIT $2 OFFSET $3`
-		rows, err = r.db.Query(ctx, query, locationID, limit, offset)
+		LEFT JOIN setting_session_assignments a ON a.session_id = s.id
+		WHERE s.location_id = $1`
+
+	args := []interface{}{locationID}
+	switch filter {
+	case "open":
+		query += ` AND s.status != 'complete'`
+	case "complete":
+		query += ` AND s.status = 'complete'`
 	}
+
+	query += `
+		GROUP BY s.id, u.display_name
+		ORDER BY s.scheduled_date DESC
+		LIMIT $2 OFFSET $3`
+	args = append(args, limit, offset)
+
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions with details: %w", err)
 	}

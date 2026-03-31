@@ -1,7 +1,7 @@
 {{define "title"}}{{if .Route.Name}}{{deref .Route.Name}}{{else}}{{.Route.DisplayGrade}}{{end}} — Routewerk{{end}}
 
 {{define "content"}}
-<div class="page-header" style="border-bottom: none; padding-bottom: var(--sp-4);">
+<div class="page-header page-header-flat">
   <a href="/routes" class="btn btn-ghost btn-sm mb-4"
      hx-get="/routes" hx-target="#main-content" hx-push-url="true">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
@@ -11,10 +11,10 @@
   </a>
 </div>
 
-<div class="page-body" style="padding-top: 0;">
+<div class="page-body page-body-flush">
   <!-- Route hero -->
-  <div class="card" style="overflow: hidden; margin-bottom: var(--sp-6); padding: 0;">
-    <div style="height: 6px; background: {{.Route.SafeColor}};"></div>
+  <div class="card route-hero-card">
+    <div class="route-hero-bar" style="background: {{.Route.SafeColor}};"></div>
     <div class="route-hero-inner">
       <div class="route-hero-row">
         {{if .Route.IsCircuit}}
@@ -26,10 +26,10 @@
         <div class="grade-badge lg" style="--route-color: {{.Route.SafeColor}}">{{.Route.DisplayGrade}}</div>
         {{end}}
         <div style="flex: 1;">
-          <h1 style="font-size: var(--text-2xl); margin-bottom: var(--sp-1);">
+          <h1 class="route-title">
             {{if .Route.Name}}{{deref .Route.Name}}{{else}}{{.Route.RouteType | title}}{{end}}
           </h1>
-          <div class="route-meta" style="font-size: var(--text-base);">
+          <div class="route-meta route-meta-lg">
             <span>{{.WallName}}</span>
             {{if .SetterName}}<span class="route-meta-dot">Set by {{.SetterName}}</span>{{end}}
             <span class="route-meta-dot">{{.Route.DateSet | reltime}}</span>
@@ -127,7 +127,7 @@
   <div class="layout-split">
     <div class="layout-main">
       <!-- Stats row -->
-      <div class="stats-grid mb-6" style="grid-template-columns: repeat(4, 1fr);">
+      <div class="stats-grid stats-grid-4 mb-6">
         <div class="stat-card" style="--stat-accent: var(--rw-green)">
           <div class="stat-value">{{.Route.AscentCount}}</div>
           <div class="stat-label">Sends</div>
@@ -150,7 +150,7 @@
       {{template "consensus-section" .}}
 
       {{if .Route.Description}}
-      <div class="card" style="margin-bottom: var(--sp-6);">
+      <div class="card card-spaced">
         <h3 class="mb-2">Description</h3>
         <p style="color: var(--rw-dark-gray); line-height: 1.6;">{{deref .Route.Description}}</p>
       </div>
@@ -158,7 +158,7 @@
 
       <!-- Route Photos -->
       {{if or .Photos .CanUploadPhoto}}
-      <div class="card" style="margin-bottom: var(--sp-6);">
+      <div class="card card-spaced">
         <div class="flex items-center justify-between mb-4">
           <h3>Photos</h3>
           {{if .Photos}}<span class="text-sm text-muted">{{len .Photos}} photo{{if gt (len .Photos) 1}}s{{end}}</span>{{end}}
@@ -333,7 +333,7 @@ function copyRouteLink(btn) {
 
 {{/* Consensus section — returned by POST /routes/{id}/difficulty */}}
 {{define "consensus-section"}}
-<div class="card" style="margin-bottom: var(--sp-6);" id="consensus-section">
+<div class="card card-spaced" id="consensus-section">
   <div class="flex items-center justify-between mb-4">
     <h3>How does it feel?</h3>
     {{if .Consensus}}

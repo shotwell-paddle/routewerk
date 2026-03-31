@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -66,6 +66,6 @@ func (r *AuditRepo) Log(ctx context.Context, entry AuditEntry) {
 	)
 	if err != nil {
 		// Log but don't fail — audit is best-effort
-		fmt.Printf("AUDIT_LOG_ERROR: %v entry=%+v\n", err, entry)
+		slog.Error("audit log write failed", "error", err, "action", entry.Action, "resource", entry.Resource, "resource_id", entry.ResourceID)
 	}
 }

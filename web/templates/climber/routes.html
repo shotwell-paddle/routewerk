@@ -9,7 +9,7 @@
     </div>
     <div class="flex gap-3">
       {{if .FormWalls}}
-      <select class="form-select" style="width: auto; padding: 6px 12px; font-size: var(--text-sm);"
+      <select class="form-select form-select-inline"
               hx-get="/routes" hx-target="#main-content" hx-push-url="true"
               hx-include="[name='type']"
               name="wall">
@@ -19,7 +19,7 @@
         {{end}}
       </select>
       {{end}}
-      <select class="form-select" style="width: auto; padding: 6px 12px; font-size: var(--text-sm);"
+      <select class="form-select form-select-inline"
               hx-get="/routes" hx-target="#route-list" hx-include="[name='filter']"
               name="sort">
         <option value="newest">Newest first</option>

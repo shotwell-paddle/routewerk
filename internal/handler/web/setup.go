@@ -1,10 +1,14 @@
 package webhandler
 
 import (
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/shotwell-paddle/routewerk/internal/database"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 )
@@ -60,20 +64,13 @@ func (h *Handler) SetupSubmit(w http.ResponseWriter, r *http.Request) {
 		timezone = "America/Chicago"
 	}
 
-	// Create the organization.
+	// Run org creation, location creation, defaults, and membership in a single transaction.
 	org := &model.Organization{
 		Name: orgName,
 		Slug: gymSlugify(orgName),
 	}
-	if err := h.orgRepo.Create(ctx, org); err != nil {
-		slog.Error("setup: failed to create org", "error", err)
-		h.renderSetup(w, r, "Something went wrong. Please try again.", user.DisplayName, orgName, gymName, address, timezone)
-		return
-	}
-
-	// Create the first location.
 	loc := &model.Location{
-		OrgID:    org.ID,
+		OrgID:    "", // set after org insert
 		Name:     gymName,
 		Slug:     gymSlugify(gymName),
 		Timezone: timezone,
@@ -81,23 +78,51 @@ func (h *Handler) SetupSubmit(w http.ResponseWriter, r *http.Request) {
 	if address != "" {
 		loc.Address = &address
 	}
-	if err := h.locationRepo.Create(ctx, loc); err != nil {
-		slog.Error("setup: failed to create location", "error", err)
-		h.renderSetup(w, r, "Something went wrong. Please try again.", user.DisplayName, orgName, gymName, address, timezone)
-		return
-	}
 
-	// Apply org-level grading defaults to the new location.
-	applyOrgDefaults(ctx, h.settingsRepo, org.ID, loc.ID)
+	err := database.RunInTx(ctx, h.db, func(tx pgx.Tx) error {
+		// Create org
+		err := tx.QueryRow(ctx,
+			`INSERT INTO organizations (name, slug, logo_url) VALUES ($1, $2, $3) RETURNING id, created_at, updated_at`,
+			org.Name, org.Slug, nil,
+		).Scan(&org.ID, &org.CreatedAt, &org.UpdatedAt)
+		if err != nil {
+			return fmt.Errorf("create org: %w", err)
+		}
 
-	// Create org_admin membership for the current user (org-scoped, no location_id).
-	membership := &model.UserMembership{
-		UserID: user.ID,
-		OrgID:  org.ID,
-		Role:   "org_admin",
-	}
-	if err := h.orgRepo.AddMember(ctx, membership); err != nil {
-		slog.Error("setup: failed to create admin membership", "error", err)
+		// Create location
+		loc.OrgID = org.ID
+		err = tx.QueryRow(ctx,
+			`INSERT INTO locations (org_id, name, slug, address, timezone, website_url, phone, hours_json, day_pass_info, waiver_url, allow_shared_setters, custom_domain) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id, created_at, updated_at`,
+			loc.OrgID, loc.Name, loc.Slug, loc.Address, loc.Timezone, loc.WebsiteURL, loc.Phone, loc.HoursJSON, loc.DayPassInfo, loc.WaiverURL, loc.AllowSharedSetters, loc.CustomDomain,
+		).Scan(&loc.ID, &loc.CreatedAt, &loc.UpdatedAt)
+		if err != nil {
+			return fmt.Errorf("create location: %w", err)
+		}
+
+		// Apply org-level grading defaults
+		defaults := model.DefaultLocationSettings()
+		settingsJSON, _ := json.Marshal(defaults)
+		_, err = tx.Exec(ctx,
+			`UPDATE locations SET settings_json = $1, updated_at = NOW() WHERE id = $2 AND deleted_at IS NULL`,
+			settingsJSON, loc.ID,
+		)
+		if err != nil {
+			return fmt.Errorf("apply defaults: %w", err)
+		}
+
+		// Create org_admin membership
+		_, err = tx.Exec(ctx,
+			`INSERT INTO user_memberships (user_id, org_id, location_id, role, specialties) VALUES ($1, $2, $3, $4, $5)`,
+			user.ID, org.ID, nil, "org_admin", nil,
+		)
+		if err != nil {
+			return fmt.Errorf("create membership: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		slog.Error("setup: transaction failed", "error", err)
 		h.renderSetup(w, r, "Something went wrong. Please try again.", user.DisplayName, orgName, gymName, address, timezone)
 		return
 	}

@@ -1,6 +1,7 @@
 package webhandler
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"regexp"
@@ -9,9 +10,21 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shotwell-paddle/routewerk/internal/config"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
+	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
 	"github.com/shotwell-paddle/routewerk/internal/service"
 )
+
+// SettingsStore abstracts settings access so the handler can work with
+// either a direct SettingsRepo or a CachedSettingsRepo.
+type SettingsStore interface {
+	GetLocationSettings(ctx context.Context, locationID string) (model.LocationSettings, error)
+	UpdateLocationSettings(ctx context.Context, locationID string, settings model.LocationSettings) error
+	GetOrgSettings(ctx context.Context, orgID string) (model.OrgSettings, error)
+	UpdateOrgSettings(ctx context.Context, orgID string, settings model.OrgSettings) error
+	GetUserSettings(ctx context.Context, userID string) (model.UserSettings, error)
+	UpdateUserSettings(ctx context.Context, userID string, settings model.UserSettings) error
+}
 
 // ── Validation ───────────────────────────────────────────────────
 
@@ -55,7 +68,7 @@ type Handler struct {
 	analyticsRepo  *repository.AnalyticsRepo
 	webSessionRepo *repository.WebSessionRepo
 	photoRepo      *repository.RoutePhotoRepo
-	settingsRepo   *repository.SettingsRepo
+	settingsRepo   SettingsStore
 	authService    *service.AuthService
 	storageService *service.StorageService
 	cardGen        *service.CardGenerator
@@ -81,7 +94,7 @@ func NewHandler(
 	analyticsRepo *repository.AnalyticsRepo,
 	webSessionRepo *repository.WebSessionRepo,
 	photoRepo *repository.RoutePhotoRepo,
-	settingsRepo *repository.SettingsRepo,
+	settingsRepo SettingsStore,
 	userTagRepo *repository.UserTagRepo,
 	authService *service.AuthService,
 	storageService *service.StorageService,

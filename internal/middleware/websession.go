@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/shotwell-paddle/routewerk/internal/model"
+	"github.com/shotwell-paddle/routewerk/internal/rbac"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
 )
 
@@ -238,8 +239,7 @@ func (sm *SessionManager) OptionalSession(next http.Handler) http.Handler {
 func RequireSetterSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		role := GetWebRole(r.Context())
-		rank, ok := roleRank[role]
-		if !ok || rank < roleRank["setter"] {
+		if !rbac.IsAtLeast(role, rbac.RoleSetter) {
 			if r.Header.Get("HX-Request") == "true" {
 				w.Header().Set("HX-Redirect", "/routes")
 				w.WriteHeader(http.StatusForbidden)
@@ -323,8 +323,8 @@ func bestRole(memberships []model.UserMembership, locationID *string) string {
 			continue
 		}
 
-		rank, ok := roleRank[m.Role]
-		if !ok {
+		rank := rbac.RankValue(m.Role)
+		if rank == 0 {
 			continue
 		}
 		if rank > bestRank {

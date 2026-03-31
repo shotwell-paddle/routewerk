@@ -14,7 +14,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shotwell-paddle/routewerk/internal/config"
 	"github.com/shotwell-paddle/routewerk/internal/database"
+	"github.com/shotwell-paddle/routewerk/internal/jobs"
+	"github.com/shotwell-paddle/routewerk/internal/repository"
 	"github.com/shotwell-paddle/routewerk/internal/router"
+	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
 func main() {
@@ -42,10 +45,11 @@ func main() {
 
 	// Connect to database
 	db, err := database.Connect(cfg.DatabaseURL, cfg.IsDev(), database.PoolConfig{
-		MaxConns:        cfg.DBMaxConns,
-		MinConns:        cfg.DBMinConns,
-		MaxConnLifetime: cfg.DBMaxConnLifetime,
-		MaxConnIdleTime: cfg.DBMaxConnIdleTime,
+		MaxConns:          cfg.DBMaxConns,
+		MinConns:          cfg.DBMinConns,
+		MaxConnLifetime:   cfg.DBMaxConnLifetime,
+		MaxConnIdleTime:   cfg.DBMaxConnIdleTime,
+		HealthCheckPeriod: cfg.DBHealthCheckPeriod,
 	})
 	if err != nil {
 		slog.Error("failed to connect to database", "error", err)
@@ -56,6 +60,28 @@ func main() {
 
 	// Background housekeeping — clean up expired web sessions every hour
 	go cleanupExpiredSessions(db)
+
+	// Job queue — lightweight Postgres-backed async processing
+	jobQueue := jobs.NewQueue(db)
+
+	// Email service — sends transactional emails via SMTP (logs in dev)
+	emailSvc := service.NewEmailService(service.EmailConfig{
+		Host:     cfg.SMTPHost,
+		Port:     cfg.SMTPPort,
+		Username: cfg.SMTPUsername,
+		Password: cfg.SMTPPassword,
+		From:     cfg.SMTPFrom,
+	}, cfg.FrontendURL)
+	emailSvc.RegisterHandlers(jobQueue)
+
+	// Notification service — in-app notifications backed by job queue
+	notifRepo := repository.NewNotificationRepo(db)
+	notifSvc := service.NewNotificationService(notifRepo, jobQueue)
+	notifSvc.RegisterHandlers(jobQueue)
+
+	// Start job queue worker
+	stopJobs := jobQueue.Start(context.Background())
+	defer stopJobs()
 
 	// Build router
 	r := router.New(cfg, db)

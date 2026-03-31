@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/shotwell-paddle/routewerk/internal/database"
 )
 
 type AnalyticsRepo struct {
@@ -18,6 +19,9 @@ func NewAnalyticsRepo(db *pgxpool.Pool) *AnalyticsRepo {
 
 // LocationDashboardStats returns the summary numbers for the setter dashboard.
 func (r *AnalyticsRepo) LocationDashboardStats(ctx context.Context, locationID string) (*LocationDashboard, error) {
+	ctx, cancel := database.QueryTimeout(ctx, database.TimeoutLong)
+	defer cancel()
+
 	d := &LocationDashboard{}
 
 	// Route summary
@@ -128,6 +132,9 @@ func (r *AnalyticsRepo) RouteLifecycle(ctx context.Context, locationID string) (
 
 // Engagement returns climber activity metrics for a location.
 func (r *AnalyticsRepo) Engagement(ctx context.Context, locationID string, days int) (*EngagementStats, error) {
+	ctx, cancel := database.QueryTimeout(ctx, database.TimeoutLong)
+	defer cancel()
+
 	if days <= 0 {
 		days = 30
 	}
@@ -179,6 +186,9 @@ func (r *AnalyticsRepo) Engagement(ctx context.Context, locationID string, days 
 
 // SetterProductivity returns per-setter metrics for a location.
 func (r *AnalyticsRepo) SetterProductivity(ctx context.Context, locationID string, days int) ([]SetterStats, error) {
+	ctx, cancel := database.QueryTimeout(ctx, database.TimeoutLong)
+	defer cancel()
+
 	if days <= 0 {
 		days = 30
 	}
@@ -257,6 +267,9 @@ func (r *AnalyticsRepo) RecentActivity(ctx context.Context, locationID string, l
 
 // OrgOverview returns high-level metrics across all locations in an org.
 func (r *AnalyticsRepo) OrgOverview(ctx context.Context, orgID string) ([]LocationOverview, error) {
+	ctx, cancel := database.QueryTimeout(ctx, database.TimeoutLong)
+	defer cancel()
+
 	query := `
 		SELECT l.id, l.name,
 			COUNT(DISTINCT r.id) FILTER (WHERE r.status = 'active' AND r.deleted_at IS NULL) as active_routes,

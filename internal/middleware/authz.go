@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/shotwell-paddle/routewerk/internal/rbac"
 )
 
 // ============================================================
@@ -32,45 +33,25 @@ func GetMembership(ctx context.Context) *Membership {
 	return v
 }
 
-// Role constants avoid magic strings throughout the codebase.
+// Role constants — delegated to the centralized rbac package.
+// Re-exported here for backward compatibility with existing middleware consumers.
 const (
-	RoleClimber    = "climber"
-	RoleSetter     = "setter"
-	RoleHeadSetter = "head_setter"
-	RoleGymManager = "gym_manager"
-	RoleOrgAdmin   = "org_admin"
+	RoleClimber    = rbac.RoleClimber
+	RoleSetter     = rbac.RoleSetter
+	RoleHeadSetter = rbac.RoleHeadSetter
+	RoleGymManager = rbac.RoleGymManager
+	RoleOrgAdmin   = rbac.RoleOrgAdmin
 )
-
-// roleRank maps roles to a numeric rank for >= comparisons.
-// Higher rank = more privileges.
-var roleRank = map[string]int{
-	RoleClimber:    1,
-	RoleSetter:     2,
-	RoleHeadSetter: 3,
-	RoleGymManager: 4,
-	RoleOrgAdmin:   5,
-}
 
 // RoleRankValue returns the numeric rank for a role string.
 // Exported for use by the web handler's view-as-role feature.
 func RoleRankValue(role string) int {
-	return roleRank[role]
+	return rbac.RankValue(role)
 }
 
-// hasRole checks whether the user's role is at least as privileged as one of the required roles.
-// We use the lowest-ranked required role as the threshold — if you pass {"setter", "head_setter"},
-// any role >= setter qualifies.
+// hasRole delegates to rbac.HasAnyRole.
 func hasRole(userRole string, required []string) bool {
-	userRank, ok := roleRank[userRole]
-	if !ok {
-		return false
-	}
-	for _, r := range required {
-		if rank, ok := roleRank[r]; ok && userRank >= rank {
-			return true
-		}
-	}
-	return false
+	return rbac.HasAnyRole(userRole, required...)
 }
 
 // ============================================================

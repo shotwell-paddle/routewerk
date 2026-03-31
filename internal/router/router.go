@@ -114,7 +114,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) *chi.Mux {
 	// ── Web Frontend (HTMX) ────────────────────────────────────
 	difficultyRepo := repository.NewDifficultyRepo(db)
 	photoRepo := repository.NewRoutePhotoRepo(db)
-	settingsRepo := repository.NewSettingsRepo(db)
+	settingsRepo := repository.NewCachedSettingsRepo(repository.NewSettingsRepo(db))
 	userTagRepo := repository.NewUserTagRepo(db)
 	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, authService, storageSvc, cardGen, sessionMgr, cfg, db)
 

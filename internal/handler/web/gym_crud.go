@@ -13,7 +13,6 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/database"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
-	"github.com/shotwell-paddle/routewerk/internal/repository"
 )
 
 // ── Gym Creation (org_admin only) ────────────────────────────
@@ -405,7 +404,7 @@ func nilIfEmpty(s string) *string {
 // applyOrgDefaults reads the organization's default grading preferences and
 // applies them to a newly created location's settings. Non-fatal — if anything
 // fails the location just keeps the hardcoded defaults.
-func applyOrgDefaults(ctx context.Context, settingsRepo *repository.SettingsRepo, orgID, locationID string) {
+func applyOrgDefaults(ctx context.Context, settingsRepo SettingsStore, orgID, locationID string) {
 	orgSettings, err := settingsRepo.GetOrgSettings(ctx, orgID)
 	if err != nil {
 		slog.Error("load org defaults for new gym", "org_id", orgID, "error", err)

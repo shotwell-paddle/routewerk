@@ -25,21 +25,30 @@ type Config struct {
 	ExtraOrigins        []string // additional allowed CORS origins
 	SessionSecret       string
 	SessionMaxAge       time.Duration
-	DBMaxConns          int32
-	DBMinConns          int32
-	DBMaxConnLifetime   time.Duration
-	DBMaxConnIdleTime   time.Duration
-	QueryTimeout        time.Duration
+	DBMaxConns            int32
+	DBMinConns            int32
+	DBMaxConnLifetime     time.Duration
+	DBMaxConnIdleTime     time.Duration
+	DBHealthCheckPeriod   time.Duration
+	QueryTimeout          time.Duration
+
+	// SMTP (optional — if not configured, emails are logged to stdout)
+	SMTPHost     string
+	SMTPPort     string
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string
 }
 
 func Load() *Config {
 	jwtExpiry, _ := time.ParseDuration(getEnv("JWT_EXPIRY", "15m"))
 	refreshExpiry, _ := time.ParseDuration(getEnv("REFRESH_TOKEN_EXPIRY", "720h"))
 	sessionMaxAge, _ := time.ParseDuration(getEnv("SESSION_MAX_AGE", "720h")) // 30 days
-	dbMaxConns := getEnvInt("DB_MAX_CONNS", 10)
-	dbMinConns := getEnvInt("DB_MIN_CONNS", 2)
-	dbMaxConnLifetime, _ := time.ParseDuration(getEnv("DB_MAX_CONN_LIFETIME", "1h"))
-	dbMaxConnIdleTime, _ := time.ParseDuration(getEnv("DB_MAX_CONN_IDLE_TIME", "30m"))
+	dbMaxConns := getEnvInt("DB_MAX_CONNS", 5)
+	dbMinConns := getEnvInt("DB_MIN_CONNS", 1)
+	dbMaxConnLifetime, _ := time.ParseDuration(getEnv("DB_MAX_CONN_LIFETIME", "30m"))
+	dbMaxConnIdleTime, _ := time.ParseDuration(getEnv("DB_MAX_CONN_IDLE_TIME", "5m"))
+	dbHealthCheckPeriod, _ := time.ParseDuration(getEnv("DB_HEALTH_CHECK_PERIOD", "30s"))
 	queryTimeout, _ := time.ParseDuration(getEnv("QUERY_TIMEOUT", "5s"))
 
 	return &Config{
@@ -59,11 +68,18 @@ func Load() *Config {
 		ExtraOrigins:       parseOrigins(getEnv("EXTRA_ORIGINS", "")),
 		SessionSecret:      getEnv("SESSION_SECRET", "change-me-session"),
 		SessionMaxAge:      sessionMaxAge,
-		DBMaxConns:         int32(dbMaxConns),
-		DBMinConns:         int32(dbMinConns),
-		DBMaxConnLifetime:  dbMaxConnLifetime,
-		DBMaxConnIdleTime:  dbMaxConnIdleTime,
+		DBMaxConns:          int32(dbMaxConns),
+		DBMinConns:          int32(dbMinConns),
+		DBMaxConnLifetime:   dbMaxConnLifetime,
+		DBMaxConnIdleTime:   dbMaxConnIdleTime,
+		DBHealthCheckPeriod: dbHealthCheckPeriod,
 		QueryTimeout:       queryTimeout,
+
+		SMTPHost:     getEnv("SMTP_HOST", ""),
+		SMTPPort:     getEnv("SMTP_PORT", "587"),
+		SMTPUsername: getEnv("SMTP_USERNAME", ""),
+		SMTPPassword: getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:     getEnv("SMTP_FROM", ""),
 	}
 }
 

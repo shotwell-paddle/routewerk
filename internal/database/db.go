@@ -14,11 +14,36 @@ import (
 // environments, it refuses to connect without TLS (sslmode=disable is
 // rejected and the absence of an sslmode parameter defaults to require).
 // PoolConfig holds tunable connection pool parameters.
+//
+// Fly.io tuning notes:
+//   - Shared Postgres allows ~25 connections. With 2 app instances, keep
+//     MaxConns at 5 per instance (10 total + headroom for migrations).
+//   - MinConns = 1 keeps one warm connection while not wasting resources
+//     on idle shared-CPU VMs.
+//   - MaxConnLifetime = 30min prevents stale connections after Fly proxy
+//     restarts (their internal proxy can silently drop connections).
+//   - MaxConnIdleTime = 5min aggressively reclaims idle connections since
+//     Fly charges per-connection memory on shared Postgres.
+//   - HealthCheckPeriod = 30s catches dead connections from Fly proxy
+//     restarts before they cause user-facing errors.
 type PoolConfig struct {
-	MaxConns        int32
-	MinConns        int32
-	MaxConnLifetime time.Duration
-	MaxConnIdleTime time.Duration
+	MaxConns          int32
+	MinConns          int32
+	MaxConnLifetime   time.Duration
+	MaxConnIdleTime   time.Duration
+	HealthCheckPeriod time.Duration
+}
+
+// DefaultPoolConfig returns conservative defaults suitable for Fly.io
+// shared Postgres. Override via DB_MAX_CONNS, DB_MIN_CONNS, etc. env vars.
+func DefaultPoolConfig() PoolConfig {
+	return PoolConfig{
+		MaxConns:          5,
+		MinConns:          1,
+		MaxConnLifetime:   30 * time.Minute,
+		MaxConnIdleTime:   5 * time.Minute,
+		HealthCheckPeriod: 30 * time.Second,
+	}
 }
 
 func Connect(databaseURL string, isDev bool, poolCfg ...PoolConfig) (*pgxpool.Pool, error) {
@@ -36,7 +61,11 @@ func Connect(databaseURL string, isDev bool, poolCfg ...PoolConfig) (*pgxpool.Po
 	}
 
 	// Apply pool settings from caller, or use sensible defaults.
-	pc := PoolConfig{MaxConns: 10, MinConns: 2, MaxConnLifetime: 1 * time.Hour, MaxConnIdleTime: 30 * time.Minute}
+	// Fly.io shared Postgres typically allows ~25 connections total. With
+	// 2 app instances each running a job queue worker, we default to 5 max
+	// conns per instance to stay well within limits and leave headroom for
+	// admin connections and migrations.
+	pc := DefaultPoolConfig()
 	if len(poolCfg) > 0 {
 		pc = poolCfg[0]
 	}
@@ -44,6 +73,10 @@ func Connect(databaseURL string, isDev bool, poolCfg ...PoolConfig) (*pgxpool.Po
 	config.MinConns = pc.MinConns
 	config.MaxConnLifetime = pc.MaxConnLifetime
 	config.MaxConnIdleTime = pc.MaxConnIdleTime
+	config.HealthCheckPeriod = pc.HealthCheckPeriod
+
+	// Attach slow-query tracer — logs any query exceeding SlowQueryThreshold.
+	config.ConnConfig.Tracer = &queryTracer{}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

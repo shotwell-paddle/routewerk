@@ -322,5 +322,15 @@ func (h *Handler) PasswordChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprint(w, `<div class="form-alert form-alert-success mb-4">Password updated.</div>`)
+	// Revoke all other sessions — the current session stays valid, but every
+	// other browser/device is forced to re-authenticate with the new password.
+	if session := middleware.GetWebSession(ctx); session != nil {
+		if revoked, err := h.webSessionRepo.RevokeAllForUserExcept(ctx, user.ID, session.ID); err != nil {
+			slog.Error("session revocation after password change failed", "user_id", user.ID, "error", err)
+		} else if revoked > 0 {
+			slog.Info("revoked sessions after password change", "user_id", user.ID, "revoked", revoked)
+		}
+	}
+
+	fmt.Fprint(w, `<div class="form-alert form-alert-success mb-4">Password updated. Other sessions have been signed out.</div>`)
 }

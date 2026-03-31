@@ -29,15 +29,15 @@ func (r *WebSessionRepo) Create(ctx context.Context, s *model.WebSession) error 
 	).Scan(&s.ID, &s.CreatedAt, &s.LastSeenAt)
 }
 
-// GetByTokenHash fetches a non-expired session by its token hash.
-// Returns nil if not found or expired.
+// GetByTokenHash fetches a non-expired, non-revoked session by its token hash.
+// Returns nil if not found, expired, or revoked.
 func (r *WebSessionRepo) GetByTokenHash(ctx context.Context, tokenHash string) (*model.WebSession, error) {
 	s := &model.WebSession{}
 	err := r.db.QueryRow(ctx, `
 		SELECT id, user_id, location_id, token_hash, ip_address::text, user_agent,
 		       created_at, expires_at, last_seen_at
 		FROM web_sessions
-		WHERE token_hash = $1 AND expires_at > NOW()`,
+		WHERE token_hash = $1 AND expires_at > NOW() AND revoked_at IS NULL`,
 		tokenHash,
 	).Scan(
 		&s.ID, &s.UserID, &s.LocationID, &s.TokenHash,
@@ -80,6 +80,35 @@ func (r *WebSessionRepo) DeleteAllForUser(ctx context.Context, userID string) er
 	return err
 }
 
+// RevokeAllForUser soft-revokes every active session for a user by setting
+// revoked_at. Use this on password change, role change, or forced logout so
+// the sessions remain in the DB for audit purposes but are no longer valid.
+func (r *WebSessionRepo) RevokeAllForUser(ctx context.Context, userID string) (int64, error) {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE web_sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`,
+		userID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// RevokeAllForUserExcept soft-revokes all sessions for a user except the given
+// session ID. Use this when a user changes their password — invalidate all
+// other sessions but keep the current one alive.
+func (r *WebSessionRepo) RevokeAllForUserExcept(ctx context.Context, userID, keepSessionID string) (int64, error) {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE web_sessions SET revoked_at = NOW()
+		 WHERE user_id = $1 AND id != $2 AND revoked_at IS NULL`,
+		userID, keepSessionID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 // DeleteExpired cleans up expired sessions. Call periodically.
 func (r *WebSessionRepo) DeleteExpired(ctx context.Context) (int64, error) {
 	tag, err := r.db.Exec(ctx,
@@ -106,7 +135,7 @@ func (r *WebSessionRepo) ListForUser(ctx context.Context, userID string) ([]mode
 		SELECT id, user_id, location_id, ip_address::text, user_agent,
 		       created_at, expires_at, last_seen_at
 		FROM web_sessions
-		WHERE user_id = $1 AND expires_at > NOW()
+		WHERE user_id = $1 AND expires_at > NOW() AND revoked_at IS NULL
 		ORDER BY last_seen_at DESC`,
 		userID,
 	)
@@ -134,7 +163,7 @@ func (r *WebSessionRepo) ListForUser(ctx context.Context, userID string) ([]mode
 func (r *WebSessionRepo) CountForUser(ctx context.Context, userID string) (int, error) {
 	var count int
 	err := r.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM web_sessions WHERE user_id = $1 AND expires_at > NOW()`,
+		`SELECT COUNT(*) FROM web_sessions WHERE user_id = $1 AND expires_at > NOW() AND revoked_at IS NULL`,
 		userID,
 	).Scan(&count)
 	return count, err
@@ -150,7 +179,7 @@ func (r *WebSessionRepo) EnforceLimit(ctx context.Context, userID string) error 
 		DELETE FROM web_sessions
 		WHERE id IN (
 			SELECT id FROM web_sessions
-			WHERE user_id = $1 AND expires_at > NOW()
+			WHERE user_id = $1 AND expires_at > NOW() AND revoked_at IS NULL
 			ORDER BY last_seen_at DESC
 			OFFSET $2
 		)`,

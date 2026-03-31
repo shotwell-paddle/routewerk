@@ -25,7 +25,7 @@ func TestBuildGradeGroups_VScale(t *testing.T) {
 		{GradingSystem: "v_scale", Grade: "V10", RouteType: "boulder", Count: 1},
 	}
 
-	groups := buildGradeGroups(dist, ptrLocSettings())
+	groups := buildGradeGroups(dist, ptrLocSettings(), true)
 
 	// Should produce 5 V-scale buckets
 	if len(groups) != 5 {
@@ -66,7 +66,7 @@ func TestBuildGradeGroups_YDS(t *testing.T) {
 		{GradingSystem: "yds", Grade: "5.13b", RouteType: "route", Count: 1},
 	}
 
-	groups := buildGradeGroups(dist, ptrLocSettings())
+	groups := buildGradeGroups(dist, ptrLocSettings(), true)
 
 	if len(groups) != 5 {
 		t.Fatalf("expected 5 grade groups, got %d", len(groups))
@@ -99,7 +99,7 @@ func TestBuildGradeGroups_Mixed(t *testing.T) {
 		{GradingSystem: "yds", Grade: "5.10a", RouteType: "route", Count: 3},
 	}
 
-	groups := buildGradeGroups(dist, ptrLocSettings())
+	groups := buildGradeGroups(dist, ptrLocSettings(), true)
 
 	// V-scale comes first, then YDS
 	if len(groups) != 2 {
@@ -131,7 +131,7 @@ func TestBuildGradeGroups_SkipsEmptyBuckets(t *testing.T) {
 		{GradingSystem: "v_scale", Grade: "V9", RouteType: "boulder", Count: 2},
 	}
 
-	groups := buildGradeGroups(dist, ptrLocSettings())
+	groups := buildGradeGroups(dist, ptrLocSettings(), true)
 	if len(groups) != 1 {
 		t.Fatalf("expected 1 group, got %d", len(groups))
 	}

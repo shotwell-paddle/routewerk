@@ -114,12 +114,12 @@ func TestBuildGradeGroups_Mixed(t *testing.T) {
 }
 
 func TestBuildGradeGroups_Empty(t *testing.T) {
-	groups := buildGradeGroups(nil, ptrLocSettings())
+	groups := buildGradeGroups(nil, ptrLocSettings(), true)
 	if len(groups) != 0 {
 		t.Errorf("expected 0 groups for nil input, got %d", len(groups))
 	}
 
-	groups = buildGradeGroups([]repository.GradeCount{}, ptrLocSettings())
+	groups = buildGradeGroups([]repository.GradeCount{}, ptrLocSettings(), true)
 	if len(groups) != 0 {
 		t.Errorf("expected 0 groups for empty input, got %d", len(groups))
 	}

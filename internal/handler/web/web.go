@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -201,6 +202,33 @@ type PageData struct {
 	ErrorCode    int
 	ErrorTitle   string
 	ErrorMessage string
+}
+
+// ArchiveFilterURL builds a clean /archive URL preserving the current date,
+// type, and wall filters while setting the grade filter to the given value.
+// This avoids inline URL construction in templates which html/template's
+// context-aware escaping rejects as ambiguous.
+func (pd *PageData) ArchiveFilterURL(grade string) string {
+	params := url.Values{}
+	if grade != "" {
+		params.Set("grade", grade)
+	}
+	if pd.TypeFilter != "" {
+		params.Set("type", pd.TypeFilter)
+	}
+	if pd.WallFilter != "" {
+		params.Set("wall", pd.WallFilter)
+	}
+	if pd.DateFrom != "" {
+		params.Set("from", pd.DateFrom)
+	}
+	if pd.DateTo != "" {
+		params.Set("to", pd.DateTo)
+	}
+	if len(params) == 0 {
+		return "/archive"
+	}
+	return "/archive?" + params.Encode()
 }
 
 type ConsensusData struct {
@@ -779,7 +807,7 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, da
 		// HTMX partial swap — render just the "content" block
 		if err := tmpl.ExecuteTemplate(w, "content", data); err != nil {
 			slog.Error("template render failed", "page", page, "error", err)
-			http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Something went wrong", http.StatusInternalServerError)
 		}
 		return
 	}
@@ -787,7 +815,7 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, da
 	// Full page — render base.html which includes sidebar + content
 	if err := tmpl.ExecuteTemplate(w, page, data); err != nil {
 		slog.Error("template render failed", "page", page, "error", err)
-		http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Something went wrong", http.StatusInternalServerError)
 	}
 }
 
@@ -817,7 +845,7 @@ func (h *Handler) renderError(w http.ResponseWriter, r *http.Request, code int, 
 
 	if err := tmpl.ExecuteTemplate(w, "error.html", data); err != nil {
 		slog.Error("error template render failed", "error", err)
-		http.Error(w, "render error: "+err.Error(), code)
+		http.Error(w, title, code)
 	}
 }
 

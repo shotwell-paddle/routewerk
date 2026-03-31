@@ -53,16 +53,16 @@
 
     {{if .GradeGroups}}
     <div class="filter-bar mt-3">
-      <a href="/archive{{if .TypeFilter}}?type={{.TypeFilter}}{{end}}{{if .DateFrom}}&from={{.DateFrom}}{{end}}{{if .DateTo}}&to={{.DateTo}}{{end}}"
+      <a href="{{.ArchiveFilterURL ""}}"
          class="filter-chip {{if eq .GradeFilter ""}}active{{end}}"
-         hx-get="/archive{{if .TypeFilter}}?type={{.TypeFilter}}{{end}}{{if .DateFrom}}&from={{.DateFrom}}{{end}}{{if .DateTo}}&to={{.DateTo}}{{end}}"
+         hx-get="{{.ArchiveFilterURL ""}}"
          hx-target="#main-content" hx-push-url="true">
         All grades
       </a>
       {{range .GradeGroups}}
-      <a href="/archive?grade={{.Value}}{{if $.TypeFilter}}&type={{$.TypeFilter}}{{end}}{{if $.DateFrom}}&from={{$.DateFrom}}{{end}}{{if $.DateTo}}&to={{$.DateTo}}{{end}}"
+      <a href="{{$.ArchiveFilterURL .Value}}"
          class="filter-chip {{if eq $.GradeFilter .Value}}active{{end}}"
-         hx-get="/archive?grade={{.Value}}{{if $.TypeFilter}}&type={{$.TypeFilter}}{{end}}{{if $.DateFrom}}&from={{$.DateFrom}}{{end}}{{if $.DateTo}}&to={{$.DateTo}}{{end}}"
+         hx-get="{{$.ArchiveFilterURL .Value}}"
          hx-target="#main-content" hx-push-url="true">
         {{if .IsColor}}<span class="color-dot" style="background: {{.SafeColor}}"></span>{{end}}
         {{.Label}}

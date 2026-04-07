@@ -12,15 +12,19 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/config"
 	"github.com/shotwell-paddle/routewerk/internal/handler"
 	webhandler "github.com/shotwell-paddle/routewerk/internal/handler/web"
+	"github.com/shotwell-paddle/routewerk/internal/event"
 	"github.com/shotwell-paddle/routewerk/internal/jobs"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
 	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
-// Deps holds optional dependencies passed from main for admin dashboards.
+// Deps holds dependencies passed from main.
 type Deps struct {
-	JobQueue *jobs.Queue
+	JobQueue    *jobs.Queue
+	EventBus    event.Bus
+	NotifSvc    *service.NotificationService
+	QuestSvc    *service.QuestService
 }
 
 func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {

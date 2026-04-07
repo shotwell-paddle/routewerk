@@ -14,7 +14,7 @@ import (
 
 func TestNewQuestListeners(t *testing.T) {
 	bus := event.NewMemoryBus(slog.Default())
-	l := NewQuestListeners(nil, nil, nil, bus)
+	l := NewQuestListeners(nil, nil, nil, nil, bus)
 	if l == nil {
 		t.Fatal("NewQuestListeners returned nil")
 	}

@@ -75,16 +75,43 @@ func (h *Handler) ClimberProfile(w http.ResponseWriter, r *http.Request) {
 	// Build grade pyramid data for the template
 	pyramid := buildPyramidBars(stats.GradePyramid)
 
+	// Quest & badge data for the progressions section
+	locationID := middleware.GetWebLocationID(ctx)
+	activeQuests, err := h.questSvc.ListUserQuests(ctx, user.ID, "active")
+	if err != nil {
+		slog.Error("profile active quests failed", "error", err)
+	}
+	completedQuests, err := h.questSvc.ListUserQuests(ctx, user.ID, "completed")
+	if err != nil {
+		slog.Error("profile completed quests failed", "error", err)
+	}
+	var badges []model.ClimberBadge
+	var domainProgress []repository.DomainProgress
+	if locationID != "" {
+		badges, err = h.badgeRepo.ListUserBadgesForLocation(ctx, user.ID, locationID)
+		if err != nil {
+			slog.Error("profile badges failed", "error", err)
+		}
+		domainProgress, err = h.questSvc.UserDomainProgress(ctx, user.ID, locationID)
+		if err != nil {
+			slog.Error("profile domain progress failed", "error", err)
+		}
+	}
+
 	data := &PageData{
-		TemplateData:    templateDataFromContext(r, "profile"),
-		User:            user,
-		ClimberStats:    stats,
-		TickList:        tickList,
-		TickListTotal:   total,
-		GradePyramid:    pyramid,
-		TickFilterType:  tickFilter.RouteType,
+		TemplateData:     templateDataFromContext(r, "profile"),
+		User:             user,
+		ClimberStats:     stats,
+		TickList:         tickList,
+		TickListTotal:    total,
+		GradePyramid:     pyramid,
+		TickFilterType:   tickFilter.RouteType,
 		TickFilterAscent: tickFilter.AscentType,
-		TickSort:        tickFilter.Sort,
+		TickSort:         tickFilter.Sort,
+		ActiveQuests:     activeQuests,
+		CompletedQuests:  completedQuests,
+		ClimberBadges:    badges,
+		DomainProgress:   domainProgress,
 	}
 	h.render(w, r, "climber/profile.html", data)
 }

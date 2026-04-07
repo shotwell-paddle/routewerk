@@ -48,6 +48,17 @@ type ProgressLoggedPayload struct {
 	TargetCount    *int    // nil if quest has no numeric target
 }
 
+// RouteSentPayload is published when a climber logs a send or flash on
+// a route. Quest listeners use this to auto-progress active route_count quests.
+type RouteSentPayload struct {
+	AscentID   string
+	RouteID    string
+	RouteName  string
+	RouteGrade string
+	AscentType string // "send" or "flash"
+	LocationID string
+}
+
 // BadgeEarnedPayload is published when a badge is awarded to a climber,
 // typically by the sync AwardBadge listener after quest completion.
 type BadgeEarnedPayload struct {

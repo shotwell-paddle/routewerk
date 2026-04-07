@@ -24,14 +24,16 @@ import (
 //     climber. Also fire-and-forget.
 type QuestListeners struct {
 	badges   *repository.BadgeRepo
+	quests   *repository.QuestRepo
 	activity *repository.ActivityRepo
 	notifs   *NotificationService
 	bus      event.Bus
 }
 
-func NewQuestListeners(badges *repository.BadgeRepo, activity *repository.ActivityRepo, notifs *NotificationService, bus event.Bus) *QuestListeners {
+func NewQuestListeners(badges *repository.BadgeRepo, quests *repository.QuestRepo, activity *repository.ActivityRepo, notifs *NotificationService, bus event.Bus) *QuestListeners {
 	return &QuestListeners{
 		badges:   badges,
+		quests:   quests,
 		activity: activity,
 		notifs:   notifs,
 		bus:      bus,
@@ -42,6 +44,10 @@ func NewQuestListeners(badges *repository.BadgeRepo, activity *repository.Activi
 func (l *QuestListeners) Register() {
 	// Badge award — SYNC: must complete before response
 	l.bus.Subscribe(event.QuestCompleted, l.awardBadge, true)
+
+	// Auto-progress quests — ASYNC: when a route is sent, log progress
+	// on all active route_count quests for that climber.
+	l.bus.Subscribe(event.RouteSent, l.autoProgressQuests, false)
 
 	// Activity log — ASYNC: background write
 	l.bus.Subscribe(event.QuestStarted, l.logActivity, false)
@@ -94,6 +100,127 @@ func (l *QuestListeners) awardBadge(ctx context.Context, e event.Event) error {
 		},
 		Timestamp: e.Timestamp,
 	})
+
+	return nil
+}
+
+// ============================================================
+// Auto-Progress Quests (async)
+// ============================================================
+
+// autoProgressQuests is fired when a climber sends/flashes a route.
+// It finds all their active route_count quests and logs progress on each.
+// This creates the "magic" feeling: climb a route, watch your quest
+// bars go up automatically.
+func (l *QuestListeners) autoProgressQuests(ctx context.Context, e event.Event) error {
+	payload, ok := e.Payload.(event.RouteSentPayload)
+	if !ok {
+		return fmt.Errorf("unexpected payload type for route.sent: %T", e.Payload)
+	}
+
+	// Get all active quests for this user
+	activeQuests, err := l.quests.ListUserQuests(ctx, e.UserID, "active")
+	if err != nil {
+		return fmt.Errorf("list active quests for auto-progress: %w", err)
+	}
+
+	routeID := payload.RouteID
+	for _, cq := range activeQuests {
+		if cq.Quest == nil || cq.Quest.TargetCount == nil {
+			continue // only auto-progress quests with a numeric target
+		}
+
+		// Log progress entry
+		logEntry := &model.QuestLog{
+			ClimberQuestID: cq.ID,
+			LogType:        "route_send",
+			RouteID:        &routeID,
+		}
+		note := fmt.Sprintf("Auto: %s %s (%s)", payload.AscentType, payload.RouteName, payload.RouteGrade)
+		logEntry.Notes = &note
+
+		if err := l.quests.LogProgress(ctx, logEntry); err != nil {
+			slog.Error("auto-progress log failed",
+				"climber_quest_id", cq.ID,
+				"route_id", routeID,
+				"error", err,
+			)
+			continue
+		}
+
+		// Increment count
+		newCount, err := l.quests.IncrementProgress(ctx, cq.ID)
+		if err != nil {
+			slog.Error("auto-progress increment failed",
+				"climber_quest_id", cq.ID,
+				"error", err,
+			)
+			continue
+		}
+
+		slog.Info("auto-progressed quest",
+			"user_id", e.UserID,
+			"quest", cq.Quest.Name,
+			"count", newCount,
+			"route", payload.RouteName,
+		)
+
+		// Publish ProgressLogged so activity + notifications still fire
+		l.bus.Publish(ctx, event.Event{
+			Type:   event.ProgressLogged,
+			GymID:  e.GymID,
+			UserID: e.UserID,
+			Payload: event.ProgressLoggedPayload{
+				ClimberQuestID: cq.ID,
+				QuestID:        cq.QuestID,
+				QuestName:      cq.Quest.Name,
+				LogType:        "route_send",
+				RouteID:        routeID,
+				ProgressCount:  newCount,
+				TargetCount:    cq.Quest.TargetCount,
+			},
+			Timestamp: e.Timestamp,
+		})
+
+		// Auto-complete if target reached
+		if cq.Quest.TargetCount != nil && newCount >= *cq.Quest.TargetCount {
+			slog.Info("auto-completing quest via route send",
+				"climber_quest_id", cq.ID,
+				"count", newCount,
+				"target", *cq.Quest.TargetCount,
+			)
+			if _, cErr := l.quests.CompleteQuest(ctx, cq.ID); cErr != nil {
+				slog.Error("auto-complete from route send failed", "error", cErr)
+				continue
+			}
+
+			// Build completion payload
+			compPayload := event.QuestCompletedPayload{
+				ClimberQuestID: cq.ID,
+				QuestID:        cq.QuestID,
+				QuestName:      cq.Quest.Name,
+			}
+			if cq.Quest.Domain != nil {
+				compPayload.DomainName = cq.Quest.Domain.Name
+				if cq.Quest.Domain.Color != nil {
+					compPayload.DomainColor = *cq.Quest.Domain.Color
+				}
+			}
+			if cq.Quest.Badge != nil {
+				compPayload.BadgeID = cq.Quest.Badge.ID
+				compPayload.BadgeName = cq.Quest.Badge.Name
+				compPayload.BadgeIcon = cq.Quest.Badge.Icon
+				compPayload.BadgeColor = cq.Quest.Badge.Color
+			}
+			l.bus.Publish(ctx, event.Event{
+				Type:      event.QuestCompleted,
+				GymID:     e.GymID,
+				UserID:    e.UserID,
+				Payload:   compPayload,
+				Timestamp: e.Timestamp,
+			})
+		}
+	}
 
 	return nil
 }

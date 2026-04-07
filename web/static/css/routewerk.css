@@ -4743,6 +4743,26 @@ details.review-route-card > summary::marker { display: none; content: ''; }
   padding: var(--space-4);
 }
 
+/* Profile quest items */
+.profile-quest-item {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  margin-bottom: var(--space-2);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.profile-quest-item:hover {
+  background: var(--bg-secondary);
+}
+
+.profile-quest-item:last-child {
+  margin-bottom: 0;
+}
+
 @media (max-width: 640px) {
   .quest-grid {
     grid-template-columns: 1fr;

@@ -257,7 +257,7 @@ func (h *Handler) QuestCreateForm(w http.ResponseWriter, r *http.Request) {
 		QuestFormValues: QuestFormValues{
 			IsActive:   "true",
 			SkillLevel: "beginner",
-			QuestType:  "route_count",
+			QuestType:  "permanent",
 			SortOrder:  "0",
 		},
 	}

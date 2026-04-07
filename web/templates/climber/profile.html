@@ -52,8 +52,68 @@
       {{template "tick-list-section" .}}
     </div>
 
-    <!-- Grade pyramid -->
+    <!-- Sidebar -->
     <aside class="layout-aside">
+      {{if .ActiveQuests}}
+      <div class="card mb-4">
+        <div class="flex items-center justify-between mb-3">
+          <h3>Active Quests</h3>
+          <a href="/quests/mine" class="btn btn-ghost btn-xs"
+             hx-get="/quests/mine" hx-target="#main-content" hx-push-url="true">View all</a>
+        </div>
+        {{range .ActiveQuests}}
+        <a href="/quests/{{.QuestID}}" class="profile-quest-item"
+           hx-get="/quests/{{.QuestID}}" hx-target="#main-content" hx-push-url="true">
+          <div class="flex items-center gap-2 mb-1">
+            {{if .Quest}}{{if .Quest.Domain}}
+            <span class="quest-domain-pill quest-domain-pill-sm" style="background: {{if .Quest.Domain.Color}}{{deref .Quest.Domain.Color}}{{else}}var(--rw-charcoal){{end}}; color: #fff;">
+              {{.Quest.Domain.Name}}
+            </span>
+            {{end}}{{end}}
+          </div>
+          <div style="font-weight: 500; font-size: var(--text-sm);">{{if .Quest}}{{.Quest.Name}}{{end}}</div>
+          {{if .Quest}}{{if .Quest.TargetCount}}
+          <div class="progress-bar mt-2" style="height: 4px;">
+            <div class="progress-bar-fill" style="width: {{pct .ProgressCount (derefInt .Quest.TargetCount)}}%;"></div>
+          </div>
+          <div class="text-muted" style="font-size: 0.625rem; margin-top: 2px;">{{.ProgressCount}} / {{derefInt .Quest.TargetCount}}</div>
+          {{end}}{{end}}
+        </a>
+        {{end}}
+      </div>
+      {{end}}
+
+      {{if .ClimberBadges}}
+      <div class="card mb-4">
+        <h3 class="mb-3">Badges</h3>
+        <div class="badge-grid">
+          {{range .ClimberBadges}}
+          <div class="badge-item" title="{{if .Badge}}{{.Badge.Name}}{{end}}">
+            <div class="badge-icon" style="background: {{if .Badge}}{{.Badge.Color}}{{else}}var(--rw-charcoal){{end}};">
+              {{if .Badge}}{{.Badge.Icon}}{{end}}
+            </div>
+            <div class="badge-name">{{if .Badge}}{{.Badge.Name}}{{end}}</div>
+          </div>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+
+      {{if .DomainProgress}}
+      <div class="card mb-4">
+        <h3 class="mb-3">Skill Domains</h3>
+        {{range .DomainProgress}}
+        <div class="domain-stat-row">
+          <span class="domain-stat-name">
+            {{if .Color}}<span class="color-dot" style="background: {{.Color}};"></span>{{end}}
+            {{.DomainName}}
+          </span>
+          <span class="domain-stat-count">{{.Completed}}</span>
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+
       <div class="card">
         <h3 class="mb-4">Grade Pyramid</h3>
         {{if .GradePyramid}}

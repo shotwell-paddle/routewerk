@@ -90,7 +90,7 @@ func main() {
 	questSvc := service.NewQuestService(questRepo, badgeRepo, bus)
 
 	// Register event listeners (badge awards, activity feed, notifications)
-	questListeners := service.NewQuestListeners(badgeRepo, activityRepo, notifSvc, bus)
+	questListeners := service.NewQuestListeners(badgeRepo, questRepo, activityRepo, notifSvc, bus)
 	questListeners.Register()
 
 	// Start job queue worker

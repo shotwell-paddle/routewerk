@@ -17,7 +17,7 @@
     {{if .QuestDetail.Domain}}
     <div class="route-hero-bar" style="background: {{if .QuestDetail.Domain.Color}}{{deref .QuestDetail.Domain.Color}}{{else}}var(--rw-charcoal){{end}};"></div>
     {{end}}
-    <div style="padding: var(--space-6);">
+    <div style="padding: var(--sp-6);">
       <div class="flex items-center gap-3 mb-4">
         {{if .QuestDetail.Domain}}
         <span class="quest-domain-pill" style="background: {{if .QuestDetail.Domain.Color}}{{deref .QuestDetail.Domain.Color}}{{else}}var(--rw-charcoal){{end}}; color: #fff;">
@@ -27,12 +27,12 @@
         <span class="quest-level-pill quest-level-{{.QuestDetail.SkillLevel}}">{{.QuestDetail.SkillLevel | title}}</span>
       </div>
 
-      <h1 style="margin-bottom: var(--space-2);">{{.QuestDetail.Name}}</h1>
-      <p style="color: var(--text-secondary); margin-bottom: var(--space-4);">{{.QuestDetail.Description}}</p>
+      <h1 class="mb-2">{{.QuestDetail.Name}}</h1>
+      <p class="text-muted mb-4">{{.QuestDetail.Description}}</p>
 
       {{if .QuestDetail.CompletionCriteria}}
-      <div class="card card-inset mb-4">
-        <div style="font-weight: 600; margin-bottom: var(--space-1);">How to complete</div>
+      <div class="card-inset mb-4">
+        <div style="font-weight: 600; margin-bottom: 4px;">How to complete</div>
         <p>{{.QuestDetail.CompletionCriteria}}</p>
       </div>
       {{end}}
@@ -76,13 +76,13 @@
                       background: {{if .QuestDetail.Domain}}{{if .QuestDetail.Domain.Color}}{{deref .QuestDetail.Domain.Color}}{{else}}var(--rw-green){{end}}{{else}}var(--rw-green){{end}};"></div>
         </div>
         {{end}}
-        <div class="text-muted" style="font-size: var(--text-sm); margin-top: var(--space-1);">
+        <div class="text-muted" style="font-size: var(--text-sm); margin-top: 4px;">
           Started {{.ClimberQuest.StartedAt | reltime}}
         </div>
       </div>
 
       <!-- Log progress form -->
-      <div class="card card-inset mb-4">
+      <div class="card-inset mb-4">
         <h3 class="mb-3">Log Progress</h3>
         <form method="POST" action="/quests/{{.QuestDetail.ID}}/log"
               hx-post="/quests/{{.QuestDetail.ID}}/log" hx-target="#main-content">
@@ -141,7 +141,7 @@
   {{if .QuestLogs}}
   <!-- Progress log history -->
   <div class="card">
-    <h3 style="padding: var(--space-4) var(--space-6) 0;">Progress Log</h3>
+    <h3 style="padding: var(--sp-6) var(--sp-6) 0;">Progress Log</h3>
     <div class="quest-log-list">
       {{range .QuestLogs}}
       <div class="quest-log-item">
@@ -159,7 +159,7 @@
             <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
           </svg>
           {{else}}
-          <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--rw-mid-gray)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
             <circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5"/>
           </svg>
           {{end}}

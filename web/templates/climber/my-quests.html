@@ -22,9 +22,9 @@
       <h2 class="section-title mb-4">Active</h2>
       <div class="flex flex-col gap-3 mb-6">
         {{range .ActiveQuests}}
-        <a href="/quests/{{.QuestID}}" class="card card-hover"
+        <a href="/quests/{{.QuestID}}" class="card card-interactive"
            hx-get="/quests/{{.QuestID}}" hx-target="#main-content" hx-push-url="true">
-          <div style="padding: var(--space-4) var(--space-5);">
+          <div>
             <div class="flex items-center gap-3 mb-2">
               {{if .Quest}}
               {{if .Quest.Domain}}
@@ -35,7 +35,7 @@
               {{end}}
               <span class="text-muted" style="font-size: var(--text-sm);">Started {{.StartedAt | reltime}}</span>
             </div>
-            <h3 style="margin-bottom: var(--space-2);">{{if .Quest}}{{.Quest.Name}}{{else}}Quest{{end}}</h3>
+            <h3 class="mb-2">{{if .Quest}}{{.Quest.Name}}{{else}}Quest{{end}}</h3>
             <div class="flex items-center gap-4">
               <span style="font-weight: 600;">
                 {{.ProgressCount}}{{if .Quest}}{{if .Quest.TargetCount}} / {{derefInt .Quest.TargetCount}}{{end}}{{end}}
@@ -57,9 +57,9 @@
       <h2 class="section-title mb-4">Completed</h2>
       <div class="flex flex-col gap-3 mb-6">
         {{range .CompletedQuests}}
-        <a href="/quests/{{.QuestID}}" class="card card-hover"
+        <a href="/quests/{{.QuestID}}" class="card card-interactive"
            hx-get="/quests/{{.QuestID}}" hx-target="#main-content" hx-push-url="true">
-          <div style="padding: var(--space-4) var(--space-5);">
+          <div>
             <div class="flex items-center gap-3 mb-2">
               {{if .Quest}}
               {{if .Quest.Domain}}

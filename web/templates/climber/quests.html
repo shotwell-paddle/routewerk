@@ -21,6 +21,25 @@
 </div>
 
 <div class="page-body">
+  {{if .QuestDomains}}
+  <!-- Domain filter chips -->
+  <div class="filter-bar mb-4">
+    <a href="/quests"
+       class="filter-chip {{if eq .DomainFilter ""}}active{{end}}"
+       hx-get="/quests" hx-target="#main-content" hx-push-url="true">
+      All
+    </a>
+    {{range .QuestDomains}}
+    <a href="/quests?domain={{.ID}}"
+       class="filter-chip {{if eq $.DomainFilter .ID}}active{{end}}"
+       hx-get="/quests?domain={{.ID}}" hx-target="#main-content" hx-push-url="true">
+      {{if .Color}}<span class="color-dot" style="background: {{deref .Color}};"></span>{{end}}
+      {{.Name}}
+    </a>
+    {{end}}
+  </div>
+  {{end}}
+
   {{if .DomainProgress}}
   <!-- Domain progress overview -->
   <div class="card mb-6">
@@ -52,7 +71,7 @@
         <div class="quest-card-header">
           {{if .Quest.Domain}}
           <span class="quest-domain-pill" style="background: {{if .Quest.Domain.Color}}{{deref .Quest.Domain.Color}}{{else}}var(--rw-charcoal){{end}}; color: #fff;">
-            {{if .Quest.Domain.Icon}}{{deref .Quest.Domain.Icon}} {{end}}{{.Quest.Domain.Name}}
+            {{.Quest.Domain.Name}}
           </span>
           {{end}}
           <span class="quest-level-pill quest-level-{{.Quest.SkillLevel}}">{{.Quest.SkillLevel | title}}</span>
@@ -87,7 +106,7 @@
       <div class="quest-card-header">
         {{if .Domain}}
         <span class="quest-domain-pill" style="background: {{if .Domain.Color}}{{deref .Domain.Color}}{{else}}var(--rw-charcoal){{end}}; color: #fff;">
-          {{if .Domain.Icon}}{{deref .Domain.Icon}} {{end}}{{.Domain.Name}}
+          {{.Domain.Name}}
         </span>
         {{end}}
         <span class="quest-level-pill quest-level-{{.SkillLevel}}">{{.SkillLevel | title}}</span>

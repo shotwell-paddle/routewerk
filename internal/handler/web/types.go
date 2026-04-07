@@ -178,6 +178,7 @@ type PageData struct {
 	SkillTagCoverage  map[string]int
 
 	// Progressions — climber
+	DomainFilter      string
 	AvailableQuests   []repository.QuestListItem
 	QuestSuggestions  []service.QuestSuggestion
 	ActiveQuests      []model.ClimberQuest

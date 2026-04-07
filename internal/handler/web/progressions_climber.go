@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
+	"github.com/shotwell-paddle/routewerk/internal/repository"
 	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
@@ -25,6 +26,12 @@ func (h *Handler) QuestBrowser(w http.ResponseWriter, r *http.Request) {
 	if locationID == "" {
 		h.renderError(w, r, http.StatusBadRequest, "No location selected", "Please select a gym first.")
 		return
+	}
+
+	// Load domains for filter chips
+	domains, err := h.questRepo.ListDomains(ctx, locationID)
+	if err != nil {
+		slog.Error("list quest domains failed", "error", err)
 	}
 
 	// Load available quests
@@ -51,25 +58,30 @@ func (h *Handler) QuestBrowser(w http.ResponseWriter, r *http.Request) {
 		slog.Error("domain progress failed", "error", err)
 	}
 
-	// Filter by domain or skill level if query params are set
+	// Filter by domain if query param is set
 	domainFilter := r.URL.Query().Get("domain")
-	levelFilter := r.URL.Query().Get("level")
-	if domainFilter != "" || levelFilter != "" {
-		filtered := make([]service.QuestSuggestion, 0, len(suggestions))
-		for _, s := range suggestions {
-			if domainFilter != "" && s.Quest.DomainID != domainFilter {
-				continue
+	if domainFilter != "" {
+		filtered := make([]repository.QuestListItem, 0, len(available))
+		for _, q := range available {
+			if q.DomainID == domainFilter {
+				filtered = append(filtered, q)
 			}
-			if levelFilter != "" && s.Quest.SkillLevel != levelFilter {
-				continue
-			}
-			filtered = append(filtered, s)
 		}
-		suggestions = filtered
+		available = filtered
+
+		filteredSugg := make([]service.QuestSuggestion, 0, len(suggestions))
+		for _, s := range suggestions {
+			if s.Quest.DomainID == domainFilter {
+				filteredSugg = append(filteredSugg, s)
+			}
+		}
+		suggestions = filteredSugg
 	}
 
 	data := &PageData{
 		TemplateData:     templateDataFromContext(r, "quests"),
+		QuestDomains:     domains,
+		DomainFilter:     domainFilter,
 		AvailableQuests:  available,
 		QuestSuggestions: suggestions,
 		ActiveQuests:     activeQuests,

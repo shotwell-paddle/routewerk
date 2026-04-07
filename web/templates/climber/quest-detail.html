@@ -21,7 +21,7 @@
       <div class="flex items-center gap-3 mb-4">
         {{if .QuestDetail.Domain}}
         <span class="quest-domain-pill" style="background: {{if .QuestDetail.Domain.Color}}{{deref .QuestDetail.Domain.Color}}{{else}}var(--rw-charcoal){{end}}; color: #fff;">
-          {{if .QuestDetail.Domain.Icon}}{{deref .QuestDetail.Domain.Icon}} {{end}}{{.QuestDetail.Domain.Name}}
+          {{.QuestDetail.Domain.Name}}
         </span>
         {{end}}
         <span class="quest-level-pill quest-level-{{.QuestDetail.SkillLevel}}">{{.QuestDetail.SkillLevel | title}}</span>

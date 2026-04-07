@@ -49,5 +49,5 @@ refresh-dev-db:
 	@echo "Dumping production via proxy on localhost:15432..."
 	pg_dump --no-owner --no-acl -Fc -h localhost -p 15432 -U routewerk -d routewerk -f /tmp/routewerk_prod.dump
 	@echo "Restoring to dev via proxy on localhost:15433..."
-	pg_restore --clean --no-owner --no-acl -h localhost -p 15433 -U postgres -d postgres /tmp/routewerk_prod.dump
+	pg_restore --clean --no-owner --no-acl -h localhost -p 15433 -U postgres -d routewerk_dev /tmp/routewerk_prod.dump
 	@echo "Done. Dev database refreshed from production."

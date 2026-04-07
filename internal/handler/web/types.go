@@ -7,6 +7,7 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
+	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
 // TemplateData is the shared context for every page render.
@@ -160,6 +161,32 @@ type PageData struct {
 	GymForm         GymFormValues
 	IsManager       bool
 	SettingsSuccess bool
+
+	// Progressions — admin
+	QuestDomains      []model.QuestDomain
+	QuestDomain       *model.QuestDomain
+	DomainFormValues  DomainFormValues
+	DomainFormError   string
+	Quests            []repository.QuestListItem
+	QuestDetail       *model.Quest
+	QuestFormValues   QuestFormValues
+	QuestFormError    string
+	Badges            []model.Badge
+	BadgeDetail       *model.Badge
+	BadgeFormValues   BadgeFormValues
+	BadgeFormError    string
+	SkillTagCoverage  map[string]int
+
+	// Progressions — climber
+	AvailableQuests   []repository.QuestListItem
+	QuestSuggestions  []service.QuestSuggestion
+	ActiveQuests      []model.ClimberQuest
+	CompletedQuests   []model.ClimberQuest
+	ClimberBadges     []model.ClimberBadge
+	DomainProgress    []repository.DomainProgress
+	QuestLogs         []model.QuestLog
+	ClimberQuest      *model.ClimberQuest
+	ActivityFeed      []model.ActivityLogEntry
 
 	// Error page
 	ErrorCode    int
@@ -430,4 +457,42 @@ type SelectOption struct {
 	Value    string
 	Label    string
 	Selected bool
+}
+
+// ── Progressions Form Values ─────────────────────────────────
+
+// DomainFormValues holds form state for quest domain create/edit.
+type DomainFormValues struct {
+	Name        string
+	Description string
+	Color       string
+	Icon        string
+	SortOrder   string
+}
+
+// QuestFormValues holds form state for quest create/edit.
+type QuestFormValues struct {
+	DomainID              string
+	BadgeID               string
+	Name                  string
+	Description           string
+	QuestType             string
+	CompletionCriteria    string
+	TargetCount           string
+	SuggestedDurationDays string
+	AvailableFrom         string
+	AvailableUntil        string
+	SkillLevel            string
+	RequiresCertification string
+	RouteTagFilter        string // comma-separated
+	IsActive              string
+	SortOrder             string
+}
+
+// BadgeFormValues holds form state for badge create/edit.
+type BadgeFormValues struct {
+	Name        string
+	Description string
+	Icon        string
+	Color       string
 }

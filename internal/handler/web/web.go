@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shotwell-paddle/routewerk/internal/config"
+	"github.com/shotwell-paddle/routewerk/internal/event"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
@@ -72,12 +73,18 @@ type Handler struct {
 	authService    *service.AuthService
 	storageService *service.StorageService
 	cardGen        *service.CardGenerator
-	userTagRepo    *repository.UserTagRepo
-	profanity      *service.ProfanityFilter
-	sessionMgr     *middleware.SessionManager
-	cfg            *config.Config
-	uploadSem      chan struct{} // limits concurrent image processing
-	db             *pgxpool.Pool
+	userTagRepo      *repository.UserTagRepo
+	questRepo        *repository.QuestRepo
+	badgeRepo        *repository.BadgeRepo
+	activityRepo     *repository.ActivityRepo
+	routeSkillTagRepo *repository.RouteSkillTagRepo
+	questSvc         *service.QuestService
+	eventBus         event.Bus
+	profanity        *service.ProfanityFilter
+	sessionMgr       *middleware.SessionManager
+	cfg              *config.Config
+	uploadSem        chan struct{} // limits concurrent image processing
+	db               *pgxpool.Pool
 }
 
 func NewHandler(
@@ -96,6 +103,12 @@ func NewHandler(
 	photoRepo *repository.RoutePhotoRepo,
 	settingsRepo SettingsStore,
 	userTagRepo *repository.UserTagRepo,
+	questRepo *repository.QuestRepo,
+	badgeRepo *repository.BadgeRepo,
+	activityRepo *repository.ActivityRepo,
+	routeSkillTagRepo *repository.RouteSkillTagRepo,
+	questSvc *service.QuestService,
+	eventBus event.Bus,
 	authService *service.AuthService,
 	storageService *service.StorageService,
 	cardGen *service.CardGenerator,
@@ -104,29 +117,35 @@ func NewHandler(
 	db *pgxpool.Pool,
 ) *Handler {
 	h := &Handler{
-		routeRepo:      routeRepo,
-		wallRepo:       wallRepo,
-		locationRepo:   locationRepo,
-		userRepo:       userRepo,
-		tagRepo:        tagRepo,
-		ascentRepo:     ascentRepo,
-		ratingRepo:     ratingRepo,
-		difficultyRepo: difficultyRepo,
-		orgRepo:        orgRepo,
-		sessionRepo:    sessionRepo,
-		analyticsRepo:  analyticsRepo,
-		webSessionRepo: webSessionRepo,
-		photoRepo:      photoRepo,
-		settingsRepo:   settingsRepo,
-		userTagRepo:    userTagRepo,
-		profanity:      service.NewProfanityFilter(),
-		authService:    authService,
-		storageService: storageService,
-		cardGen:        cardGen,
-		sessionMgr:     sessionMgr,
-		cfg:            cfg,
-		uploadSem:      make(chan struct{}, 3), // limit concurrent image processing
-		db:             db,
+		routeRepo:         routeRepo,
+		wallRepo:          wallRepo,
+		locationRepo:      locationRepo,
+		userRepo:          userRepo,
+		tagRepo:           tagRepo,
+		ascentRepo:        ascentRepo,
+		ratingRepo:        ratingRepo,
+		difficultyRepo:    difficultyRepo,
+		orgRepo:           orgRepo,
+		sessionRepo:       sessionRepo,
+		analyticsRepo:     analyticsRepo,
+		webSessionRepo:    webSessionRepo,
+		photoRepo:         photoRepo,
+		settingsRepo:      settingsRepo,
+		userTagRepo:       userTagRepo,
+		questRepo:         questRepo,
+		badgeRepo:         badgeRepo,
+		activityRepo:      activityRepo,
+		routeSkillTagRepo: routeSkillTagRepo,
+		questSvc:          questSvc,
+		eventBus:          eventBus,
+		profanity:         service.NewProfanityFilter(),
+		authService:       authService,
+		storageService:    storageService,
+		cardGen:           cardGen,
+		sessionMgr:        sessionMgr,
+		cfg:               cfg,
+		uploadSem:         make(chan struct{}, 3), // limit concurrent image processing
+		db:                db,
 	}
 	h.loadTemplates()
 	return h
@@ -148,6 +167,16 @@ var funcMap = template.FuncMap{
 	"roleName": roleDisplayName,
 	"add": func(a, b int) int { return a + b },
 	"sub": func(a, b int) int { return a - b },
+	"pct": func(n, total int) int {
+		if total <= 0 {
+			return 0
+		}
+		p := (n * 100) / total
+		if p > 100 {
+			return 100
+		}
+		return p
+	},
 	"initial": func(s string) string {
 		if len(s) == 0 {
 			return "?"

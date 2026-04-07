@@ -1,0 +1,65 @@
+{{define "title"}}Quest Activity — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>Quest Activity</h1>
+      <p class="page-subtitle">Recent progressions at {{if .Location}}{{.Location.Name}}{{end}}</p>
+    </div>
+    <a href="/quests" class="btn btn-ghost btn-sm"
+       hx-get="/quests" hx-target="#main-content" hx-push-url="true">
+      Browse Quests
+    </a>
+  </div>
+</div>
+
+<div class="page-body">
+  {{if .ActivityFeed}}
+  <div class="activity-feed">
+    {{range .ActivityFeed}}
+    <div class="activity-item">
+      <div class="activity-avatar">
+        {{if .UserAvatarURL}}
+        <img src="{{deref .UserAvatarURL}}" alt="{{.UserDisplayName}}" class="avatar-sm">
+        {{else}}
+        <div class="avatar-sm avatar-initials">{{.UserDisplayName | initial}}</div>
+        {{end}}
+      </div>
+      <div class="activity-body">
+        <div class="activity-text">
+          <strong>{{.UserDisplayName}}</strong>
+          {{if eq .ActivityType "quest_started"}}started a quest
+          {{else if eq .ActivityType "quest_completed"}}completed a quest
+          {{else if eq .ActivityType "progress_logged"}}logged progress
+          {{else if eq .ActivityType "quest_abandoned"}}left a quest
+          {{else if eq .ActivityType "badge_earned"}}earned a badge
+          {{else}}{{.ActivityType}}
+          {{end}}
+          {{if .Metadata}}
+            {{if index .Metadata "quest_name"}}
+            — <span style="font-weight: 500;">{{index .Metadata "quest_name"}}</span>
+            {{end}}
+            {{if index .Metadata "badge_name"}}
+            — <span style="font-weight: 500;">{{index .Metadata "badge_name"}}</span>
+            {{end}}
+          {{end}}
+        </div>
+        <div class="activity-time text-muted">{{.CreatedAt | reltime}}</div>
+      </div>
+    </div>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty-state">
+    <div class="empty-state-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="48" height="48">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+      </svg>
+    </div>
+    <h3>No activity yet</h3>
+    <p class="text-muted">Quest activity will appear here as climbers start and complete challenges.</p>
+  </div>
+  {{end}}
+</div>
+{{end}}

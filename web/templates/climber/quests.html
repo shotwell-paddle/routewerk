@@ -1,0 +1,124 @@
+{{define "title"}}Quests — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>Quests</h1>
+      <p class="page-subtitle">Skill challenges at {{if .Location}}{{.Location.Name}}{{end}}</p>
+    </div>
+    <div class="flex gap-3">
+      <a href="/quests/mine" class="btn btn-ghost btn-sm"
+         hx-get="/quests/mine" hx-target="#main-content" hx-push-url="true">
+        My Quests
+      </a>
+      <a href="/quests/activity" class="btn btn-ghost btn-sm"
+         hx-get="/quests/activity" hx-target="#main-content" hx-push-url="true">
+        Activity
+      </a>
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  {{if .DomainProgress}}
+  <!-- Domain progress overview -->
+  <div class="card mb-6">
+    <h3 class="mb-4">Your Progress</h3>
+    <div class="domain-progress-grid">
+      {{range .DomainProgress}}
+      <div class="domain-progress-item">
+        <div class="domain-progress-bar">
+          <div class="domain-progress-fill" style="width: {{if .Completed}}100{{else}}0{{end}}%; background: {{if .Color}}{{.Color}}{{else}}var(--rw-charcoal){{end}}; opacity: {{if .Completed}}1{{else}}0.2{{end}};"></div>
+        </div>
+        <div class="domain-progress-label">
+          <span class="domain-progress-name">{{.DomainName}}</span>
+          <span class="text-muted">{{.Completed}} completed</span>
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if .QuestSuggestions}}
+  <!-- Suggested quests -->
+  <div class="mb-6">
+    <h2 class="section-title mb-4">Recommended for You</h2>
+    <div class="quest-grid">
+      {{range .QuestSuggestions}}
+      <a href="/quests/{{.Quest.ID}}" class="card card-hover quest-card"
+         hx-get="/quests/{{.Quest.ID}}" hx-target="#main-content" hx-push-url="true">
+        <div class="quest-card-header">
+          {{if .Quest.Domain}}
+          <span class="quest-domain-pill" style="background: {{if .Quest.Domain.Color}}{{deref .Quest.Domain.Color}}{{else}}var(--rw-charcoal){{end}}; color: #fff;">
+            {{if .Quest.Domain.Icon}}{{deref .Quest.Domain.Icon}} {{end}}{{.Quest.Domain.Name}}
+          </span>
+          {{end}}
+          <span class="quest-level-pill quest-level-{{.Quest.SkillLevel}}">{{.Quest.SkillLevel | title}}</span>
+        </div>
+        <h3 class="quest-card-title">{{.Quest.Name}}</h3>
+        <p class="quest-card-desc">{{.Quest.Description}}</p>
+        <div class="quest-card-footer">
+          <span class="quest-reason">{{.Reason}}</span>
+          <span class="quest-social">
+            {{if .Quest.ActiveCount}}<span>{{.Quest.ActiveCount}} active</span>{{end}}
+            {{if .Quest.CompletedCount}}<span>{{.Quest.CompletedCount}} completed</span>{{end}}
+          </span>
+        </div>
+      </a>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if .AvailableQuests}}
+  <!-- All available quests -->
+  <h2 class="section-title mb-4">All Quests</h2>
+  <div class="quest-grid">
+    {{range .AvailableQuests}}
+    {{$isEnrolled := false}}
+    {{$questID := .ID}}
+    {{range $.ActiveQuests}}
+      {{if eq .QuestID $questID}}{{$isEnrolled = true}}{{end}}
+    {{end}}
+    <a href="/quests/{{.ID}}" class="card card-hover quest-card {{if $isEnrolled}}quest-card-enrolled{{end}}"
+       hx-get="/quests/{{.ID}}" hx-target="#main-content" hx-push-url="true">
+      <div class="quest-card-header">
+        {{if .Domain}}
+        <span class="quest-domain-pill" style="background: {{if .Domain.Color}}{{deref .Domain.Color}}{{else}}var(--rw-charcoal){{end}}; color: #fff;">
+          {{if .Domain.Icon}}{{deref .Domain.Icon}} {{end}}{{.Domain.Name}}
+        </span>
+        {{end}}
+        <span class="quest-level-pill quest-level-{{.SkillLevel}}">{{.SkillLevel | title}}</span>
+        {{if $isEnrolled}}
+        <span class="quest-enrolled-badge">Enrolled</span>
+        {{end}}
+      </div>
+      <h3 class="quest-card-title">{{.Name}}</h3>
+      <p class="quest-card-desc">{{.Description}}</p>
+      <div class="quest-card-footer">
+        {{if .TargetCount}}<span class="text-muted">Target: {{derefInt .TargetCount}}</span>{{end}}
+        <span class="quest-social">
+          {{if .ActiveCount}}<span>{{.ActiveCount}} active</span>{{end}}
+          {{if .CompletedCount}}<span>{{.CompletedCount}} completed</span>{{end}}
+        </span>
+      </div>
+    </a>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if and (not .AvailableQuests) (not .QuestSuggestions)}}
+  <div class="empty-state">
+    <div class="empty-state-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="48" height="48">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+      </svg>
+    </div>
+    <h3>No quests available yet</h3>
+    <p class="text-muted">Check back later — your gym's route setters are working on challenges for you.</p>
+  </div>
+  {{end}}
+</div>
+{{end}}

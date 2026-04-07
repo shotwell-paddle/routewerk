@@ -126,7 +126,16 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	photoRepo := repository.NewRoutePhotoRepo(db)
 	settingsRepo := repository.NewCachedSettingsRepo(repository.NewSettingsRepo(db))
 	userTagRepo := repository.NewUserTagRepo(db)
-	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, authService, storageSvc, cardGen, sessionMgr, cfg, db)
+
+	// Progressions repos (created in main.go for service layer, but we also
+	// need them here for the web handler; create local instances since repos
+	// are stateless wrappers around the DB pool).
+	questRepo := repository.NewQuestRepo(db)
+	badgeRepo := repository.NewBadgeRepo(db)
+	activityRepo := repository.NewActivityRepo(db)
+	routeSkillTagRepo := repository.NewRouteSkillTagRepo(db)
+
+	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, questRepo, badgeRepo, activityRepo, routeSkillTagRepo, deps.QuestSvc, deps.EventBus, authService, storageSvc, cardGen, sessionMgr, cfg, db)
 
 	// Rate limiter for web pages: 120 requests per minute per IP
 	webLimiter := middleware.NewRateLimiter(120, 1*time.Minute)
@@ -209,6 +218,16 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			r.Post("/profile/ticks/{ascentID}/delete", webHandler.TickDelete)
 			r.Post("/logout", webHandler.Logout)
 
+			// Progressions — climber-facing quest system
+			r.Get("/quests", webHandler.QuestBrowser)
+			r.Get("/quests/mine", webHandler.MyQuests)
+			r.Get("/quests/activity", webHandler.QuestActivity)
+			r.Get("/quests/{questID}", webHandler.QuestDetailPage)
+			r.Post("/quests/{questID}/start", webHandler.QuestStart)
+			r.Post("/quests/{questID}/log", webHandler.QuestLogProgress)
+			r.Post("/quests/{questID}/complete", webHandler.QuestComplete)
+			r.Post("/quests/{questID}/abandon", webHandler.QuestAbandon)
+
 			// Setter routes — require setter role or above
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireSetterSession)
@@ -274,6 +293,28 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 				r.Post("/settings/organization/gyms/{gymID}/edit", webHandler.GymUpdate)
 				r.Get("/settings/organization/team", webHandler.OrgTeamPage)
 				r.Post("/settings/organization/team/{membershipID}/role", webHandler.OrgTeamUpdateRole)
+
+				// Progressions admin — head_setter or above (handler checks role internally)
+				r.Get("/settings/progressions", webHandler.ProgressionsAdminPage)
+
+				r.Get("/settings/progressions/domains/new", webHandler.DomainCreateForm)
+				r.Post("/settings/progressions/domains/new", webHandler.DomainCreate)
+				r.Get("/settings/progressions/domains/{domainID}/edit", webHandler.DomainEditForm)
+				r.Post("/settings/progressions/domains/{domainID}/edit", webHandler.DomainUpdate)
+				r.Post("/settings/progressions/domains/{domainID}/delete", webHandler.DomainDelete)
+
+				r.Get("/settings/progressions/quests/new", webHandler.QuestCreateForm)
+				r.Post("/settings/progressions/quests/new", webHandler.QuestCreate)
+				r.Get("/settings/progressions/quests/{questID}/edit", webHandler.QuestEditForm)
+				r.Post("/settings/progressions/quests/{questID}/edit", webHandler.QuestUpdate)
+				r.Post("/settings/progressions/quests/{questID}/deactivate", webHandler.QuestDeactivate)
+				r.Post("/settings/progressions/quests/{questID}/duplicate", webHandler.QuestDuplicate)
+
+				r.Get("/settings/progressions/badges/new", webHandler.BadgeCreateForm)
+				r.Post("/settings/progressions/badges/new", webHandler.BadgeCreate)
+				r.Get("/settings/progressions/badges/{badgeID}/edit", webHandler.BadgeEditForm)
+				r.Post("/settings/progressions/badges/{badgeID}/edit", webHandler.BadgeUpdate)
+				r.Post("/settings/progressions/badges/{badgeID}/delete", webHandler.BadgeDelete)
 
 			})
 

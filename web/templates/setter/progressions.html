@@ -1,0 +1,211 @@
+{{define "title"}}Progressions — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>Progressions</h1>
+      <p class="page-subtitle">Manage quest domains, quests, and badges for {{if .Location}}{{.Location.Name}}{{end}}</p>
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+
+  <!-- Quest Domains -->
+  <div class="form-card">
+    <div class="flex items-center justify-between" style="margin-bottom: 1rem;">
+      <h2 class="form-card-title" style="margin-bottom: 0;">Domains</h2>
+      <a href="/settings/progressions/domains/new" class="btn btn-sm btn-primary"
+         hx-get="/settings/progressions/domains/new" hx-target="#main-content" hx-push-url="true">
+        + Add Domain
+      </a>
+    </div>
+    <p class="form-hint" style="margin-bottom: 1rem;">
+      Domains are the skill categories climbers develop (e.g. Slab, Overhang, Dynamic, Lead).
+    </p>
+
+    {{if .QuestDomains}}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Color</th>
+          <th>Icon</th>
+          <th>Order</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .QuestDomains}}
+        <tr>
+          <td><strong>{{.Name}}</strong>{{if .Description}}<br><span class="text-muted">{{deref .Description}}</span>{{end}}</td>
+          <td>
+            {{if .Color}}
+            <span class="color-dot" style="background-color: {{deref .Color | safeCSS}};"></span>
+            {{deref .Color}}
+            {{else}}—{{end}}
+          </td>
+          <td>{{if .Icon}}{{deref .Icon}}{{else}}—{{end}}</td>
+          <td>{{.SortOrder}}</td>
+          <td class="text-right">
+            <a href="/settings/progressions/domains/{{.ID}}/edit" class="btn btn-sm btn-ghost"
+               hx-get="/settings/progressions/domains/{{.ID}}/edit" hx-target="#main-content" hx-push-url="true">
+              Edit
+            </a>
+            <form method="POST" action="/settings/progressions/domains/{{.ID}}/delete"
+                  hx-post="/settings/progressions/domains/{{.ID}}/delete" hx-target="#main-content"
+                  hx-confirm="Delete this domain? This cannot be undone." style="display: inline;">
+              <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="text-muted">No domains yet. Create your first domain to start building quests.</p>
+    {{end}}
+  </div>
+
+  <!-- Badges -->
+  <div class="form-card">
+    <div class="flex items-center justify-between" style="margin-bottom: 1rem;">
+      <h2 class="form-card-title" style="margin-bottom: 0;">Badges</h2>
+      <a href="/settings/progressions/badges/new" class="btn btn-sm btn-primary"
+         hx-get="/settings/progressions/badges/new" hx-target="#main-content" hx-push-url="true">
+        + Add Badge
+      </a>
+    </div>
+    <p class="form-hint" style="margin-bottom: 1rem;">
+      Badges are earned by completing quests. Create badges before assigning them to quests.
+    </p>
+
+    {{if .Badges}}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Badge</th>
+          <th>Icon</th>
+          <th>Color</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Badges}}
+        <tr>
+          <td><strong>{{.Name}}</strong>{{if .Description}}<br><span class="text-muted">{{deref .Description}}</span>{{end}}</td>
+          <td>{{.Icon}}</td>
+          <td>
+            <span class="color-dot" style="background-color: {{.Color | safeCSS}};"></span>
+            {{.Color}}
+          </td>
+          <td class="text-right">
+            <a href="/settings/progressions/badges/{{.ID}}/edit" class="btn btn-sm btn-ghost"
+               hx-get="/settings/progressions/badges/{{.ID}}/edit" hx-target="#main-content" hx-push-url="true">
+              Edit
+            </a>
+            <form method="POST" action="/settings/progressions/badges/{{.ID}}/delete"
+                  hx-post="/settings/progressions/badges/{{.ID}}/delete" hx-target="#main-content"
+                  hx-confirm="Delete this badge? This cannot be undone." style="display: inline;">
+              <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="text-muted">No badges yet. Create badges to reward quest completions.</p>
+    {{end}}
+  </div>
+
+  <!-- Quests -->
+  <div class="form-card">
+    <div class="flex items-center justify-between" style="margin-bottom: 1rem;">
+      <h2 class="form-card-title" style="margin-bottom: 0;">Quests</h2>
+      <a href="/settings/progressions/quests/new" class="btn btn-sm btn-primary"
+         hx-get="/settings/progressions/quests/new" hx-target="#main-content" hx-push-url="true">
+        + Add Quest
+      </a>
+    </div>
+    <p class="form-hint" style="margin-bottom: 1rem;">
+      Quests are skill-based challenges climbers can enroll in and track progress on.
+    </p>
+
+    {{if .Quests}}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Quest</th>
+          <th>Domain</th>
+          <th>Type</th>
+          <th>Level</th>
+          <th>Active</th>
+          <th>Enrolled</th>
+          <th>Completed</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Quests}}
+        <tr{{if not .IsActive}} style="opacity: 0.5;"{{end}}>
+          <td><strong>{{.Name}}</strong></td>
+          <td>
+            {{if .Domain}}
+            {{if .Domain.Color}}<span class="color-dot" style="background-color: {{deref .Domain.Color | safeCSS}};"></span>{{end}}
+            {{.Domain.Name}}
+            {{else}}—{{end}}
+          </td>
+          <td>{{.QuestType}}</td>
+          <td>{{.SkillLevel}}</td>
+          <td>{{if .IsActive}}Yes{{else}}No{{end}}</td>
+          <td>{{.ActiveCount}}</td>
+          <td>{{.CompletedCount}}</td>
+          <td class="text-right" style="white-space: nowrap;">
+            <a href="/settings/progressions/quests/{{.ID}}/edit" class="btn btn-sm btn-ghost"
+               hx-get="/settings/progressions/quests/{{.ID}}/edit" hx-target="#main-content" hx-push-url="true">
+              Edit
+            </a>
+            {{if .IsActive}}
+            <form method="POST" action="/settings/progressions/quests/{{.ID}}/deactivate"
+                  hx-post="/settings/progressions/quests/{{.ID}}/deactivate" hx-target="#main-content"
+                  hx-confirm="Deactivate this quest? Active enrollments will continue but new climbers won't see it." style="display: inline;">
+              <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn-sm btn-ghost">Deactivate</button>
+            </form>
+            {{end}}
+            <form method="POST" action="/settings/progressions/quests/{{.ID}}/duplicate"
+                  hx-post="/settings/progressions/quests/{{.ID}}/duplicate" hx-target="#main-content" style="display: inline;">
+              <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn-sm btn-ghost">Duplicate</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="text-muted">No quests yet. Create domains and badges first, then build quests.</p>
+    {{end}}
+  </div>
+
+  <!-- Skill Tag Coverage -->
+  {{if .SkillTagCoverage}}
+  <div class="form-card">
+    <h2 class="form-card-title">Route Skill Tag Coverage</h2>
+    <p class="form-hint" style="margin-bottom: 1rem;">
+      How many active routes have each skill tag. Helps identify gaps in quest content.
+    </p>
+    <div class="tag-coverage">
+      {{range $tag, $count := .SkillTagCoverage}}
+      <span class="tag-badge">{{$tag}} <strong>{{$count}}</strong></span>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+</div>
+{{end}}

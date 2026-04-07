@@ -31,13 +31,30 @@ func Migrate(databaseURL string) error {
 	}
 	defer m.Close()
 
+	// Auto-recover from dirty state: force back to the previous version
+	// so golang-migrate will re-attempt the failed migration. This works
+	// because all migrations are written to be idempotent (IF NOT EXISTS,
+	// IF EXISTS, etc.), so re-running them is safe.
+	version, dirty, verr := m.Version()
+	if verr == nil && dirty {
+		prev := int(version) - 1
+		if prev < 0 {
+			prev = -1 // special value: no version applied
+		}
+		slog.Warn("dirty migration detected, auto-recovering",
+			"dirty_version", version, "forcing_to", prev)
+		if ferr := m.Force(prev); ferr != nil {
+			return fmt.Errorf("auto-recover dirty migration %d: %w", version, ferr)
+		}
+	}
+
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 
-	version, dirty, _ := m.Version()
+	version, dirty, _ = m.Version()
 	if dirty {
-		return fmt.Errorf("migration version %d is dirty — run `migrate force` to fix", version)
+		return fmt.Errorf("migration version %d is dirty after retry — check the SQL", version)
 	}
 	slog.Info("migrations applied", "version", version)
 

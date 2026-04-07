@@ -134,8 +134,9 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	badgeRepo := repository.NewBadgeRepo(db)
 	activityRepo := repository.NewActivityRepo(db)
 	routeSkillTagRepo := repository.NewRouteSkillTagRepo(db)
+	notifRepo := repository.NewNotificationRepo(db)
 
-	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, questRepo, badgeRepo, activityRepo, routeSkillTagRepo, deps.QuestSvc, deps.EventBus, authService, storageSvc, cardGen, sessionMgr, cfg, db)
+	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, questRepo, badgeRepo, activityRepo, routeSkillTagRepo, notifRepo, deps.QuestSvc, deps.EventBus, authService, storageSvc, cardGen, sessionMgr, cfg, db)
 
 	// Rate limiter for web pages: 120 requests per minute per IP
 	webLimiter := middleware.NewRateLimiter(120, 1*time.Minute)
@@ -218,9 +219,15 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			r.Post("/profile/ticks/{ascentID}/delete", webHandler.TickDelete)
 			r.Post("/logout", webHandler.Logout)
 
+			// Notifications
+			r.Get("/notifications", webHandler.Notifications)
+			r.Post("/notifications/read-all", webHandler.NotificationMarkAllRead)
+			r.Post("/notifications/{notifID}/read", webHandler.NotificationMarkRead)
+
 			// Progressions — climber-facing quest system
 			r.Get("/quests", webHandler.QuestBrowser)
 			r.Get("/quests/mine", webHandler.MyQuests)
+			r.Get("/quests/badges", webHandler.BadgeShowcase)
 			r.Get("/quests/activity", webHandler.QuestActivity)
 			r.Get("/quests/{questID}", webHandler.QuestDetailPage)
 			r.Post("/quests/{questID}/start", webHandler.QuestStart)

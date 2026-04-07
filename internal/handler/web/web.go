@@ -78,6 +78,7 @@ type Handler struct {
 	badgeRepo        *repository.BadgeRepo
 	activityRepo     *repository.ActivityRepo
 	routeSkillTagRepo *repository.RouteSkillTagRepo
+	notifRepo        *repository.NotificationRepo
 	questSvc         *service.QuestService
 	eventBus         event.Bus
 	profanity        *service.ProfanityFilter
@@ -107,6 +108,7 @@ func NewHandler(
 	badgeRepo *repository.BadgeRepo,
 	activityRepo *repository.ActivityRepo,
 	routeSkillTagRepo *repository.RouteSkillTagRepo,
+	notifRepo *repository.NotificationRepo,
 	questSvc *service.QuestService,
 	eventBus event.Bus,
 	authService *service.AuthService,
@@ -136,6 +138,7 @@ func NewHandler(
 		badgeRepo:         badgeRepo,
 		activityRepo:      activityRepo,
 		routeSkillTagRepo: routeSkillTagRepo,
+		notifRepo:         notifRepo,
 		questSvc:          questSvc,
 		eventBus:          eventBus,
 		profanity:         service.NewProfanityFilter(),

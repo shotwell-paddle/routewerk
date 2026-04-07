@@ -99,6 +99,16 @@ func (h *Handler) enrichTemplateData(r *http.Request, td *TemplateData) {
 		td.HasMultipleLocations = len(locations) > 1
 	}
 
+	// Load unread notification count
+	if h.notifRepo != nil {
+		count, err := h.notifRepo.UnreadCount(ctx, user.ID)
+		if err != nil {
+			slog.Error("failed to load notification count", "user_id", user.ID, "error", err)
+		} else {
+			td.UnreadNotifCount = count
+		}
+	}
+
 	// Build view-as options if user has a role higher than setter
 	realRank := middleware.RoleRankValue(td.RealRole)
 	if realRank >= 2 { // setter or above

@@ -306,7 +306,7 @@ func (l *QuestListeners) notifyQuestCompleted(ctx context.Context, e event.Event
 		return nil
 	}
 
-	link := "/progressions"
+	link := "/quests/mine"
 	l.notifs.NotifyAsync(ctx, repository.Notification{ //nolint:errcheck
 		UserID: e.UserID,
 		Type:   "quest.completed",
@@ -323,7 +323,7 @@ func (l *QuestListeners) notifyBadgeEarned(ctx context.Context, e event.Event) e
 		return nil
 	}
 
-	link := "/progressions/badges"
+	link := "/quests/badges"
 	l.notifs.NotifyAsync(ctx, repository.Notification{ //nolint:errcheck
 		UserID: e.UserID,
 		Type:   "badge.earned",

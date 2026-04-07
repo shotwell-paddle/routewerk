@@ -27,6 +27,9 @@ type TemplateData struct {
 	UserLocations []repository.UserLocationItem
 	HasMultipleLocations bool
 
+	// Notifications
+	UnreadNotifCount int64
+
 	// View-as-role switcher (for admins/managers/head setters)
 	RealRole      string // the user's actual role before any override
 	ViewAsRole    string // the currently active role override (empty = no override)
@@ -179,15 +182,19 @@ type PageData struct {
 
 	// Progressions — climber
 	DomainFilter      string
+	SkillFilter       string
 	AvailableQuests   []repository.QuestListItem
 	QuestSuggestions  []service.QuestSuggestion
 	ActiveQuests      []model.ClimberQuest
 	CompletedQuests   []model.ClimberQuest
 	ClimberBadges     []model.ClimberBadge
+	EarnedBadgeIDs    map[string]bool
+	ActiveQuestMap    map[string]*model.ClimberQuest // keyed by quest ID
 	DomainProgress    []repository.DomainProgress
 	QuestLogs         []model.QuestLog
 	ClimberQuest      *model.ClimberQuest
 	ActivityFeed      []model.ActivityLogEntry
+	Notifications     []repository.Notification
 
 	// Error page
 	ErrorCode    int

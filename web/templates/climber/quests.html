@@ -21,18 +21,42 @@
 </div>
 
 <div class="page-body">
+  <!-- Skill level filter chips -->
+  <div class="filter-bar mb-3">
+    <a href="/quests{{if .DomainFilter}}?domain={{.DomainFilter}}{{end}}"
+       class="filter-chip {{if eq .SkillFilter ""}}active{{end}}"
+       hx-get="/quests{{if .DomainFilter}}?domain={{.DomainFilter}}{{end}}" hx-target="#main-content" hx-push-url="true">
+      All Levels
+    </a>
+    <a href="/quests?skill=beginner{{if .DomainFilter}}&domain={{.DomainFilter}}{{end}}"
+       class="filter-chip {{if eq .SkillFilter "beginner"}}active{{end}}"
+       hx-get="/quests?skill=beginner{{if .DomainFilter}}&domain={{.DomainFilter}}{{end}}" hx-target="#main-content" hx-push-url="true">
+      Beginner
+    </a>
+    <a href="/quests?skill=intermediate{{if .DomainFilter}}&domain={{.DomainFilter}}{{end}}"
+       class="filter-chip {{if eq .SkillFilter "intermediate"}}active{{end}}"
+       hx-get="/quests?skill=intermediate{{if .DomainFilter}}&domain={{.DomainFilter}}{{end}}" hx-target="#main-content" hx-push-url="true">
+      Intermediate
+    </a>
+    <a href="/quests?skill=advanced{{if .DomainFilter}}&domain={{.DomainFilter}}{{end}}"
+       class="filter-chip {{if eq .SkillFilter "advanced"}}active{{end}}"
+       hx-get="/quests?skill=advanced{{if .DomainFilter}}&domain={{.DomainFilter}}{{end}}" hx-target="#main-content" hx-push-url="true">
+      Advanced
+    </a>
+  </div>
+
   {{if .QuestDomains}}
   <!-- Domain filter chips -->
   <div class="filter-bar mb-4">
-    <a href="/quests"
+    <a href="/quests{{if .SkillFilter}}?skill={{.SkillFilter}}{{end}}"
        class="filter-chip {{if eq .DomainFilter ""}}active{{end}}"
-       hx-get="/quests" hx-target="#main-content" hx-push-url="true">
-      All
+       hx-get="/quests{{if .SkillFilter}}?skill={{.SkillFilter}}{{end}}" hx-target="#main-content" hx-push-url="true">
+      All Domains
     </a>
     {{range .QuestDomains}}
-    <a href="/quests?domain={{.ID}}"
+    <a href="/quests?domain={{.ID}}{{if $.SkillFilter}}&skill={{$.SkillFilter}}{{end}}"
        class="filter-chip {{if eq $.DomainFilter .ID}}active{{end}}"
-       hx-get="/quests?domain={{.ID}}" hx-target="#main-content" hx-push-url="true">
+       hx-get="/quests?domain={{.ID}}{{if $.SkillFilter}}&skill={{$.SkillFilter}}{{end}}" hx-target="#main-content" hx-push-url="true">
       {{if .Color}}<span class="color-dot" style="background: {{deref .Color}};"></span>{{end}}
       {{.Name}}
     </a>
@@ -116,8 +140,23 @@
       </div>
       <h3 class="quest-card-title">{{.Name}}</h3>
       <p class="quest-card-desc">{{.Description}}</p>
+      {{if $isEnrolled}}
+      {{$cq := index $.ActiveQuestMap .ID}}
+      {{if $cq}}
+      <div class="quest-card-progress">
+        <span style="font-size: var(--text-sm); font-weight: 600;">
+          {{$cq.ProgressCount}}{{if .TargetCount}} / {{derefInt .TargetCount}}{{end}}
+        </span>
+        {{if .TargetCount}}
+        <div class="progress-bar" style="flex: 1;">
+          <div class="progress-bar-fill" style="width: {{pct $cq.ProgressCount (derefInt .TargetCount)}}%;"></div>
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+      {{end}}
       <div class="quest-card-footer">
-        {{if .TargetCount}}<span class="text-muted">Target: {{derefInt .TargetCount}}</span>{{end}}
+        {{if and (not $isEnrolled) .TargetCount}}<span class="text-muted">Target: {{derefInt .TargetCount}}</span>{{end}}
         <span class="quest-social">
           {{if .ActiveCount}}<span>{{.ActiveCount}} active</span>{{end}}
           {{if .CompletedCount}}<span>{{.CompletedCount}} completed</span>{{end}}

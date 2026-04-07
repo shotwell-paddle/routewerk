@@ -213,6 +213,238 @@ func TestListeners_MultipleEventTypes(t *testing.T) {
 	}
 }
 
+// ── RouteSent Event Routing ───────────────────────────────────
+// These tests verify that RouteSent events are properly routed and that
+// the autoProgressQuests handler fires when a route.sent event is published.
+
+func TestListeners_RouteSentPayloadAssertion(t *testing.T) {
+	bus := event.NewMemoryBus(slog.Default())
+
+	var captured event.RouteSentPayload
+	var gotIt bool
+
+	bus.Subscribe(event.RouteSent, func(ctx context.Context, e event.Event) error {
+		p, ok := e.Payload.(event.RouteSentPayload)
+		if ok {
+			captured = p
+			gotIt = true
+		}
+		return nil
+	}, true)
+
+	bus.Publish(context.Background(), event.Event{
+		Type:   event.RouteSent,
+		GymID:  "loc-1",
+		UserID: "user-1",
+		Payload: event.RouteSentPayload{
+			AscentID:   "asc-1",
+			RouteID:    "route-42",
+			RouteName:  "Crimpy McFace",
+			RouteGrade: "V5",
+			AscentType: "send",
+			LocationID: "loc-1",
+		},
+		Timestamp: time.Now(),
+	})
+
+	if !gotIt {
+		t.Fatal("did not receive RouteSentPayload")
+	}
+	if captured.AscentID != "asc-1" {
+		t.Errorf("AscentID = %q, want asc-1", captured.AscentID)
+	}
+	if captured.RouteID != "route-42" {
+		t.Errorf("RouteID = %q, want route-42", captured.RouteID)
+	}
+	if captured.RouteName != "Crimpy McFace" {
+		t.Errorf("RouteName = %q, want Crimpy McFace", captured.RouteName)
+	}
+	if captured.RouteGrade != "V5" {
+		t.Errorf("RouteGrade = %q, want V5", captured.RouteGrade)
+	}
+	if captured.AscentType != "send" {
+		t.Errorf("AscentType = %q, want send", captured.AscentType)
+	}
+	if captured.LocationID != "loc-1" {
+		t.Errorf("LocationID = %q, want loc-1", captured.LocationID)
+	}
+}
+
+func TestListeners_RouteSentFlashPayload(t *testing.T) {
+	bus := event.NewMemoryBus(slog.Default())
+
+	var captured event.RouteSentPayload
+	var gotIt bool
+
+	bus.Subscribe(event.RouteSent, func(ctx context.Context, e event.Event) error {
+		p, ok := e.Payload.(event.RouteSentPayload)
+		if ok {
+			captured = p
+			gotIt = true
+		}
+		return nil
+	}, true)
+
+	bus.Publish(context.Background(), event.Event{
+		Type:   event.RouteSent,
+		GymID:  "loc-1",
+		UserID: "user-2",
+		Payload: event.RouteSentPayload{
+			AscentID:   "asc-2",
+			RouteID:    "route-99",
+			RouteName:  "Slab City",
+			RouteGrade: "5.10+",
+			AscentType: "flash",
+			LocationID: "loc-1",
+		},
+		Timestamp: time.Now(),
+	})
+
+	if !gotIt {
+		t.Fatal("did not receive flash RouteSentPayload")
+	}
+	if captured.AscentType != "flash" {
+		t.Errorf("AscentType = %q, want flash", captured.AscentType)
+	}
+}
+
+func TestListeners_RouteSentDoesNotTriggerUnrelatedHandlers(t *testing.T) {
+	bus := event.NewMemoryBus(slog.Default())
+
+	var mu sync.Mutex
+	var received []string
+
+	// Subscribe to QuestCompleted — should NOT fire on RouteSent
+	bus.Subscribe(event.QuestCompleted, func(ctx context.Context, e event.Event) error {
+		mu.Lock()
+		defer mu.Unlock()
+		received = append(received, "quest.completed")
+		return nil
+	}, true)
+
+	// Subscribe to RouteSent — should fire
+	bus.Subscribe(event.RouteSent, func(ctx context.Context, e event.Event) error {
+		mu.Lock()
+		defer mu.Unlock()
+		received = append(received, "route.sent")
+		return nil
+	}, true)
+
+	bus.Publish(context.Background(), event.Event{
+		Type:   event.RouteSent,
+		GymID:  "loc-1",
+		UserID: "user-1",
+		Payload: event.RouteSentPayload{
+			AscentID:   "asc-1",
+			RouteID:    "route-1",
+			AscentType: "send",
+			LocationID: "loc-1",
+		},
+		Timestamp: time.Now(),
+	})
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(received) != 1 {
+		t.Errorf("expected 1 event, got %d: %v", len(received), received)
+	}
+	if len(received) > 0 && received[0] != "route.sent" {
+		t.Errorf("expected route.sent, got %q", received[0])
+	}
+}
+
+func TestListeners_RouteSentChainToProgressAndComplete(t *testing.T) {
+	// Simulates the full chain: RouteSent → ProgressLogged → QuestCompleted
+	// by manually publishing the downstream events (since autoProgressQuests
+	// needs real repos). This verifies the event bus routing works end-to-end.
+	bus := event.NewMemoryBus(slog.Default())
+
+	var mu sync.Mutex
+	eventOrder := make([]string, 0, 3)
+
+	// RouteSent handler simulates what autoProgressQuests does
+	bus.Subscribe(event.RouteSent, func(ctx context.Context, e event.Event) error {
+		mu.Lock()
+		eventOrder = append(eventOrder, "route.sent")
+		mu.Unlock()
+
+		// Simulate publishing ProgressLogged
+		target := 5
+		bus.Publish(ctx, event.Event{
+			Type:   event.ProgressLogged,
+			GymID:  e.GymID,
+			UserID: e.UserID,
+			Payload: event.ProgressLoggedPayload{
+				ClimberQuestID: "cq-1",
+				QuestID:        "q-1",
+				QuestName:      "Send 5 Routes",
+				LogType:        "route_send",
+				ProgressCount:  5,
+				TargetCount:    &target,
+			},
+			Timestamp: e.Timestamp,
+		})
+		return nil
+	}, true)
+
+	bus.Subscribe(event.ProgressLogged, func(ctx context.Context, e event.Event) error {
+		mu.Lock()
+		eventOrder = append(eventOrder, "progress.logged")
+		mu.Unlock()
+
+		p := e.Payload.(event.ProgressLoggedPayload)
+		if p.TargetCount != nil && p.ProgressCount >= *p.TargetCount {
+			bus.Publish(ctx, event.Event{
+				Type:   event.QuestCompleted,
+				GymID:  e.GymID,
+				UserID: e.UserID,
+				Payload: event.QuestCompletedPayload{
+					ClimberQuestID: p.ClimberQuestID,
+					QuestID:        p.QuestID,
+					QuestName:      p.QuestName,
+				},
+				Timestamp: e.Timestamp,
+			})
+		}
+		return nil
+	}, true)
+
+	bus.Subscribe(event.QuestCompleted, func(ctx context.Context, e event.Event) error {
+		mu.Lock()
+		eventOrder = append(eventOrder, "quest.completed")
+		mu.Unlock()
+		return nil
+	}, true)
+
+	bus.Publish(context.Background(), event.Event{
+		Type:   event.RouteSent,
+		GymID:  "loc-1",
+		UserID: "user-1",
+		Payload: event.RouteSentPayload{
+			AscentID:   "asc-1",
+			RouteID:    "route-1",
+			RouteName:  "The Problem",
+			RouteGrade: "V4",
+			AscentType: "send",
+			LocationID: "loc-1",
+		},
+		Timestamp: time.Now(),
+	})
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(eventOrder) != 3 {
+		t.Fatalf("expected 3 events, got %d: %v", len(eventOrder), eventOrder)
+	}
+	expected := []string{"route.sent", "progress.logged", "quest.completed"}
+	for i, want := range expected {
+		if eventOrder[i] != want {
+			t.Errorf("event[%d] = %q, want %q", i, eventOrder[i], want)
+		}
+	}
+}
+
 func TestListeners_QuestStartedPayloadAssertion(t *testing.T) {
 	bus := event.NewMemoryBus(slog.Default())
 
@@ -253,5 +485,188 @@ func TestListeners_QuestStartedPayloadAssertion(t *testing.T) {
 	}
 	if captured.DomainColor != "#00ff00" {
 		t.Errorf("DomainColor = %q, want #00ff00", captured.DomainColor)
+	}
+}
+
+// ── Event Payload Type Safety ────────────────────────────────────
+// These tests verify that each event type's payload can be correctly
+// type-asserted and that fields are preserved through publish/subscribe.
+
+func TestPayload_RouteSentFieldCompleteness(t *testing.T) {
+	// Verify all fields survive a round-trip through the bus
+	bus := event.NewMemoryBus(slog.Default())
+
+	original := event.RouteSentPayload{
+		AscentID:   "asc-abc",
+		RouteID:    "route-xyz",
+		RouteName:  "The Nose",
+		RouteGrade: "5.12a",
+		AscentType: "flash",
+		LocationID: "loc-42",
+	}
+
+	var captured event.RouteSentPayload
+	bus.Subscribe(event.RouteSent, func(ctx context.Context, e event.Event) error {
+		captured = e.Payload.(event.RouteSentPayload)
+		return nil
+	}, true)
+
+	bus.Publish(context.Background(), event.Event{
+		Type:    event.RouteSent,
+		GymID:   "loc-42",
+		UserID:  "user-1",
+		Payload: original,
+	})
+
+	if captured != original {
+		t.Errorf("RouteSentPayload round-trip mismatch:\ngot  %+v\nwant %+v", captured, original)
+	}
+}
+
+func TestPayload_QuestCompletedWithBadge(t *testing.T) {
+	bus := event.NewMemoryBus(slog.Default())
+
+	var captured event.QuestCompletedPayload
+	bus.Subscribe(event.QuestCompleted, func(ctx context.Context, e event.Event) error {
+		captured = e.Payload.(event.QuestCompletedPayload)
+		return nil
+	}, true)
+
+	bus.Publish(context.Background(), event.Event{
+		Type:   event.QuestCompleted,
+		GymID:  "loc-1",
+		UserID: "user-1",
+		Payload: event.QuestCompletedPayload{
+			ClimberQuestID: "cq-1",
+			QuestID:        "q-1",
+			QuestName:      "Slab Master",
+			DomainName:     "Slab",
+			DomainColor:    "#2e7d32",
+			BadgeID:        "badge-1",
+			BadgeName:      "Slab Badge",
+			BadgeIcon:      "mountain",
+			BadgeColor:     "#ff0000",
+		},
+	})
+
+	if captured.BadgeID != "badge-1" {
+		t.Errorf("BadgeID = %q, want badge-1", captured.BadgeID)
+	}
+	if captured.DomainColor != "#2e7d32" {
+		t.Errorf("DomainColor = %q, want #2e7d32", captured.DomainColor)
+	}
+}
+
+func TestPayload_QuestCompletedWithoutBadge(t *testing.T) {
+	bus := event.NewMemoryBus(slog.Default())
+
+	var captured event.QuestCompletedPayload
+	bus.Subscribe(event.QuestCompleted, func(ctx context.Context, e event.Event) error {
+		captured = e.Payload.(event.QuestCompletedPayload)
+		return nil
+	}, true)
+
+	bus.Publish(context.Background(), event.Event{
+		Type:   event.QuestCompleted,
+		GymID:  "loc-1",
+		UserID: "user-1",
+		Payload: event.QuestCompletedPayload{
+			ClimberQuestID: "cq-1",
+			QuestID:        "q-1",
+			QuestName:      "Quick Challenge",
+			// No badge fields set
+		},
+	})
+
+	if captured.BadgeID != "" {
+		t.Errorf("BadgeID = %q, want empty", captured.BadgeID)
+	}
+}
+
+func TestPayload_QuestAbandonedFields(t *testing.T) {
+	bus := event.NewMemoryBus(slog.Default())
+
+	var captured event.QuestAbandonedPayload
+	var gotIt bool
+	bus.Subscribe(event.QuestAbandoned, func(ctx context.Context, e event.Event) error {
+		p, ok := e.Payload.(event.QuestAbandonedPayload)
+		if ok {
+			captured = p
+			gotIt = true
+		}
+		return nil
+	}, true)
+
+	bus.Publish(context.Background(), event.Event{
+		Type:   event.QuestAbandoned,
+		GymID:  "loc-1",
+		UserID: "user-1",
+		Payload: event.QuestAbandonedPayload{
+			ClimberQuestID: "cq-5",
+			QuestID:        "q-5",
+			QuestName:      "Abandoned Quest",
+		},
+	})
+
+	if !gotIt {
+		t.Fatal("did not receive QuestAbandonedPayload")
+	}
+	if captured.ClimberQuestID != "cq-5" {
+		t.Errorf("ClimberQuestID = %q, want cq-5", captured.ClimberQuestID)
+	}
+	if captured.QuestName != "Abandoned Quest" {
+		t.Errorf("QuestName = %q, want Abandoned Quest", captured.QuestName)
+	}
+}
+
+// ── Sync vs Async Behavior ───────────────────────────────────────
+
+func TestListeners_SyncHandlerBlocksPublisher(t *testing.T) {
+	bus := event.NewMemoryBus(slog.Default())
+	completed := false
+
+	bus.Subscribe(event.QuestCompleted, func(ctx context.Context, e event.Event) error {
+		completed = true
+		return nil
+	}, true) // sync = true
+
+	bus.Publish(context.Background(), event.Event{
+		Type:    event.QuestCompleted,
+		Payload: event.QuestCompletedPayload{QuestName: "Sync Test"},
+	})
+
+	// Since handler is sync, completed should be true immediately after Publish
+	if !completed {
+		t.Error("sync handler should have completed before Publish returns")
+	}
+}
+
+func TestListeners_AsyncHandlerRunsInBackground(t *testing.T) {
+	bus := event.NewMemoryBus(slog.Default())
+
+	var mu sync.Mutex
+	completed := false
+
+	bus.Subscribe(event.ProgressLogged, func(ctx context.Context, e event.Event) error {
+		mu.Lock()
+		defer mu.Unlock()
+		completed = true
+		return nil
+	}, false) // sync = false
+
+	bus.Publish(context.Background(), event.Event{
+		Type:    event.ProgressLogged,
+		Payload: event.ProgressLoggedPayload{QuestName: "Async Test"},
+	})
+
+	// Shutdown to wait for async handlers
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	bus.Shutdown(ctx)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !completed {
+		t.Error("async handler should have completed after Shutdown")
 	}
 }

@@ -29,19 +29,25 @@
       <div class="activity-body">
         <div class="activity-text">
           <strong>{{.UserDisplayName}}</strong>
-          {{if eq .ActivityType "quest_started"}}started a quest
-          {{else if eq .ActivityType "quest_completed"}}completed a quest
-          {{else if eq .ActivityType "progress_logged"}}logged progress
-          {{else if eq .ActivityType "quest_abandoned"}}left a quest
-          {{else if eq .ActivityType "badge_earned"}}earned a badge
+          {{if eq .ActivityType "quest.started"}}started
+          {{else if eq .ActivityType "quest.completed"}}completed
+          {{else if eq .ActivityType "progress.logged"}}made progress on
+          {{else if eq .ActivityType "quest.abandoned"}}left
+          {{else if eq .ActivityType "badge.earned"}}earned
           {{else}}{{.ActivityType}}
           {{end}}
           {{if .Metadata}}
             {{if index .Metadata "quest_name"}}
-            — <span style="font-weight: 500;">{{index .Metadata "quest_name"}}</span>
+            <span style="font-weight: 500;">{{index .Metadata "quest_name"}}</span>
             {{end}}
             {{if index .Metadata "badge_name"}}
-            — <span style="font-weight: 500;">{{index .Metadata "badge_name"}}</span>
+            <span style="font-weight: 500;">{{index .Metadata "badge_name"}}</span>
+            {{end}}
+            {{if index .Metadata "domain_color"}}
+            <span class="color-dot" style="background: {{index .Metadata "domain_color"}};"></span>
+            {{end}}
+            {{if and (index .Metadata "progress_count") (index .Metadata "target_count")}}
+            <span class="text-muted">({{index .Metadata "progress_count"}}/{{index .Metadata "target_count"}})</span>
             {{end}}
           {{end}}
         </div>

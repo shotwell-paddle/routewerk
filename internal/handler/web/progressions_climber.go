@@ -61,30 +61,32 @@ func (h *Handler) QuestBrowser(w http.ResponseWriter, r *http.Request) {
 	// Filter by domain if query param is set
 	domainFilter := r.URL.Query().Get("domain")
 	if domainFilter != "" {
-		filtered := make([]repository.QuestListItem, 0, len(available))
-		for _, q := range available {
-			if q.DomainID == domainFilter {
-				filtered = append(filtered, q)
-			}
-		}
-		available = filtered
+		available = filterQuestsByDomain(available, domainFilter)
+		suggestions = filterSuggestionsByDomain(suggestions, domainFilter)
+	}
 
-		filteredSugg := make([]service.QuestSuggestion, 0, len(suggestions))
-		for _, s := range suggestions {
-			if s.Quest.DomainID == domainFilter {
-				filteredSugg = append(filteredSugg, s)
-			}
-		}
-		suggestions = filteredSugg
+	// Filter by skill level if query param is set
+	skillFilter := r.URL.Query().Get("skill")
+	if skillFilter != "" {
+		available = filterQuestsBySkill(available, skillFilter)
+		suggestions = filterSuggestionsBySkill(suggestions, skillFilter)
+	}
+
+	// Build active quest lookup for progress bars in the browser
+	activeQuestMap := make(map[string]*model.ClimberQuest, len(activeQuests))
+	for i := range activeQuests {
+		activeQuestMap[activeQuests[i].QuestID] = &activeQuests[i]
 	}
 
 	data := &PageData{
 		TemplateData:     templateDataFromContext(r, "quests"),
 		QuestDomains:     domains,
 		DomainFilter:     domainFilter,
+		SkillFilter:      skillFilter,
 		AvailableQuests:  available,
 		QuestSuggestions: suggestions,
 		ActiveQuests:     activeQuests,
+		ActiveQuestMap:   activeQuestMap,
 		DomainProgress:   domainProgress,
 	}
 	h.render(w, r, "climber/quests.html", data)
@@ -368,6 +370,55 @@ func (h *Handler) MyQuests(w http.ResponseWriter, r *http.Request) {
 }
 
 // ============================================================
+// Badge Showcase — all badges earned + available
+// ============================================================
+
+// BadgeShowcase renders the badge collection page.
+// GET /quests/badges
+func (h *Handler) BadgeShowcase(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	user := middleware.GetWebUser(ctx)
+	locationID := middleware.GetWebLocationID(ctx)
+	if locationID == "" {
+		h.renderError(w, r, http.StatusBadRequest, "No location selected", "Please select a gym first.")
+		return
+	}
+
+	// All badges available at this location
+	allBadges, err := h.badgeRepo.ListByLocation(ctx, locationID)
+	if err != nil {
+		slog.Error("list badges failed", "error", err)
+	}
+
+	// Badges this climber has earned
+	earnedBadges, err := h.badgeRepo.ListUserBadgesForLocation(ctx, user.ID, locationID)
+	if err != nil {
+		slog.Error("list climber badges failed", "error", err)
+	}
+
+	// Build earned lookup
+	earnedIDs := make(map[string]bool, len(earnedBadges))
+	for _, cb := range earnedBadges {
+		earnedIDs[cb.BadgeID] = true
+	}
+
+	// Domain progress for sidebar
+	domainProgress, err := h.questSvc.UserDomainProgress(ctx, user.ID, locationID)
+	if err != nil {
+		slog.Error("domain progress failed", "error", err)
+	}
+
+	data := &PageData{
+		TemplateData:   templateDataFromContext(r, "quests"),
+		Badges:         allBadges,
+		ClimberBadges:  earnedBadges,
+		EarnedBadgeIDs: earnedIDs,
+		DomainProgress: domainProgress,
+	}
+	h.render(w, r, "climber/badge-showcase.html", data)
+}
+
+// ============================================================
 // Activity Feed
 // ============================================================
 
@@ -391,4 +442,48 @@ func (h *Handler) QuestActivity(w http.ResponseWriter, r *http.Request) {
 		ActivityFeed: feed,
 	}
 	h.render(w, r, "climber/quest-activity.html", data)
+}
+
+// ============================================================
+// Filter helpers — extracted for testability
+// ============================================================
+
+func filterQuestsByDomain(quests []repository.QuestListItem, domainID string) []repository.QuestListItem {
+	out := make([]repository.QuestListItem, 0, len(quests))
+	for _, q := range quests {
+		if q.DomainID == domainID {
+			out = append(out, q)
+		}
+	}
+	return out
+}
+
+func filterSuggestionsByDomain(suggestions []service.QuestSuggestion, domainID string) []service.QuestSuggestion {
+	out := make([]service.QuestSuggestion, 0, len(suggestions))
+	for _, s := range suggestions {
+		if s.Quest.DomainID == domainID {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func filterQuestsBySkill(quests []repository.QuestListItem, skill string) []repository.QuestListItem {
+	out := make([]repository.QuestListItem, 0, len(quests))
+	for _, q := range quests {
+		if q.SkillLevel == skill {
+			out = append(out, q)
+		}
+	}
+	return out
+}
+
+func filterSuggestionsBySkill(suggestions []service.QuestSuggestion, skill string) []service.QuestSuggestion {
+	out := make([]service.QuestSuggestion, 0, len(suggestions))
+	for _, s := range suggestions {
+		if s.Quest.SkillLevel == skill {
+			out = append(out, s)
+		}
+	}
+	return out
 }

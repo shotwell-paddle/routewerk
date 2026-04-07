@@ -2,15 +2,17 @@
 -- This prevents TOCTOU race conditions where two concurrent requests could
 -- both pass the application-level check and both insert a send/flash.
 
--- First, deduplicate: keep the earliest send/flash per (user, route) pair.
--- This is idempotent — if no duplicates exist, nothing is deleted.
-DELETE FROM ascents a
-USING ascents b
-WHERE a.user_id = b.user_id
-  AND a.route_id = b.route_id
-  AND a.ascent_type IN ('send', 'flash')
-  AND b.ascent_type IN ('send', 'flash')
-  AND a.created_at > b.created_at;
+-- First, deduplicate: keep one send/flash per (user, route) pair.
+-- Uses ROW_NUMBER to handle ties on created_at (e.g. seed data).
+WITH dupes AS (
+  SELECT id, ROW_NUMBER() OVER (
+    PARTITION BY user_id, route_id
+    ORDER BY created_at ASC, id ASC
+  ) AS rn
+  FROM ascents
+  WHERE ascent_type IN ('send', 'flash')
+)
+DELETE FROM ascents WHERE id IN (SELECT id FROM dupes WHERE rn > 1);
 
 -- Now create the unique index. IF NOT EXISTS so re-runs are safe.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ascents_one_completion_per_user_route

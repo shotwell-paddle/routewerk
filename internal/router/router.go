@@ -293,6 +293,9 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 				r.Get("/settings/team", webHandler.TeamPage)
 				r.Post("/settings/team/{membershipID}/role", webHandler.TeamUpdateRole)
 
+				// Progressions feature toggle — gym_manager or above (handler checks role internally)
+				r.Post("/settings/progressions-toggle", webHandler.ProgressionsToggle)
+
 				// Organization settings — gym_manager or above (handler checks role internally)
 				r.Get("/settings/organization", webHandler.OrgSettingsPage)
 				r.Post("/settings/organization", webHandler.OrgSettingsSave)

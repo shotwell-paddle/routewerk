@@ -209,6 +209,25 @@ func (r *LocationRepo) ListForUser(ctx context.Context, userID string) ([]UserLo
 	return locations, rows.Err()
 }
 
+// SetProgressionsEnabled toggles the progressions feature flag for a location.
+// This is the dark-launch gate: when false, /quests returns 404, climber-facing
+// progressions UI is hidden, and quest-related event listeners short-circuit.
+func (r *LocationRepo) SetProgressionsEnabled(ctx context.Context, id string, enabled bool) error {
+	query := `
+		UPDATE locations
+		SET progressions_enabled = $2
+		WHERE id = $1 AND deleted_at IS NULL`
+
+	tag, err := r.db.Exec(ctx, query, id, enabled)
+	if err != nil {
+		return fmt.Errorf("set progressions_enabled: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 func (r *LocationRepo) Update(ctx context.Context, l *model.Location) error {
 	query := `
 		UPDATE locations

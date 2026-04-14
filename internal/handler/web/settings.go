@@ -159,6 +159,49 @@ func (h *Handler) saveSessionSettings(r *http.Request, s *model.LocationSettings
 	s.Sessions.RequireRoutePhoto = r.FormValue("require_route_photo") == "on"
 }
 
+// ── Progressions Toggle (gym_manager and above) ──────────────
+
+// ProgressionsToggle flips the progressions_enabled flag for the current
+// location (POST /settings/progressions-toggle). Gates the /quests UI and
+// all quest/badge event processing. Restricted to gym_manager+ because
+// enabling progressions materially changes the climber experience.
+func (h *Handler) ProgressionsToggle(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	locationID := middleware.GetWebLocationID(ctx)
+	if locationID == "" {
+		h.renderError(w, r, http.StatusBadRequest, "No location selected", "Please select a location.")
+		return
+	}
+
+	realRole := middleware.GetWebRole(ctx)
+	if middleware.RoleRankValue(realRole) < middleware.RoleRankValue("gym_manager") {
+		h.renderError(w, r, http.StatusForbidden, "Not authorized", "Enabling progressions requires gym manager access.")
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		h.renderError(w, r, http.StatusBadRequest, "Invalid form", "Could not parse form data.")
+		return
+	}
+
+	enabled := r.FormValue("enabled") == "on"
+
+	if err := h.locationRepo.SetProgressionsEnabled(ctx, locationID, enabled); err != nil {
+		slog.Error("toggle progressions failed", "location_id", locationID, "enabled", enabled, "error", err)
+		h.renderError(w, r, http.StatusInternalServerError, "Save failed", "Could not update progressions setting.")
+		return
+	}
+
+	slog.Info("progressions toggled", "location_id", locationID, "enabled", enabled, "user_id", middleware.GetWebUser(ctx).ID)
+
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Redirect", "/settings?saved=1")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+}
+
 // ── Add Circuit Color ────────────────────────────────────────
 
 // GymSettingsAddCircuit adds a new circuit color (POST /settings/circuits/add).

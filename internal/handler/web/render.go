@@ -47,6 +47,10 @@ func (h *Handler) loadTemplates() {
 		"setter/org-team.html",
 		"setter/gym-new.html",
 		"setter/gym-edit.html",
+		"setter/progressions.html",
+		"setter/domain-form.html",
+		"setter/quest-form.html",
+		"setter/badge-form.html",
 		"climber/routes.html",
 		"climber/archive.html",
 		"climber/route-detail.html",
@@ -54,6 +58,10 @@ func (h *Handler) loadTemplates() {
 		"climber/profile.html",
 		"climber/profile-settings.html",
 		"climber/join-gym.html",
+		"climber/quests.html",
+		"climber/quest-detail.html",
+		"climber/my-quests.html",
+		"climber/quest-activity.html",
 		"error.html",
 	}
 

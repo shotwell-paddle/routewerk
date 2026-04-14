@@ -1,0 +1,58 @@
+{{define "title"}}Notifications — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>Notifications</h1>
+      <p class="page-subtitle">{{if .Notifications}}{{len .Notifications}} unread{{else}}All caught up{{end}}</p>
+    </div>
+    {{if .Notifications}}
+    <form method="POST" action="/notifications/read-all"
+          hx-post="/notifications/read-all" hx-target="#main-content">
+      <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+      <button type="submit" class="btn btn-ghost btn-sm">Mark all read</button>
+    </form>
+    {{end}}
+  </div>
+</div>
+
+<div class="page-body">
+  {{if .Notifications}}
+  <div class="notification-list">
+    {{range .Notifications}}
+    <div class="notification-item">
+      <div class="notification-content">
+        <div class="notification-title">{{.Title}}</div>
+        <div class="notification-body">{{.Body}}</div>
+        <div class="notification-time text-muted">{{.CreatedAt | reltime}}</div>
+      </div>
+      <div class="notification-actions">
+        {{if .Link}}
+        <a href="{{deref .Link}}" class="btn btn-sm btn-primary"
+           hx-get="{{deref .Link}}" hx-target="#main-content" hx-push-url="true">
+          View
+        </a>
+        {{end}}
+        <form method="POST" action="/notifications/{{.ID}}/read"
+              hx-post="/notifications/{{.ID}}/read" hx-target="#main-content" style="display: inline;">
+          <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
+          <button type="submit" class="btn btn-sm btn-ghost">Dismiss</button>
+        </form>
+      </div>
+    </div>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty-state">
+    <div class="empty-state-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="48" height="48">
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+      </svg>
+    </div>
+    <h3>No new notifications</h3>
+    <p class="text-muted">You're all caught up. New notifications will appear here when you earn badges or complete quests.</p>
+  </div>
+  {{end}}
+</div>
+{{end}}

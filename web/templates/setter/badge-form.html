@@ -1,0 +1,76 @@
+{{define "title"}}{{if .BadgeDetail}}Edit Badge{{else}}New Badge{{end}} — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>{{if .BadgeDetail}}Edit {{.BadgeDetail.Name}}{{else}}New Badge{{end}}</h1>
+      <p class="page-subtitle">Reward for quest completion</p>
+    </div>
+    <a href="/settings/progressions" class="btn btn-ghost"
+       hx-get="/settings/progressions" hx-target="#main-content" hx-push-url="true">
+      Cancel
+    </a>
+  </div>
+</div>
+
+<div class="page-body">
+  <form class="route-form" method="POST"
+        action="{{if .BadgeDetail}}/settings/progressions/badges/{{.BadgeDetail.ID}}/edit{{else}}/settings/progressions/badges/new{{end}}"
+        hx-post="{{if .BadgeDetail}}/settings/progressions/badges/{{.BadgeDetail.ID}}/edit{{else}}/settings/progressions/badges/new{{end}}"
+        hx-target="#main-content" hx-push-url="false">
+    <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+
+    {{if .BadgeFormError}}
+    <div class="form-alert form-alert-error">
+      {{.BadgeFormError}}
+    </div>
+    {{end}}
+
+    <div class="form-card">
+      <h2 class="form-card-title">Badge Details</h2>
+
+      <div class="form-group">
+        <label class="form-label" for="name">Badge Name</label>
+        <input class="form-input" type="text" id="name" name="name" required
+               placeholder="e.g. Slab Master, Dyno King, Lead Warrior"
+               value="{{.BadgeFormValues.Name}}" maxlength="100">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="description">Description <span class="form-hint">(optional)</span></label>
+        <textarea class="form-input" id="description" name="description" rows="3"
+                  placeholder="What does earning this badge mean?">{{.BadgeFormValues.Description}}</textarea>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="icon">Icon</label>
+          <input class="form-input" type="text" id="icon" name="icon" required
+                 placeholder="e.g. award, star, trophy, mountain"
+                 value="{{.BadgeFormValues.Icon}}" maxlength="60">
+          <p class="form-hint">Icon name (used for display)</p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="color">Color</label>
+          <input class="form-input" type="text" id="color" name="color" required
+                 placeholder="#FFD700"
+                 value="{{.BadgeFormValues.Color}}" maxlength="7">
+          <p class="form-hint">Hex color for the badge</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">
+        {{if .BadgeDetail}}Save Changes{{else}}Create Badge{{end}}
+      </button>
+      <a href="/settings/progressions" class="btn btn-ghost"
+         hx-get="/settings/progressions" hx-target="#main-content" hx-push-url="true">
+        Cancel
+      </a>
+    </div>
+  </form>
+</div>
+{{end}}

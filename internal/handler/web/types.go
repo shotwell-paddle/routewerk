@@ -7,6 +7,7 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
+	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
 // TemplateData is the shared context for every page render.
@@ -22,9 +23,16 @@ type TemplateData struct {
 	Location    *model.Location
 	CSRFToken   string
 
+	// ProgressionsEnabled mirrors Location.ProgressionsEnabled for templates.
+	// False when no location is loaded. Gates the climber-facing /quests UI.
+	ProgressionsEnabled bool
+
 	// Location switcher
 	UserLocations []repository.UserLocationItem
 	HasMultipleLocations bool
+
+	// Notifications
+	UnreadNotifCount int64
 
 	// View-as-role switcher (for admins/managers/head setters)
 	RealRole      string // the user's actual role before any override
@@ -160,6 +168,37 @@ type PageData struct {
 	GymForm         GymFormValues
 	IsManager       bool
 	SettingsSuccess bool
+
+	// Progressions — admin
+	QuestDomains      []model.QuestDomain
+	QuestDomain       *model.QuestDomain
+	DomainFormValues  DomainFormValues
+	DomainFormError   string
+	Quests            []repository.QuestListItem
+	QuestDetail       *model.Quest
+	QuestFormValues   QuestFormValues
+	QuestFormError    string
+	Badges            []model.Badge
+	BadgeDetail       *model.Badge
+	BadgeFormValues   BadgeFormValues
+	BadgeFormError    string
+	SkillTagCoverage  map[string]int
+
+	// Progressions — climber
+	DomainFilter      string
+	SkillFilter       string
+	AvailableQuests   []repository.QuestListItem
+	QuestSuggestions  []service.QuestSuggestion
+	ActiveQuests      []model.ClimberQuest
+	CompletedQuests   []model.ClimberQuest
+	ClimberBadges     []model.ClimberBadge
+	EarnedBadgeIDs    map[string]bool
+	ActiveQuestMap    map[string]*model.ClimberQuest // keyed by quest ID
+	DomainProgress    []repository.DomainProgress
+	QuestLogs         []model.QuestLog
+	ClimberQuest      *model.ClimberQuest
+	ActivityFeed      []model.ActivityLogEntry
+	Notifications     []repository.Notification
 
 	// Error page
 	ErrorCode    int
@@ -430,4 +469,42 @@ type SelectOption struct {
 	Value    string
 	Label    string
 	Selected bool
+}
+
+// ── Progressions Form Values ─────────────────────────────────
+
+// DomainFormValues holds form state for quest domain create/edit.
+type DomainFormValues struct {
+	Name        string
+	Description string
+	Color       string
+	Icon        string
+	SortOrder   string
+}
+
+// QuestFormValues holds form state for quest create/edit.
+type QuestFormValues struct {
+	DomainID              string
+	BadgeID               string
+	Name                  string
+	Description           string
+	QuestType             string
+	CompletionCriteria    string
+	TargetCount           string
+	SuggestedDurationDays string
+	AvailableFrom         string
+	AvailableUntil        string
+	SkillLevel            string
+	RequiresCertification string
+	RouteTagFilter        string // comma-separated
+	IsActive              string
+	SortOrder             string
+}
+
+// BadgeFormValues holds form state for badge create/edit.
+type BadgeFormValues struct {
+	Name        string
+	Description string
+	Icon        string
+	Color       string
 }

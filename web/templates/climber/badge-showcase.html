@@ -1,0 +1,114 @@
+{{define "title"}}Badges — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>Badges</h1>
+      <p class="page-subtitle">Your collection at {{if .Location}}{{.Location.Name}}{{end}}</p>
+    </div>
+    <a href="/quests" class="btn btn-ghost btn-sm"
+       hx-get="/quests" hx-target="#main-content" hx-push-url="true">
+      Browse Quests
+    </a>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="layout-split">
+    <div class="layout-main">
+
+      {{if .ClimberBadges}}
+      <h2 class="section-title mb-4">Earned ({{len .ClimberBadges}})</h2>
+      <div class="badge-showcase-grid mb-6">
+        {{range .ClimberBadges}}
+        <div class="badge-showcase-card badge-earned">
+          <div class="badge-showcase-icon" style="background: {{if .Badge}}{{.Badge.Color}}{{else}}var(--rw-charcoal){{end}};">
+            {{if .Badge}}{{.Badge.Icon}}{{end}}
+          </div>
+          <div class="badge-showcase-info">
+            <h3 class="badge-showcase-name">{{if .Badge}}{{.Badge.Name}}{{end}}</h3>
+            {{if .Badge}}{{if .Badge.Description}}<p class="badge-showcase-desc">{{deref .Badge.Description}}</p>{{end}}{{end}}
+            <span class="badge-showcase-date">Earned {{.EarnedAt | reltime}}</span>
+          </div>
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+
+      {{if .Badges}}
+      <h2 class="section-title mb-4">All Badges</h2>
+      <div class="badge-showcase-grid">
+        {{range .Badges}}
+        <div class="badge-showcase-card{{if not (index $.EarnedBadgeIDs .ID)}} badge-locked{{end}}">
+          <div class="badge-showcase-icon{{if not (index $.EarnedBadgeIDs .ID)}} badge-icon-locked{{end}}" style="background: {{.Color}};">
+            {{.Icon}}
+          </div>
+          <div class="badge-showcase-info">
+            <h3 class="badge-showcase-name">{{.Name}}</h3>
+            {{if .Description}}<p class="badge-showcase-desc">{{deref .Description}}</p>{{end}}
+            {{if index $.EarnedBadgeIDs .ID}}
+            <span class="badge-showcase-status badge-status-earned">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+              Earned
+            </span>
+            {{else}}
+            <span class="badge-showcase-status badge-status-locked">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+              Complete a quest to earn
+            </span>
+            {{end}}
+          </div>
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+
+      {{if and (not .Badges) (not .ClimberBadges)}}
+      <div class="empty-state">
+        <div class="empty-state-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="48" height="48">
+            <circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/>
+          </svg>
+        </div>
+        <h3>No badges yet</h3>
+        <p class="text-muted">This gym hasn't created any badges yet. Check back soon!</p>
+      </div>
+      {{end}}
+    </div>
+
+    <!-- Sidebar: domain progress -->
+    <aside class="layout-aside">
+      {{if .DomainProgress}}
+      <div class="card">
+        <h3 class="mb-4">Domain Progress</h3>
+        {{range .DomainProgress}}
+        <div class="domain-stat-row">
+          <span class="domain-stat-name">
+            {{if .Color}}<span class="color-dot" style="background: {{.Color}};"></span>{{end}}
+            {{.DomainName}}
+          </span>
+          <span class="domain-stat-count">{{.Completed}}</span>
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+
+      <div class="card mt-4">
+        <h3 class="mb-3">How Badges Work</h3>
+        <p class="text-muted" style="font-size: var(--text-sm); line-height: 1.5;">
+          Badges are earned by completing quests. Each quest may award a unique badge when you finish it. Browse quests to find your next challenge.
+        </p>
+        <a href="/quests" class="btn btn-sm btn-primary mt-3"
+           hx-get="/quests" hx-target="#main-content" hx-push-url="true">
+          Find a Quest
+        </a>
+      </div>
+    </aside>
+  </div>
+</div>
+{{end}}

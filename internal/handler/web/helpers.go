@@ -89,6 +89,7 @@ func (h *Handler) enrichTemplateData(r *http.Request, td *TemplateData) {
 			td.Location = loc
 		}
 	}
+	td.ProgressionsEnabled = td.Location != nil && td.Location.ProgressionsEnabled
 
 	// Load user's available locations for the switcher
 	locations, err := h.locationRepo.ListForUser(ctx, user.ID)
@@ -97,6 +98,16 @@ func (h *Handler) enrichTemplateData(r *http.Request, td *TemplateData) {
 	} else {
 		td.UserLocations = locations
 		td.HasMultipleLocations = len(locations) > 1
+	}
+
+	// Load unread notification count
+	if h.notifRepo != nil {
+		count, err := h.notifRepo.UnreadCount(ctx, user.ID)
+		if err != nil {
+			slog.Error("failed to load notification count", "user_id", user.ID, "error", err)
+		} else {
+			td.UnreadNotifCount = count
+		}
 	}
 
 	// Build view-as options if user has a role higher than setter
@@ -415,3 +426,48 @@ func derefInt(n *int) int {
 }
 
 func strPtr(s string) *string { return &s }
+
+// ── Seasonal / Event Template Helpers ────────────────────────
+
+// isSeasonal returns true for quest types that are time-limited.
+func isSeasonal(qt string) bool {
+	return qt == "seasonal" || qt == "event"
+}
+
+// daysUntil returns the number of whole days until the given time.
+// Returns 0 for nil or past times.
+func daysUntil(t *time.Time) int {
+	if t == nil {
+		return 0
+	}
+	days := int(time.Until(*t).Hours() / 24)
+	if days < 0 {
+		return 0
+	}
+	return days
+}
+
+// isExpiringSoon returns true if the time is in the future but within 7 days.
+func isExpiringSoon(t *time.Time) bool {
+	if t == nil {
+		return false
+	}
+	remaining := time.Until(*t)
+	return remaining > 0 && remaining < 7*24*time.Hour
+}
+
+// hasStarted returns true if the time is nil (no start constraint) or in the past.
+func hasStarted(t *time.Time) bool {
+	if t == nil {
+		return true
+	}
+	return time.Now().After(*t)
+}
+
+// formatDate formats a time pointer as "Jan 2, 2006", or "" if nil.
+func formatDate(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.Format("Jan 2, 2006")
+}

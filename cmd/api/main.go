@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shotwell-paddle/routewerk/internal/config"
 	"github.com/shotwell-paddle/routewerk/internal/database"
+	"github.com/shotwell-paddle/routewerk/internal/event"
 	"github.com/shotwell-paddle/routewerk/internal/jobs"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
 	"github.com/shotwell-paddle/routewerk/internal/router"
@@ -79,12 +80,33 @@ func main() {
 	notifSvc := service.NewNotificationService(notifRepo, jobQueue)
 	notifSvc.RegisterHandlers(jobQueue)
 
+	// Event bus — in-memory pub/sub for progressions and future features
+	bus := event.NewMemoryBus(slog.Default())
+
+	// Progressions services
+	questRepo := repository.NewQuestRepo(db)
+	badgeRepo := repository.NewBadgeRepo(db)
+	activityRepo := repository.NewActivityRepo(db)
+	locationRepo := repository.NewLocationRepo(db)
+	questSvc := service.NewQuestService(questRepo, badgeRepo, bus)
+
+	// Register event listeners (badge awards, activity feed, notifications).
+	// LocationRepo is passed so listeners can short-circuit when a gym has
+	// progressions disabled (locations.progressions_enabled = false).
+	questListeners := service.NewQuestListeners(badgeRepo, questRepo, activityRepo, notifSvc, locationRepo, bus)
+	questListeners.Register()
+
 	// Start job queue worker
 	stopJobs := jobQueue.Start(context.Background())
 	defer stopJobs()
 
 	// Build router
-	r := router.New(cfg, db, &router.Deps{JobQueue: jobQueue})
+	r := router.New(cfg, db, &router.Deps{
+		JobQueue: jobQueue,
+		EventBus: bus,
+		NotifSvc: notifSvc,
+		QuestSvc: questSvc,
+	})
 
 	// Start server with timeouts to prevent slowloris and resource exhaustion
 	addr := fmt.Sprintf(":%s", cfg.Port)
@@ -109,6 +131,10 @@ func main() {
 		defer cancel()
 		if err := srv.Shutdown(ctx); err != nil {
 			slog.Error("forced shutdown", "error", err)
+		}
+		// Drain in-flight async event handlers
+		if err := bus.Shutdown(ctx); err != nil {
+			slog.Error("event bus shutdown timeout", "error", err)
 		}
 	}()
 

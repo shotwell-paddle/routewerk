@@ -1,0 +1,179 @@
+{{define "title"}}{{if .QuestDetail}}Edit Quest{{else}}New Quest{{end}} — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>{{if .QuestDetail}}Edit {{.QuestDetail.Name}}{{else}}New Quest{{end}}</h1>
+      <p class="page-subtitle">Skill-based challenge for climbers</p>
+    </div>
+    <a href="/settings/progressions" class="btn btn-ghost"
+       hx-get="/settings/progressions" hx-target="#main-content" hx-push-url="true">
+      Cancel
+    </a>
+  </div>
+</div>
+
+<div class="page-body">
+  <form class="route-form" method="POST"
+        action="{{if .QuestDetail}}/settings/progressions/quests/{{.QuestDetail.ID}}/edit{{else}}/settings/progressions/quests/new{{end}}"
+        hx-post="{{if .QuestDetail}}/settings/progressions/quests/{{.QuestDetail.ID}}/edit{{else}}/settings/progressions/quests/new{{end}}"
+        hx-target="#main-content" hx-push-url="false">
+    <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+
+    {{if .QuestFormError}}
+    <div class="form-alert form-alert-error">
+      {{.QuestFormError}}
+    </div>
+    {{end}}
+
+    <div class="form-card">
+      <h2 class="form-card-title">Basics</h2>
+
+      <div class="form-group">
+        <label class="form-label" for="name">Quest Name</label>
+        <input class="form-input" type="text" id="name" name="name" required
+               placeholder="e.g. Slab Sensei, Overhang Explorer"
+               value="{{.QuestFormValues.Name}}" maxlength="200">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="description">Description</label>
+        <textarea class="form-input" id="description" name="description" rows="3" required
+                  placeholder="What will climbers learn or achieve?">{{.QuestFormValues.Description}}</textarea>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="domain_id">Domain</label>
+          <select class="form-select" id="domain_id" name="domain_id" required>
+            <option value="">Select a domain...</option>
+            {{range .QuestDomains}}
+            <option value="{{.ID}}" {{if eq $.QuestFormValues.DomainID .ID}}selected{{end}}>{{.Name}}</option>
+            {{end}}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="skill_level">Skill Level</label>
+          <select class="form-select" id="skill_level" name="skill_level">
+            <option value="beginner" {{if eq .QuestFormValues.SkillLevel "beginner"}}selected{{end}}>Beginner</option>
+            <option value="intermediate" {{if eq .QuestFormValues.SkillLevel "intermediate"}}selected{{end}}>Intermediate</option>
+            <option value="advanced" {{if eq .QuestFormValues.SkillLevel "advanced"}}selected{{end}}>Advanced</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-card">
+      <h2 class="form-card-title">Completion</h2>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="quest_type">Quest Type</label>
+          <select class="form-select" id="quest_type" name="quest_type">
+            <option value="route_count" {{if eq .QuestFormValues.QuestType "route_count"}}selected{{end}}>Route Count</option>
+            <option value="skill_challenge" {{if eq .QuestFormValues.QuestType "skill_challenge"}}selected{{end}}>Skill Challenge</option>
+            <option value="exploration" {{if eq .QuestFormValues.QuestType "exploration"}}selected{{end}}>Exploration</option>
+            <option value="endurance" {{if eq .QuestFormValues.QuestType "endurance"}}selected{{end}}>Endurance</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="target_count">Target Count <span class="form-hint">(optional)</span></label>
+          <input class="form-input" type="number" id="target_count" name="target_count"
+                 min="1" max="1000"
+                 value="{{.QuestFormValues.TargetCount}}" placeholder="e.g. 10">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="completion_criteria">Completion Criteria</label>
+        <textarea class="form-input" id="completion_criteria" name="completion_criteria" rows="2"
+                  placeholder="How does a climber complete this quest? e.g. 'Climb 10 slab routes at V3 or above'">{{.QuestFormValues.CompletionCriteria}}</textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="badge_id">Reward Badge <span class="form-hint">(optional)</span></label>
+        <select class="form-select" id="badge_id" name="badge_id">
+          <option value="">No badge</option>
+          {{range .Badges}}
+          <option value="{{.ID}}" {{if eq $.QuestFormValues.BadgeID .ID}}selected{{end}}>{{.Name}}</option>
+          {{end}}
+        </select>
+      </div>
+    </div>
+
+    <div class="form-card">
+      <h2 class="form-card-title">Availability</h2>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="available_from">Available From <span class="form-hint">(optional)</span></label>
+          <input class="form-input" type="date" id="available_from" name="available_from"
+                 value="{{.QuestFormValues.AvailableFrom}}">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="available_until">Available Until <span class="form-hint">(optional)</span></label>
+          <input class="form-input" type="date" id="available_until" name="available_until"
+                 value="{{.QuestFormValues.AvailableUntil}}">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="suggested_duration_days">Suggested Duration (days) <span class="form-hint">(optional)</span></label>
+          <input class="form-input" type="number" id="suggested_duration_days" name="suggested_duration_days"
+                 min="1" max="365"
+                 value="{{.QuestFormValues.SuggestedDurationDays}}" placeholder="e.g. 30">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="sort_order">Sort Order <span class="form-hint">(lower = first)</span></label>
+          <input class="form-input" type="number" id="sort_order" name="sort_order"
+                 min="0" max="999"
+                 value="{{.QuestFormValues.SortOrder}}" placeholder="0">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">
+          <input type="checkbox" name="is_active" value="true"
+                 {{if eq .QuestFormValues.IsActive "true"}}checked{{end}}>
+          Active (visible to climbers)
+        </label>
+      </div>
+    </div>
+
+    <div class="form-card">
+      <h2 class="form-card-title">Advanced</h2>
+
+      <div class="form-group">
+        <label class="form-label" for="route_tag_filter">Route Skill Tags <span class="form-hint">(comma-separated, optional)</span></label>
+        <input class="form-input" type="text" id="route_tag_filter" name="route_tag_filter"
+               placeholder="e.g. slab, balance, footwork"
+               value="{{.QuestFormValues.RouteTagFilter}}">
+        <p class="form-hint">Only routes with these skill tags will count toward this quest.</p>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="requires_certification">Requires Certification <span class="form-hint">(optional)</span></label>
+        <input class="form-input" type="text" id="requires_certification" name="requires_certification"
+               placeholder="e.g. lead_certified"
+               value="{{.QuestFormValues.RequiresCertification}}" maxlength="100">
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">
+        {{if .QuestDetail}}Save Changes{{else}}Create Quest{{end}}
+      </button>
+      <a href="/settings/progressions" class="btn btn-ghost"
+         hx-get="/settings/progressions" hx-target="#main-content" hx-push-url="true">
+        Cancel
+      </a>
+    </div>
+  </form>
+</div>
+{{end}}

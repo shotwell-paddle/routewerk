@@ -20,7 +20,7 @@
 <div class="page-body">
   <div class="wall-grid">
     {{range .WallList}}
-    <div class="wall-card">
+    <div class="wall-card {{if .IsArchived}}wall-card-archived{{end}}">
       <div class="wall-card-header">
         <div class="wall-card-icon">
           {{if eq .WallType "boulder"}}
@@ -34,7 +34,10 @@
           {{end}}
         </div>
         <div>
-          <h3 class="wall-card-title">{{.Name}}</h3>
+          <h3 class="wall-card-title">
+            {{.Name}}
+            {{if .IsArchived}}<span class="badge badge-muted">Archived</span>{{end}}
+          </h3>
           <div class="wall-card-meta">
             {{.WallType | title}}{{if .Angle}} · {{deref .Angle}}{{end}}
           </div>
@@ -69,10 +72,34 @@
            hx-get="/walls/{{.ID}}" hx-target="#main-content" hx-push-url="true">
           View Routes
         </a>
+
+        {{if not .IsArchived}}
         <a href="/walls/{{.ID}}/edit" class="btn btn-ghost btn-sm"
            hx-get="/walls/{{.ID}}/edit" hx-target="#main-content" hx-push-url="true">
           Edit
         </a>
+        {{if $.IsHeadSetter}}
+        <button class="btn btn-ghost btn-sm"
+                hx-post="/walls/{{.ID}}/archive"
+                hx-vals='{"_csrf_token": "{{$.CSRFToken}}"}'
+                hx-confirm="Archive this wall? It will be hidden from climbers and setters.">
+          Archive
+        </button>
+        {{end}}
+        {{else if $.IsHeadSetter}}
+        <button class="btn btn-ghost btn-sm"
+                hx-post="/walls/{{.ID}}/unarchive"
+                hx-vals='{"_csrf_token": "{{$.CSRFToken}}"}'
+                hx-confirm="Restore this wall? Climbers and setters will be able to see it again.">
+          Restore
+        </button>
+        <button class="btn btn-danger btn-sm"
+                hx-post="/walls/{{.ID}}/delete"
+                hx-vals='{"_csrf_token": "{{$.CSRFToken}}"}'
+                hx-confirm="Permanently delete this wall? This cannot be undone from the UI.">
+          Delete
+        </button>
+        {{end}}
       </div>
     </div>
     {{end}}

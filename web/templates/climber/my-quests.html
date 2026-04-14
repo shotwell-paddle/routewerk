@@ -1,0 +1,135 @@
+{{define "title"}}My Quests — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>My Quests</h1>
+      <p class="page-subtitle">Your quest progress at {{if .Location}}{{.Location.Name}}{{end}}</p>
+    </div>
+    <a href="/quests" class="btn btn-ghost btn-sm"
+       hx-get="/quests" hx-target="#main-content" hx-push-url="true">
+      Browse Quests
+    </a>
+  </div>
+</div>
+
+<div class="page-body">
+  <div class="layout-split">
+    <div class="layout-main">
+      {{if .ActiveQuests}}
+      <!-- Active quests -->
+      <h2 class="section-title mb-4">Active</h2>
+      <div class="flex flex-col gap-3 mb-6">
+        {{range .ActiveQuests}}
+        <a href="/quests/{{.QuestID}}" class="card card-interactive"
+           hx-get="/quests/{{.QuestID}}" hx-target="#main-content" hx-push-url="true">
+          <div>
+            <div class="flex items-center gap-3 mb-2">
+              {{if .Quest}}
+              {{if .Quest.Domain}}
+              <span class="quest-domain-pill quest-domain-pill-sm" style="background: {{if .Quest.Domain.Color}}{{deref .Quest.Domain.Color}}{{else}}var(--rw-charcoal){{end}}; color: #fff;">
+                {{.Quest.Domain.Name}}
+              </span>
+              {{end}}
+              {{end}}
+              <span class="text-muted" style="font-size: var(--text-sm);">Started {{.StartedAt | reltime}}</span>
+            </div>
+            <h3 class="mb-2">{{if .Quest}}{{.Quest.Name}}{{else}}Quest{{end}}</h3>
+            <div class="flex items-center gap-4">
+              <span style="font-weight: 600;">
+                {{.ProgressCount}}{{if .Quest}}{{if .Quest.TargetCount}} / {{derefInt .Quest.TargetCount}}{{end}}{{end}}
+              </span>
+              {{if .Quest}}{{if .Quest.TargetCount}}
+              <div class="progress-bar" style="flex: 1; max-width: 200px;">
+                <div class="progress-bar-fill" style="width: {{pct .ProgressCount (derefInt .Quest.TargetCount)}}%;"></div>
+              </div>
+              {{end}}{{end}}
+            </div>
+          </div>
+        </a>
+        {{end}}
+      </div>
+      {{end}}
+
+      {{if .CompletedQuests}}
+      <!-- Completed quests -->
+      <h2 class="section-title mb-4">Completed</h2>
+      <div class="flex flex-col gap-3 mb-6">
+        {{range .CompletedQuests}}
+        <a href="/quests/{{.QuestID}}" class="card card-interactive"
+           hx-get="/quests/{{.QuestID}}" hx-target="#main-content" hx-push-url="true">
+          <div>
+            <div class="flex items-center gap-3 mb-2">
+              {{if .Quest}}
+              {{if .Quest.Domain}}
+              <span class="quest-domain-pill quest-domain-pill-sm" style="background: {{if .Quest.Domain.Color}}{{deref .Quest.Domain.Color}}{{else}}var(--rw-charcoal){{end}}; color: #fff;">
+                {{.Quest.Domain.Name}}
+              </span>
+              {{end}}
+              {{end}}
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--rw-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+              {{if .CompletedAt}}<span class="text-muted" style="font-size: var(--text-sm);">Completed</span>{{end}}
+            </div>
+            <h3>{{if .Quest}}{{.Quest.Name}}{{else}}Quest{{end}}</h3>
+          </div>
+        </a>
+        {{end}}
+      </div>
+      {{end}}
+
+      {{if and (not .ActiveQuests) (not .CompletedQuests)}}
+      <div class="empty-state">
+        <div class="empty-state-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="48" height="48">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+          </svg>
+        </div>
+        <h3>No quests yet</h3>
+        <p class="text-muted">Browse available quests and start your first challenge.</p>
+        <a href="/quests" class="btn btn-primary mt-4"
+           hx-get="/quests" hx-target="#main-content" hx-push-url="true">
+          Browse Quests
+        </a>
+      </div>
+      {{end}}
+    </div>
+
+    <!-- Sidebar: badges + domain progress -->
+    <aside class="layout-aside">
+      {{if .ClimberBadges}}
+      <div class="card mb-4">
+        <h3 class="mb-4">Badges Earned</h3>
+        <div class="badge-grid">
+          {{range .ClimberBadges}}
+          <div class="badge-item" title="{{if .Badge}}{{.Badge.Name}}{{end}} — earned {{.EarnedAt | reltime}}">
+            <div class="badge-icon" style="background: {{if .Badge}}{{.Badge.Color}}{{else}}var(--rw-charcoal){{end}};">
+              {{if .Badge}}{{.Badge.Icon}}{{end}}
+            </div>
+            <div class="badge-name">{{if .Badge}}{{.Badge.Name}}{{end}}</div>
+          </div>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+
+      {{if .DomainProgress}}
+      <div class="card">
+        <h3 class="mb-4">Domain Progress</h3>
+        {{range .DomainProgress}}
+        <div class="domain-stat-row">
+          <span class="domain-stat-name">
+            {{if .Color}}<span class="color-dot" style="background: {{.Color}};"></span>{{end}}
+            {{.DomainName}}
+          </span>
+          <span class="domain-stat-count">{{.Completed}}</span>
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+    </aside>
+  </div>
+</div>
+{{end}}

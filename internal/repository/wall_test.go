@@ -133,6 +133,94 @@ func TestWallRepo_SoftDelete(t *testing.T) {
 	}
 }
 
+func TestWallRepo_ArchiveAndUnarchive(t *testing.T) {
+	pool := testDB(t)
+	repo := NewWallRepo(pool)
+	ctx := context.Background()
+	_, locID := seedOrgAndLocationForWall(t, pool, ctx)
+
+	active := &model.Wall{LocationID: locID, Name: "Active", WallType: "boulder", SortOrder: 1}
+	archived := &model.Wall{LocationID: locID, Name: "ArchiveMe", WallType: "route", SortOrder: 2}
+	if err := repo.Create(ctx, active); err != nil {
+		t.Fatalf("create active: %v", err)
+	}
+	if err := repo.Create(ctx, archived); err != nil {
+		t.Fatalf("create archived: %v", err)
+	}
+
+	// Archive one
+	if err := repo.Archive(ctx, archived.ID); err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+
+	// GetByID still returns it (head setters can view archived walls)
+	got, err := repo.GetByID(ctx, archived.ID)
+	if err != nil {
+		t.Fatalf("GetByID after Archive: %v", err)
+	}
+	if got == nil {
+		t.Fatal("archived wall should still be fetchable via GetByID")
+	}
+	if !got.IsArchived() {
+		t.Error("IsArchived() should be true for archived wall")
+	}
+
+	// Default list hides archived walls
+	list, err := repo.ListByLocation(ctx, locID)
+	if err != nil {
+		t.Fatalf("ListByLocation: %v", err)
+	}
+	if len(list) != 1 || list[0].Name != "Active" {
+		t.Errorf("ListByLocation = %+v, want only [Active]", list)
+	}
+
+	// ListByLocationAll exposes archived walls to head setters
+	all, err := repo.ListByLocationAll(ctx, locID)
+	if err != nil {
+		t.Fatalf("ListByLocationAll: %v", err)
+	}
+	if len(all) != 2 {
+		t.Errorf("ListByLocationAll = %d walls, want 2", len(all))
+	}
+
+	// ListWithCounts hides archived
+	wc, err := repo.ListWithCounts(ctx, locID)
+	if err != nil {
+		t.Fatalf("ListWithCounts: %v", err)
+	}
+	if len(wc) != 1 || wc[0].Name != "Active" {
+		t.Errorf("ListWithCounts should exclude archived, got %+v", wc)
+	}
+
+	// ListWithCountsAll includes archived
+	wcAll, err := repo.ListWithCountsAll(ctx, locID)
+	if err != nil {
+		t.Fatalf("ListWithCountsAll: %v", err)
+	}
+	if len(wcAll) != 2 {
+		t.Errorf("ListWithCountsAll = %d, want 2", len(wcAll))
+	}
+
+	// Re-archiving an archived wall is a no-op error (prevents double-writes)
+	if err := repo.Archive(ctx, archived.ID); err == nil {
+		t.Error("Archive on already-archived wall should return an error")
+	}
+
+	// Unarchive restores it
+	if err := repo.Unarchive(ctx, archived.ID); err != nil {
+		t.Fatalf("Unarchive: %v", err)
+	}
+	restored, _ := repo.GetByID(ctx, archived.ID)
+	if restored == nil || restored.IsArchived() {
+		t.Errorf("restored wall should not be archived, got %+v", restored)
+	}
+
+	// Unarchiving a non-archived wall errors
+	if err := repo.Unarchive(ctx, archived.ID); err == nil {
+		t.Error("Unarchive on non-archived wall should return an error")
+	}
+}
+
 func TestWallRepo_Update(t *testing.T) {
 	pool := testDB(t)
 	repo := NewWallRepo(pool)

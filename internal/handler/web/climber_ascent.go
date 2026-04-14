@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/shotwell-paddle/routewerk/internal/event"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 )
@@ -115,6 +116,29 @@ func (h *Handler) LogAscent(w http.ResponseWriter, r *http.Request) {
 		slog.Error("log ascent failed", "user_id", user.ID, "route_id", routeID, "error", err)
 		http.Error(w, "Could not log ascent", http.StatusInternalServerError)
 		return
+	}
+
+	// Publish RouteSent event for sends/flashes so quest listeners can
+	// auto-progress active route_count quests.
+	if ascentType == "send" || ascentType == "flash" {
+		routeName := ""
+		if rt.Name != nil {
+			routeName = *rt.Name
+		}
+		h.eventBus.Publish(ctx, event.Event{
+			Type:   event.RouteSent,
+			GymID:  rt.LocationID,
+			UserID: user.ID,
+			Payload: event.RouteSentPayload{
+				AscentID:   ascent.ID,
+				RouteID:    routeID,
+				RouteName:  routeName,
+				RouteGrade: rt.Grade,
+				AscentType: ascentType,
+				LocationID: rt.LocationID,
+			},
+			Timestamp: time.Now(),
+		})
 	}
 
 	// Render a single feed-item partial

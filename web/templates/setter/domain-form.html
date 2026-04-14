@@ -1,0 +1,81 @@
+{{define "title"}}{{if .QuestDomain}}Edit Domain{{else}}New Domain{{end}} — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>{{if .QuestDomain}}Edit {{.QuestDomain.Name}}{{else}}New Domain{{end}}</h1>
+      <p class="page-subtitle">Quest skill domain</p>
+    </div>
+    <a href="/settings/progressions" class="btn btn-ghost"
+       hx-get="/settings/progressions" hx-target="#main-content" hx-push-url="true">
+      Cancel
+    </a>
+  </div>
+</div>
+
+<div class="page-body">
+  <form class="route-form" method="POST"
+        action="{{if .QuestDomain}}/settings/progressions/domains/{{.QuestDomain.ID}}/edit{{else}}/settings/progressions/domains/new{{end}}"
+        hx-post="{{if .QuestDomain}}/settings/progressions/domains/{{.QuestDomain.ID}}/edit{{else}}/settings/progressions/domains/new{{end}}"
+        hx-target="#main-content" hx-push-url="false">
+    <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+
+    {{if .DomainFormError}}
+    <div class="form-alert form-alert-error">
+      {{.DomainFormError}}
+    </div>
+    {{end}}
+
+    <div class="form-card">
+      <h2 class="form-card-title">Domain Details</h2>
+
+      <div class="form-group">
+        <label class="form-label" for="name">Name</label>
+        <input class="form-input" type="text" id="name" name="name" required
+               placeholder="e.g. Slab, Overhang, Dynamic, Lead"
+               value="{{.DomainFormValues.Name}}" maxlength="100">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="description">Description <span class="form-hint">(optional)</span></label>
+        <textarea class="form-input" id="description" name="description" rows="3"
+                  placeholder="What skills does this domain develop?">{{.DomainFormValues.Description}}</textarea>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="color">Color <span class="form-hint">(hex, e.g. #3B82F6)</span></label>
+          <input class="form-input" type="text" id="color" name="color"
+                 placeholder="#3B82F6"
+                 value="{{.DomainFormValues.Color}}" maxlength="7">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="icon">Icon <span class="form-hint">(name, e.g. mountain)</span></label>
+          <input class="form-input" type="text" id="icon" name="icon"
+                 placeholder="e.g. mountain, bolt, flame"
+                 value="{{.DomainFormValues.Icon}}" maxlength="60">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="sort_order">Sort Order <span class="form-hint">(lower = first)</span></label>
+        <input class="form-input" type="number" id="sort_order" name="sort_order"
+               min="0" max="999"
+               value="{{.DomainFormValues.SortOrder}}" placeholder="0">
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">
+        {{if .QuestDomain}}Save Changes{{else}}Create Domain{{end}}
+      </button>
+      <a href="/settings/progressions" class="btn btn-ghost"
+         hx-get="/settings/progressions" hx-target="#main-content" hx-push-url="true">
+        Cancel
+      </a>
+    </div>
+  </form>
+</div>
+{{end}}

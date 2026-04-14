@@ -1,0 +1,178 @@
+{{define "title"}}{{.QuestDetail.Name}} — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header page-header-flat">
+  <a href="/quests" class="btn btn-ghost btn-sm mb-4"
+     hx-get="/quests" hx-target="#main-content" hx-push-url="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+      <path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>
+    </svg>
+    Back to quests
+  </a>
+</div>
+
+<div class="page-body page-body-flush">
+  <!-- Quest hero -->
+  <div class="card mb-6">
+    {{if .QuestDetail.Domain}}
+    <div class="route-hero-bar" style="background: {{if .QuestDetail.Domain.Color}}{{deref .QuestDetail.Domain.Color}}{{else}}var(--rw-charcoal){{end}};"></div>
+    {{end}}
+    <div style="padding: var(--sp-6);">
+      <div class="flex items-center gap-3 mb-4">
+        {{if .QuestDetail.Domain}}
+        <span class="quest-domain-pill" style="background: {{if .QuestDetail.Domain.Color}}{{deref .QuestDetail.Domain.Color}}{{else}}var(--rw-charcoal){{end}}; color: #fff;">
+          {{.QuestDetail.Domain.Name}}
+        </span>
+        {{end}}
+        <span class="quest-level-pill quest-level-{{.QuestDetail.SkillLevel}}">{{.QuestDetail.SkillLevel | title}}</span>
+      </div>
+
+      <h1 class="mb-2">{{.QuestDetail.Name}}</h1>
+      <p class="text-muted mb-4">{{.QuestDetail.Description}}</p>
+
+      {{if .QuestDetail.CompletionCriteria}}
+      <div class="card-inset mb-4">
+        <div style="font-weight: 600; margin-bottom: 4px;">How to complete</div>
+        <p>{{.QuestDetail.CompletionCriteria}}</p>
+      </div>
+      {{end}}
+
+      <div class="quest-meta-row mb-4">
+        {{if .QuestDetail.TargetCount}}
+        <div class="quest-meta-item">
+          <span class="quest-meta-label">Target</span>
+          <span class="quest-meta-value">{{derefInt .QuestDetail.TargetCount}}</span>
+        </div>
+        {{end}}
+        {{if .QuestDetail.SuggestedDurationDays}}
+        <div class="quest-meta-item">
+          <span class="quest-meta-label">Suggested time</span>
+          <span class="quest-meta-value">{{derefInt .QuestDetail.SuggestedDurationDays}} days</span>
+        </div>
+        {{end}}
+        {{if .QuestDetail.Badge}}
+        <div class="quest-meta-item">
+          <span class="quest-meta-label">Reward</span>
+          <span class="quest-meta-value badge-reward" style="color: {{.QuestDetail.Badge.Color}};">
+            {{.QuestDetail.Badge.Name}}
+          </span>
+        </div>
+        {{end}}
+      </div>
+
+      {{if .ClimberQuest}}
+      <!-- Enrolled — show progress -->
+      <div class="quest-progress-section mb-4">
+        <div class="flex items-center justify-between mb-2">
+          <span style="font-weight: 600;">Your Progress</span>
+          <span class="text-muted">
+            {{.ClimberQuest.ProgressCount}}{{if .QuestDetail.TargetCount}} / {{derefInt .QuestDetail.TargetCount}}{{end}}
+          </span>
+        </div>
+        {{if .QuestDetail.TargetCount}}
+        <div class="progress-bar">
+          <div class="progress-bar-fill"
+               style="width: {{pct .ClimberQuest.ProgressCount (derefInt .QuestDetail.TargetCount)}}%;
+                      background: {{if .QuestDetail.Domain}}{{if .QuestDetail.Domain.Color}}{{deref .QuestDetail.Domain.Color}}{{else}}var(--rw-green){{end}}{{else}}var(--rw-green){{end}};"></div>
+        </div>
+        {{end}}
+        <div class="text-muted" style="font-size: var(--text-sm); margin-top: 4px;">
+          Started {{.ClimberQuest.StartedAt | reltime}}
+        </div>
+      </div>
+
+      <!-- Log progress form -->
+      <div class="card-inset mb-4">
+        <h3 class="mb-3">Log Progress</h3>
+        <form method="POST" action="/quests/{{.QuestDetail.ID}}/log"
+              hx-post="/quests/{{.QuestDetail.ID}}/log" hx-target="#main-content">
+          <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+          <div class="form-group">
+            <label class="form-label" for="log_type">Type</label>
+            <select name="log_type" id="log_type" class="form-select">
+              <option value="general">General progress</option>
+              <option value="route_send">Route send</option>
+              <option value="technique">Technique practice</option>
+              <option value="milestone">Milestone</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="notes">Notes (optional)</label>
+            <textarea name="notes" id="notes" class="form-textarea" rows="2"
+                      placeholder="What did you work on?"></textarea>
+          </div>
+          <div class="flex gap-3">
+            <button type="submit" class="btn btn-primary">Log Progress</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="flex gap-3">
+        {{if eq .ClimberQuest.Status "active"}}
+        {{if not .QuestDetail.TargetCount}}
+        <form method="POST" action="/quests/{{.QuestDetail.ID}}/complete"
+              hx-post="/quests/{{.QuestDetail.ID}}/complete" hx-target="#main-content"
+              hx-confirm="Mark this quest as completed?">
+          <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn btn-primary">Mark Complete</button>
+        </form>
+        {{end}}
+        <form method="POST" action="/quests/{{.QuestDetail.ID}}/abandon"
+              hx-post="/quests/{{.QuestDetail.ID}}/abandon" hx-target="#main-content"
+              hx-confirm="Are you sure you want to abandon this quest?">
+          <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn btn-ghost btn-sm" style="color: var(--rw-red);">Abandon Quest</button>
+        </form>
+        {{end}}
+      </div>
+
+      {{else if eq .QuestDetail.IsActive true}}
+      <!-- Not enrolled — show start button -->
+      <form method="POST" action="/quests/{{.QuestDetail.ID}}/start"
+            hx-post="/quests/{{.QuestDetail.ID}}/start" hx-target="#main-content">
+        <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn btn-primary btn-lg">Start Quest</button>
+      </form>
+      {{end}}
+    </div>
+  </div>
+
+  {{if .QuestLogs}}
+  <!-- Progress log history -->
+  <div class="card">
+    <h3 style="padding: var(--sp-6) var(--sp-6) 0;">Progress Log</h3>
+    <div class="quest-log-list">
+      {{range .QuestLogs}}
+      <div class="quest-log-item">
+        <div class="quest-log-icon">
+          {{if eq .LogType "route_send"}}
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--rw-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+          {{else if eq .LogType "technique"}}
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--rw-blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+          </svg>
+          {{else if eq .LogType "milestone"}}
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--rw-orange)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
+          </svg>
+          {{else}}
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--rw-mid-gray)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+            <circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5"/>
+          </svg>
+          {{end}}
+        </div>
+        <div class="quest-log-body">
+          <div class="quest-log-type">{{.LogType | title}}</div>
+          {{if .Notes}}<div class="quest-log-notes">{{deref .Notes}}</div>{{end}}
+          <div class="quest-log-time text-muted">{{.LoggedAt | reltime}}</div>
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+</div>
+{{end}}

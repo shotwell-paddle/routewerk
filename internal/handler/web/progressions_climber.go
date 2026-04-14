@@ -13,6 +13,26 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
+// progressionsGated checks the location's progressions_enabled flag and
+// renders a 404 if disabled. Returns true when the request should be
+// short-circuited (flag off, no location selected, or load error). All
+// climber-facing quest/badge/activity routes call this first so the
+// feature is hidden until a gym opts in via the admin UI.
+func (h *Handler) progressionsGated(w http.ResponseWriter, r *http.Request) bool {
+	ctx := r.Context()
+	locationID := middleware.GetWebLocationID(ctx)
+	if locationID == "" {
+		h.renderError(w, r, http.StatusNotFound, "Not found", "This page is not available.")
+		return true
+	}
+	loc, err := h.locationRepo.GetByID(ctx, locationID)
+	if err != nil || loc == nil || !loc.ProgressionsEnabled {
+		h.renderError(w, r, http.StatusNotFound, "Not found", "This page is not available.")
+		return true
+	}
+	return false
+}
+
 // ============================================================
 // Quest Browser — lists available quests + suggestions
 // ============================================================
@@ -20,6 +40,9 @@ import (
 // QuestBrowser renders the quest browser page.
 // GET /quests
 func (h *Handler) QuestBrowser(w http.ResponseWriter, r *http.Request) {
+	if h.progressionsGated(w, r) {
+		return
+	}
 	ctx := r.Context()
 	user := middleware.GetWebUser(ctx)
 	locationID := middleware.GetWebLocationID(ctx)
@@ -99,6 +122,9 @@ func (h *Handler) QuestBrowser(w http.ResponseWriter, r *http.Request) {
 // QuestDetail renders the detail page for a single quest.
 // GET /quests/{questID}
 func (h *Handler) QuestDetailPage(w http.ResponseWriter, r *http.Request) {
+	if h.progressionsGated(w, r) {
+		return
+	}
 	ctx := r.Context()
 	user := middleware.GetWebUser(ctx)
 	locationID := middleware.GetWebLocationID(ctx)
@@ -163,6 +189,9 @@ func (h *Handler) QuestDetailPage(w http.ResponseWriter, r *http.Request) {
 // QuestStart enrolls the climber in a quest.
 // POST /quests/{questID}/start
 func (h *Handler) QuestStart(w http.ResponseWriter, r *http.Request) {
+	if h.progressionsGated(w, r) {
+		return
+	}
 	ctx := r.Context()
 	user := middleware.GetWebUser(ctx)
 	locationID := middleware.GetWebLocationID(ctx)
@@ -195,6 +224,9 @@ func (h *Handler) QuestStart(w http.ResponseWriter, r *http.Request) {
 // QuestLogProgress records a progress entry.
 // POST /quests/{questID}/log
 func (h *Handler) QuestLogProgress(w http.ResponseWriter, r *http.Request) {
+	if h.progressionsGated(w, r) {
+		return
+	}
 	ctx := r.Context()
 	user := middleware.GetWebUser(ctx)
 	questID := chi.URLParam(r, "questID")
@@ -253,6 +285,9 @@ func (h *Handler) QuestLogProgress(w http.ResponseWriter, r *http.Request) {
 // QuestComplete manually completes a quest.
 // POST /quests/{questID}/complete
 func (h *Handler) QuestComplete(w http.ResponseWriter, r *http.Request) {
+	if h.progressionsGated(w, r) {
+		return
+	}
 	ctx := r.Context()
 	user := middleware.GetWebUser(ctx)
 	questID := chi.URLParam(r, "questID")
@@ -289,6 +324,9 @@ func (h *Handler) QuestComplete(w http.ResponseWriter, r *http.Request) {
 // QuestAbandon lets a climber drop out of a quest.
 // POST /quests/{questID}/abandon
 func (h *Handler) QuestAbandon(w http.ResponseWriter, r *http.Request) {
+	if h.progressionsGated(w, r) {
+		return
+	}
 	ctx := r.Context()
 	user := middleware.GetWebUser(ctx)
 	questID := chi.URLParam(r, "questID")
@@ -329,6 +367,9 @@ func (h *Handler) QuestAbandon(w http.ResponseWriter, r *http.Request) {
 // MyQuests shows the climber's active and completed quests.
 // GET /quests/mine
 func (h *Handler) MyQuests(w http.ResponseWriter, r *http.Request) {
+	if h.progressionsGated(w, r) {
+		return
+	}
 	ctx := r.Context()
 	user := middleware.GetWebUser(ctx)
 	locationID := middleware.GetWebLocationID(ctx)
@@ -376,6 +417,9 @@ func (h *Handler) MyQuests(w http.ResponseWriter, r *http.Request) {
 // BadgeShowcase renders the badge collection page.
 // GET /quests/badges
 func (h *Handler) BadgeShowcase(w http.ResponseWriter, r *http.Request) {
+	if h.progressionsGated(w, r) {
+		return
+	}
 	ctx := r.Context()
 	user := middleware.GetWebUser(ctx)
 	locationID := middleware.GetWebLocationID(ctx)
@@ -425,6 +469,9 @@ func (h *Handler) BadgeShowcase(w http.ResponseWriter, r *http.Request) {
 // QuestActivity renders the activity feed for the location.
 // GET /quests/activity
 func (h *Handler) QuestActivity(w http.ResponseWriter, r *http.Request) {
+	if h.progressionsGated(w, r) {
+		return
+	}
 	ctx := r.Context()
 	locationID := middleware.GetWebLocationID(ctx)
 	if locationID == "" {

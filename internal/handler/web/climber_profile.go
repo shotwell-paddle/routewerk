@@ -75,26 +75,35 @@ func (h *Handler) ClimberProfile(w http.ResponseWriter, r *http.Request) {
 	// Build grade pyramid data for the template
 	pyramid := buildPyramidBars(stats.GradePyramid)
 
-	// Quest & badge data for the progressions section
+	// Quest & badge data for the progressions section.
+	// Skipped entirely when the gym hasn't enabled progressions so we don't
+	// render the section or query progressions tables for a disabled gym.
 	locationID := middleware.GetWebLocationID(ctx)
-	activeQuests, err := h.questSvc.ListUserQuests(ctx, user.ID, "active")
-	if err != nil {
-		slog.Error("profile active quests failed", "error", err)
-	}
-	completedQuests, err := h.questSvc.ListUserQuests(ctx, user.ID, "completed")
-	if err != nil {
-		slog.Error("profile completed quests failed", "error", err)
-	}
-	var badges []model.ClimberBadge
-	var domainProgress []repository.DomainProgress
+	var (
+		activeQuests    []model.ClimberQuest
+		completedQuests []model.ClimberQuest
+		badges          []model.ClimberBadge
+		domainProgress  []repository.DomainProgress
+	)
 	if locationID != "" {
-		badges, err = h.badgeRepo.ListUserBadgesForLocation(ctx, user.ID, locationID)
-		if err != nil {
-			slog.Error("profile badges failed", "error", err)
-		}
-		domainProgress, err = h.questSvc.UserDomainProgress(ctx, user.ID, locationID)
-		if err != nil {
-			slog.Error("profile domain progress failed", "error", err)
+		loc, locErr := h.locationRepo.GetByID(ctx, locationID)
+		if locErr == nil && loc != nil && loc.ProgressionsEnabled {
+			activeQuests, err = h.questSvc.ListUserQuests(ctx, user.ID, "active")
+			if err != nil {
+				slog.Error("profile active quests failed", "error", err)
+			}
+			completedQuests, err = h.questSvc.ListUserQuests(ctx, user.ID, "completed")
+			if err != nil {
+				slog.Error("profile completed quests failed", "error", err)
+			}
+			badges, err = h.badgeRepo.ListUserBadgesForLocation(ctx, user.ID, locationID)
+			if err != nil {
+				slog.Error("profile badges failed", "error", err)
+			}
+			domainProgress, err = h.questSvc.UserDomainProgress(ctx, user.ID, locationID)
+			if err != nil {
+				slog.Error("profile domain progress failed", "error", err)
+			}
 		}
 	}
 

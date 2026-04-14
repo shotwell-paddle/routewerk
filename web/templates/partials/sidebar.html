@@ -138,6 +138,7 @@
         </svg>
         Walls
       </a>
+      {{if .ProgressionsEnabled}}
       <a href="/quests" class="nav-item {{if eq .ActiveNav "quests"}}active{{end}}"
          hx-get="/quests" hx-target="#main-content" hx-push-url="true">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -145,6 +146,7 @@
         </svg>
         Quests
       </a>
+      {{end}}
       <a href="/archive" class="nav-item {{if eq .ActiveNav "archive"}}active{{end}}"
          hx-get="/archive" hx-target="#main-content" hx-push-url="true">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

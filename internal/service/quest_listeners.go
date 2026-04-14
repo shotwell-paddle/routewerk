@@ -23,21 +23,39 @@ import (
 //   - Notifications (async): creates in-app notifications for the
 //     climber. Also fire-and-forget.
 type QuestListeners struct {
-	badges   *repository.BadgeRepo
-	quests   *repository.QuestRepo
-	activity *repository.ActivityRepo
-	notifs   *NotificationService
-	bus      event.Bus
+	badges    *repository.BadgeRepo
+	quests    *repository.QuestRepo
+	activity  *repository.ActivityRepo
+	notifs    *NotificationService
+	locations *repository.LocationRepo
+	bus       event.Bus
 }
 
-func NewQuestListeners(badges *repository.BadgeRepo, quests *repository.QuestRepo, activity *repository.ActivityRepo, notifs *NotificationService, bus event.Bus) *QuestListeners {
+func NewQuestListeners(badges *repository.BadgeRepo, quests *repository.QuestRepo, activity *repository.ActivityRepo, notifs *NotificationService, locations *repository.LocationRepo, bus event.Bus) *QuestListeners {
 	return &QuestListeners{
-		badges:   badges,
-		quests:   quests,
-		activity: activity,
-		notifs:   notifs,
-		bus:      bus,
+		badges:    badges,
+		quests:    quests,
+		activity:  activity,
+		notifs:    notifs,
+		locations: locations,
+		bus:       bus,
 	}
+}
+
+// progressionsEnabled returns true when the gym has opted into progressions.
+// All event listeners short-circuit when the flag is off so disabled gyms
+// produce no quest auto-progress, no activity_log writes, and no badge/quest
+// notifications even if dependent code somehow publishes events. On lookup
+// failure we fail closed (return false) to avoid silent writes.
+func (l *QuestListeners) progressionsEnabled(ctx context.Context, locationID string) bool {
+	if l.locations == nil || locationID == "" {
+		return false
+	}
+	loc, err := l.locations.GetByID(ctx, locationID)
+	if err != nil || loc == nil {
+		return false
+	}
+	return loc.ProgressionsEnabled
 }
 
 // Register subscribes all progressions listeners on the bus.
@@ -116,6 +134,9 @@ func (l *QuestListeners) autoProgressQuests(ctx context.Context, e event.Event) 
 	payload, ok := e.Payload.(event.RouteSentPayload)
 	if !ok {
 		return fmt.Errorf("unexpected payload type for route.sent: %T", e.Payload)
+	}
+	if !l.progressionsEnabled(ctx, e.GymID) {
+		return nil
 	}
 
 	// Get all active quests for this user
@@ -230,6 +251,9 @@ func (l *QuestListeners) autoProgressQuests(ctx context.Context, e event.Event) 
 // ============================================================
 
 func (l *QuestListeners) logActivity(ctx context.Context, e event.Event) error {
+	if !l.progressionsEnabled(ctx, e.GymID) {
+		return nil
+	}
 	entry := &model.ActivityLogEntry{
 		LocationID:   e.GymID,
 		UserID:       e.UserID,

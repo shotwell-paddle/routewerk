@@ -87,10 +87,13 @@ func main() {
 	questRepo := repository.NewQuestRepo(db)
 	badgeRepo := repository.NewBadgeRepo(db)
 	activityRepo := repository.NewActivityRepo(db)
+	locationRepo := repository.NewLocationRepo(db)
 	questSvc := service.NewQuestService(questRepo, badgeRepo, bus)
 
-	// Register event listeners (badge awards, activity feed, notifications)
-	questListeners := service.NewQuestListeners(badgeRepo, questRepo, activityRepo, notifSvc, bus)
+	// Register event listeners (badge awards, activity feed, notifications).
+	// LocationRepo is passed so listeners can short-circuit when a gym has
+	// progressions disabled (locations.progressions_enabled = false).
+	questListeners := service.NewQuestListeners(badgeRepo, questRepo, activityRepo, notifSvc, locationRepo, bus)
 	questListeners.Register()
 
 	// Start job queue worker

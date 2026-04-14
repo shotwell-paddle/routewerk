@@ -34,6 +34,7 @@ type Location struct {
 	WaiverURL          *string            `json:"waiver_url,omitempty"`
 	AllowSharedSetters bool               `json:"allow_shared_setters"`
 	CustomDomain       *string            `json:"custom_domain,omitempty"`
+	ProgressionsEnabled bool              `json:"progressions_enabled"`
 	CreatedAt          time.Time          `json:"created_at"`
 	UpdatedAt          time.Time          `json:"updated_at"`
 	DeletedAt          pgtype.Timestamptz `json:"-"`

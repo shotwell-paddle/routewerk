@@ -23,6 +23,10 @@ type TemplateData struct {
 	Location    *model.Location
 	CSRFToken   string
 
+	// ProgressionsEnabled mirrors Location.ProgressionsEnabled for templates.
+	// False when no location is loaded. Gates the climber-facing /quests UI.
+	ProgressionsEnabled bool
+
 	// Location switcher
 	UserLocations []repository.UserLocationItem
 	HasMultipleLocations bool
@@ -180,6 +184,11 @@ type PageData struct {
 	BadgeFormError    string
 	SkillTagCoverage  map[string]int
 
+	// Progressions — analytics
+	QuestAnalytics   []repository.QuestAnalytics
+	DomainAnalytics  []repository.DomainAnalytics
+	AnalyticsSummary *repository.QuestAnalyticsSummary
+
 	// Progressions — climber
 	DomainFilter      string
 	SkillFilter       string
@@ -195,6 +204,15 @@ type PageData struct {
 	ClimberQuest      *model.ClimberQuest
 	ActivityFeed      []model.ActivityLogEntry
 	Notifications     []repository.Notification
+
+	// Team challenges
+	Challenges            []model.TeamChallenge
+	ChallengeDetail       *model.TeamChallenge
+	ChallengeTeams        []model.ChallengeTeam
+	UserTeam              *model.ChallengeTeam
+	ChallengeTeamMembers  []model.ChallengeTeamMember
+	Contributions         []model.ChallengeContribution
+	ChallengeFormError    string
 
 	// Error page
 	ErrorCode    int

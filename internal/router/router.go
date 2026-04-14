@@ -135,9 +135,8 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	activityRepo := repository.NewActivityRepo(db)
 	routeSkillTagRepo := repository.NewRouteSkillTagRepo(db)
 	notifRepo := repository.NewNotificationRepo(db)
-	challengeRepo := repository.NewChallengeRepo(db)
 
-	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, questRepo, badgeRepo, activityRepo, routeSkillTagRepo, notifRepo, deps.QuestSvc, challengeRepo, deps.EventBus, authService, storageSvc, cardGen, sessionMgr, cfg, db)
+	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, questRepo, badgeRepo, activityRepo, routeSkillTagRepo, notifRepo, deps.QuestSvc, deps.EventBus, authService, storageSvc, cardGen, sessionMgr, cfg, db)
 
 	// Rate limiter for web pages: 120 requests per minute per IP
 	webLimiter := middleware.NewRateLimiter(120, 1*time.Minute)
@@ -236,15 +235,6 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			r.Post("/quests/{questID}/complete", webHandler.QuestComplete)
 			r.Post("/quests/{questID}/abandon", webHandler.QuestAbandon)
 
-			// Team challenges — climber-facing group challenges
-			r.Get("/challenges", webHandler.ChallengeList)
-			r.Get("/challenges/{challengeID}", webHandler.ChallengeDetail)
-			r.Get("/challenges/{challengeID}/teams/new", webHandler.CreateTeamForm)
-			r.Post("/challenges/{challengeID}/teams/new", webHandler.CreateTeam)
-			r.Post("/challenges/{challengeID}/teams/{teamID}/join", webHandler.JoinTeam)
-			r.Post("/challenges/{challengeID}/teams/{teamID}/leave", webHandler.LeaveTeam)
-			r.Post("/challenges/{challengeID}/contribute", webHandler.LogContribution)
-
 			// Setter routes — require setter role or above
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireSetterSession)
@@ -315,7 +305,6 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 
 				// Progressions admin — head_setter or above (handler checks role internally)
 				r.Get("/settings/progressions", webHandler.ProgressionsAdminPage)
-				r.Get("/settings/progressions/analytics", webHandler.ProgressionsAnalyticsPage)
 
 				r.Get("/settings/progressions/domains/new", webHandler.DomainCreateForm)
 				r.Post("/settings/progressions/domains/new", webHandler.DomainCreate)
@@ -335,10 +324,6 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 				r.Get("/settings/progressions/badges/{badgeID}/edit", webHandler.BadgeEditForm)
 				r.Post("/settings/progressions/badges/{badgeID}/edit", webHandler.BadgeUpdate)
 				r.Post("/settings/progressions/badges/{badgeID}/delete", webHandler.BadgeDelete)
-
-				// Team challenges admin — head_setter or above (handler checks role internally)
-				r.Get("/settings/challenges/new", webHandler.ChallengeCreateForm)
-				r.Post("/settings/challenges/new", webHandler.ChallengeCreate)
 
 			})
 

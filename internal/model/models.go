@@ -83,7 +83,14 @@ type Wall struct {
 	MapHeight    *float64           `json:"map_height,omitempty"`
 	CreatedAt    time.Time          `json:"created_at"`
 	UpdatedAt    time.Time          `json:"updated_at"`
+	ArchivedAt   pgtype.Timestamptz `json:"archived_at,omitempty"`
 	DeletedAt    pgtype.Timestamptz `json:"-"`
+}
+
+// IsArchived reports whether the wall has been archived by a head setter.
+// Uses a value receiver so html/template can call it on embedded copies.
+func (w Wall) IsArchived() bool {
+	return w.ArchivedAt.Valid
 }
 
 type Route struct {

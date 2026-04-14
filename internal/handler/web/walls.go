@@ -10,12 +10,16 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
+	"github.com/shotwell-paddle/routewerk/internal/rbac"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
 )
 
 // ── Wall List ─────────────────────────────────────────────────
 
 // WallList renders the wall management grid (GET /walls).
+//
+// Setters see only active (non-archived) walls. Head setters and above see
+// archived walls as well so they can restore or permanently delete them.
 func (h *Handler) WallList(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	locationID := middleware.GetWebLocationID(ctx)
@@ -24,7 +28,18 @@ func (h *Handler) WallList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	walls, err := h.wallRepo.ListWithCounts(ctx, locationID)
+	role := middleware.GetWebRole(ctx)
+	isHeadSetter := rbac.IsAtLeast(role, rbac.RoleHeadSetter)
+
+	var (
+		walls []repository.WallWithCounts
+		err   error
+	)
+	if isHeadSetter {
+		walls, err = h.wallRepo.ListWithCountsAll(ctx, locationID)
+	} else {
+		walls, err = h.wallRepo.ListWithCounts(ctx, locationID)
+	}
 	if err != nil {
 		slog.Error("wall list failed", "error", err)
 		h.renderError(w, r, http.StatusInternalServerError, "Something went wrong", "Could not load walls.")
@@ -69,6 +84,13 @@ func (h *Handler) WallDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !h.checkLocationOwnership(w, r, wall.LocationID) {
+		return
+	}
+
+	// Archived walls are only visible to head setters and above.
+	role := middleware.GetWebRole(ctx)
+	if wall.IsArchived() && !rbac.IsAtLeast(role, rbac.RoleHeadSetter) {
+		h.renderError(w, r, http.StatusNotFound, "Wall not found", "This wall doesn't exist.")
 		return
 	}
 
@@ -188,6 +210,13 @@ func (h *Handler) WallEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Archived walls cannot be edited. Head setters must restore first.
+	if wall.IsArchived() {
+		h.renderError(w, r, http.StatusConflict, "Wall is archived",
+			"Restore this wall before editing it.")
+		return
+	}
+
 	fv := wallFormValuesFromModel(wall)
 	wv := &WallView{Wall: *wall}
 
@@ -216,6 +245,12 @@ func (h *Handler) WallUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !h.checkLocationOwnership(w, r, wall.LocationID) {
+		return
+	}
+
+	if wall.IsArchived() {
+		h.renderError(w, r, http.StatusConflict, "Wall is archived",
+			"Restore this wall before editing it.")
 		return
 	}
 
@@ -250,11 +285,74 @@ func (h *Handler) WallUpdate(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/walls", http.StatusSeeOther)
 }
 
-// ── Wall Delete ───────────────────────────────────────────────
+// ── Wall Archive / Unarchive / Delete ─────────────────────────
 
-// WallDelete handles POST /walls/{wallID}/delete.
+// WallArchive handles POST /walls/{wallID}/archive. Head setters and above
+// may hide a wall from climbers and setters without losing its history.
+func (h *Handler) WallArchive(w http.ResponseWriter, r *http.Request) {
+	h.wallArchiveAction(w, r, true)
+}
+
+// WallUnarchive handles POST /walls/{wallID}/unarchive.
+func (h *Handler) WallUnarchive(w http.ResponseWriter, r *http.Request) {
+	h.wallArchiveAction(w, r, false)
+}
+
+func (h *Handler) wallArchiveAction(w http.ResponseWriter, r *http.Request, archive bool) {
+	ctx := r.Context()
+
+	if !h.requireHeadSetter(w, r) {
+		return
+	}
+
+	wallID := chi.URLParam(r, "wallID")
+	if !validRouteID.MatchString(wallID) {
+		http.Error(w, "invalid wall ID", http.StatusBadRequest)
+		return
+	}
+
+	wall, err := h.wallRepo.GetByID(ctx, wallID)
+	if err != nil || wall == nil {
+		http.Error(w, "wall not found", http.StatusNotFound)
+		return
+	}
+	if !h.checkLocationOwnership(w, r, wall.LocationID) {
+		return
+	}
+
+	if archive {
+		err = h.wallRepo.Archive(ctx, wallID)
+	} else {
+		err = h.wallRepo.Unarchive(ctx, wallID)
+	}
+	if err != nil {
+		action := "archive"
+		if !archive {
+			action = "unarchive"
+		}
+		slog.Error("wall "+action+" failed", "wall_id", wallID, "error", err)
+		http.Error(w, "failed to "+action+" wall", http.StatusInternalServerError)
+		return
+	}
+
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Redirect", "/walls")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, "/walls", http.StatusSeeOther)
+}
+
+// WallDelete handles POST /walls/{wallID}/delete. Restricted to head setters
+// and above because this is destructive (soft-deletes the wall and hides it
+// from every role permanently until a DB operator restores it).
 func (h *Handler) WallDelete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
+	if !h.requireHeadSetter(w, r) {
+		return
+	}
+
 	wallID := chi.URLParam(r, "wallID")
 
 	if !validRouteID.MatchString(wallID) {
@@ -283,6 +381,24 @@ func (h *Handler) WallDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/walls", http.StatusSeeOther)
+}
+
+// requireHeadSetter is an inline guard for handlers that aren't already
+// wrapped by a head-setter-specific middleware. Uses the effective role so
+// a head setter viewing-as-setter correctly loses access, matching the
+// rest of the web UI.
+func (h *Handler) requireHeadSetter(w http.ResponseWriter, r *http.Request) bool {
+	role := middleware.GetWebRole(r.Context())
+	if rbac.IsAtLeast(role, rbac.RoleHeadSetter) {
+		return true
+	}
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Redirect", "/walls")
+		w.WriteHeader(http.StatusForbidden)
+		return false
+	}
+	http.Error(w, "forbidden", http.StatusForbidden)
+	return false
 }
 
 // ── Form Helpers ──────────────────────────────────────────────

@@ -30,11 +30,14 @@ func (r *WallRepo) Create(ctx context.Context, w *model.Wall) error {
 	).Scan(&w.ID, &w.CreatedAt, &w.UpdatedAt)
 }
 
+// GetByID returns a wall regardless of archived state (but not soft-deleted).
+// Callers that need to hide archived walls from unprivileged users must check
+// wall.IsArchived().
 func (r *WallRepo) GetByID(ctx context.Context, id string) (*model.Wall, error) {
 	query := `
 		SELECT id, location_id, name, wall_type, angle, height_meters, num_anchors,
 			surface_type, sort_order, map_x, map_y, map_width, map_height,
-			created_at, updated_at
+			created_at, updated_at, archived_at
 		FROM walls
 		WHERE id = $1 AND deleted_at IS NULL`
 
@@ -43,7 +46,7 @@ func (r *WallRepo) GetByID(ctx context.Context, id string) (*model.Wall, error) 
 		&w.ID, &w.LocationID, &w.Name, &w.WallType, &w.Angle, &w.HeightMeters,
 		&w.NumAnchors, &w.SurfaceType, &w.SortOrder,
 		&w.MapX, &w.MapY, &w.MapWidth, &w.MapHeight,
-		&w.CreatedAt, &w.UpdatedAt,
+		&w.CreatedAt, &w.UpdatedAt, &w.ArchivedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -54,14 +57,30 @@ func (r *WallRepo) GetByID(ctx context.Context, id string) (*model.Wall, error) 
 	return w, nil
 }
 
+// ListByLocation returns all non-archived walls at a location. This is the
+// list climbers see in filters and that setters use when creating routes.
 func (r *WallRepo) ListByLocation(ctx context.Context, locationID string) ([]model.Wall, error) {
-	query := `
+	return r.listByLocation(ctx, locationID, false)
+}
+
+// ListByLocationAll returns every wall at a location (archived included) for
+// head-setter management views.
+func (r *WallRepo) ListByLocationAll(ctx context.Context, locationID string) ([]model.Wall, error) {
+	return r.listByLocation(ctx, locationID, true)
+}
+
+func (r *WallRepo) listByLocation(ctx context.Context, locationID string, includeArchived bool) ([]model.Wall, error) {
+	archiveClause := "AND archived_at IS NULL"
+	if includeArchived {
+		archiveClause = ""
+	}
+	query := fmt.Sprintf(`
 		SELECT id, location_id, name, wall_type, angle, height_meters, num_anchors,
 			surface_type, sort_order, map_x, map_y, map_width, map_height,
-			created_at, updated_at
+			created_at, updated_at, archived_at
 		FROM walls
-		WHERE location_id = $1 AND deleted_at IS NULL
-		ORDER BY sort_order, name`
+		WHERE location_id = $1 AND deleted_at IS NULL %s
+		ORDER BY sort_order, name`, archiveClause)
 
 	rows, err := r.db.Query(ctx, query, locationID)
 	if err != nil {
@@ -76,7 +95,7 @@ func (r *WallRepo) ListByLocation(ctx context.Context, locationID string) ([]mod
 			&w.ID, &w.LocationID, &w.Name, &w.WallType, &w.Angle, &w.HeightMeters,
 			&w.NumAnchors, &w.SurfaceType, &w.SortOrder,
 			&w.MapX, &w.MapY, &w.MapWidth, &w.MapHeight,
-			&w.CreatedAt, &w.UpdatedAt,
+			&w.CreatedAt, &w.UpdatedAt, &w.ArchivedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan wall: %w", err)
 		}
@@ -94,22 +113,37 @@ type WallWithCounts struct {
 	TotalRoutes    int `json:"total_routes"`
 }
 
-// ListWithCounts returns walls with per-status route counts.
+// ListWithCounts returns non-archived walls with per-status route counts.
+// Used on the main wall management grid for setters.
 func (r *WallRepo) ListWithCounts(ctx context.Context, locationID string) ([]WallWithCounts, error) {
-	query := `
+	return r.listWithCounts(ctx, locationID, false)
+}
+
+// ListWithCountsAll is the head-setter variant that includes archived walls
+// so they can be reviewed and restored.
+func (r *WallRepo) ListWithCountsAll(ctx context.Context, locationID string) ([]WallWithCounts, error) {
+	return r.listWithCounts(ctx, locationID, true)
+}
+
+func (r *WallRepo) listWithCounts(ctx context.Context, locationID string, includeArchived bool) ([]WallWithCounts, error) {
+	archiveClause := "AND w.archived_at IS NULL"
+	if includeArchived {
+		archiveClause = ""
+	}
+	query := fmt.Sprintf(`
 		SELECT w.id, w.location_id, w.name, w.wall_type, w.angle, w.height_meters,
 			w.num_anchors, w.surface_type, w.sort_order,
 			w.map_x, w.map_y, w.map_width, w.map_height,
-			w.created_at, w.updated_at,
+			w.created_at, w.updated_at, w.archived_at,
 			COUNT(*) FILTER (WHERE r.status = 'active' AND r.deleted_at IS NULL) AS active_routes,
 			COUNT(*) FILTER (WHERE r.status = 'flagged' AND r.deleted_at IS NULL) AS flagged_routes,
 			COUNT(*) FILTER (WHERE r.status = 'archived' AND r.deleted_at IS NULL) AS archived_routes,
 			COUNT(*) FILTER (WHERE r.deleted_at IS NULL) AS total_routes
 		FROM walls w
 		LEFT JOIN routes r ON r.wall_id = w.id
-		WHERE w.location_id = $1 AND w.deleted_at IS NULL
+		WHERE w.location_id = $1 AND w.deleted_at IS NULL %s
 		GROUP BY w.id
-		ORDER BY w.sort_order, w.name`
+		ORDER BY w.archived_at IS NULL DESC, w.sort_order, w.name`, archiveClause)
 
 	rows, err := r.db.Query(ctx, query, locationID)
 	if err != nil {
@@ -124,7 +158,7 @@ func (r *WallRepo) ListWithCounts(ctx context.Context, locationID string) ([]Wal
 			&wc.ID, &wc.LocationID, &wc.Name, &wc.WallType, &wc.Angle, &wc.HeightMeters,
 			&wc.NumAnchors, &wc.SurfaceType, &wc.SortOrder,
 			&wc.MapX, &wc.MapY, &wc.MapWidth, &wc.MapHeight,
-			&wc.CreatedAt, &wc.UpdatedAt,
+			&wc.CreatedAt, &wc.UpdatedAt, &wc.ArchivedAt,
 			&wc.ActiveRoutes, &wc.FlaggedRoutes, &wc.ArchivedRoutes, &wc.TotalRoutes,
 		); err != nil {
 			return nil, fmt.Errorf("scan wall with counts: %w", err)
@@ -148,6 +182,40 @@ func (r *WallRepo) Update(ctx context.Context, w *model.Wall) error {
 		w.NumAnchors, w.SurfaceType, w.SortOrder,
 		w.MapX, w.MapY, w.MapWidth, w.MapHeight,
 	).Scan(&w.UpdatedAt)
+}
+
+// Archive marks a wall as archived. Archived walls are hidden from climbers
+// and cannot be edited by setters, but remain visible to head setters and
+// can be restored via Unarchive.
+func (r *WallRepo) Archive(ctx context.Context, id string) error {
+	query := `
+		UPDATE walls
+		SET archived_at = NOW()
+		WHERE id = $1 AND deleted_at IS NULL AND archived_at IS NULL`
+	ct, err := r.db.Exec(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("archive wall: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("archive wall: not found or already archived")
+	}
+	return nil
+}
+
+// Unarchive clears the archived marker, restoring the wall to active status.
+func (r *WallRepo) Unarchive(ctx context.Context, id string) error {
+	query := `
+		UPDATE walls
+		SET archived_at = NULL
+		WHERE id = $1 AND deleted_at IS NULL AND archived_at IS NOT NULL`
+	ct, err := r.db.Exec(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("unarchive wall: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("unarchive wall: not found or not archived")
+	}
+	return nil
 }
 
 func (r *WallRepo) Delete(ctx context.Context, id string) error {

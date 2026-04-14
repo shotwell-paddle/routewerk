@@ -13,7 +13,10 @@
           </svg>
         </a>
         <div>
-          <h1>{{.Wall.Name}}</h1>
+          <h1>
+            {{.Wall.Name}}
+            {{if .Wall.IsArchived}}<span class="badge badge-muted">Archived</span>{{end}}
+          </h1>
           <p class="page-subtitle">
             {{.Wall.WallType | title}}{{if .Wall.Angle}} · {{deref .Wall.Angle}}{{end}}
             {{if .Wall.HeightMeters}} · {{printf "%.1f" (derefFloat .Wall.HeightMeters)}}m{{end}}
@@ -23,6 +26,7 @@
       </div>
     </div>
     <div class="flex gap-2">
+      {{if not .Wall.IsArchived}}
       <a href="/routes/new?wall={{.Wall.ID}}" class="btn btn-primary"
          hx-get="/routes/new?wall={{.Wall.ID}}" hx-target="#main-content" hx-push-url="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
@@ -34,6 +38,28 @@
          hx-get="/walls/{{.Wall.ID}}/edit" hx-target="#main-content" hx-push-url="true">
         Edit Wall
       </a>
+      {{if .IsHeadSetter}}
+      <button class="btn btn-ghost"
+              hx-post="/walls/{{.Wall.ID}}/archive"
+              hx-vals='{"_csrf_token": "{{.CSRFToken}}"}'
+              hx-confirm="Archive this wall? It will be hidden from climbers and setters.">
+        Archive
+      </button>
+      {{end}}
+      {{else if .IsHeadSetter}}
+      <button class="btn btn-primary"
+              hx-post="/walls/{{.Wall.ID}}/unarchive"
+              hx-vals='{"_csrf_token": "{{.CSRFToken}}"}'
+              hx-confirm="Restore this wall? Climbers and setters will be able to see it again.">
+        Restore
+      </button>
+      <button class="btn btn-danger"
+              hx-post="/walls/{{.Wall.ID}}/delete"
+              hx-vals='{"_csrf_token": "{{.CSRFToken}}"}'
+              hx-confirm="Permanently delete this wall? This cannot be undone from the UI.">
+        Delete
+      </button>
+      {{end}}
     </div>
   </div>
 </div>

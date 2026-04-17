@@ -311,6 +311,7 @@ func TestTemplateDataFromContext_ViewAsOverride(t *testing.T) {
 	user := &model.User{
 		ID:          "user-456",
 		DisplayName: "Admin User",
+		IsAppAdmin:  true, // real account IS an app admin — view-as should hide UI
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
@@ -333,6 +334,35 @@ func TestTemplateDataFromContext_ViewAsOverride(t *testing.T) {
 	}
 	if td.IsOrgAdmin {
 		t.Error("IsOrgAdmin should be false when viewing as setter")
+	}
+	// IsAppAdmin should also be hidden while view-as is active, even though
+	// the underlying user.IsAppAdmin is true. The UI mirrors what a real
+	// setter would see; RequireAppAdmin still protects the routes server-side.
+	if td.IsAppAdmin {
+		t.Error("IsAppAdmin should be false while viewing as a lower role")
+	}
+}
+
+func TestTemplateDataFromContext_AppAdminNoViewAs(t *testing.T) {
+	user := &model.User{
+		ID:          "user-789",
+		DisplayName: "Admin User",
+		IsAppAdmin:  true,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	ctx := middleware.SetWebUser(req.Context(), user)
+	ctx = middleware.SetWebRole(ctx, "org_admin")
+	ctx = middleware.SetWebRealRole(ctx, "org_admin") // no view-as override
+	req = req.WithContext(ctx)
+
+	td := templateDataFromContext(req, "dashboard")
+
+	if !td.IsAppAdmin {
+		t.Error("IsAppAdmin should be true when real user is app admin and no view-as is active")
+	}
+	if td.ViewAsRole != "" {
+		t.Errorf("ViewAsRole = %q, want empty when no override", td.ViewAsRole)
 	}
 }
 

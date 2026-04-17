@@ -65,7 +65,13 @@ func templateDataFromContext(r *http.Request, activeNav string) TemplateData {
 	td.IsSetter = effectiveRole != middleware.RoleClimber
 	td.IsHeadSetter = middleware.RoleRankValue(effectiveRole) >= 3
 	td.IsOrgAdmin = middleware.RoleRankValue(effectiveRole) >= 5
-	if user != nil {
+	// IsAppAdmin is a per-user flag (not a role), but it must still respect
+	// the view-as override: the whole point of view-as is to preview the app
+	// as a lower-privilege user, so the Admin sidebar section should disappear
+	// while it's active. Security is still enforced server-side by
+	// RequireAppAdmin, which checks the real user.IsAppAdmin — this only
+	// controls UI visibility.
+	if user != nil && effectiveRole == realRole {
 		td.IsAppAdmin = user.IsAppAdmin
 	}
 

@@ -38,7 +38,31 @@ function showToast(msg, isError) {
 }
 
 // ── HTMX error handling ──────────────────────────────────────
+
+// Decide whether to swallow an error toast for an HTMX event.
+// We suppress in two cases:
+//   1. The server sent HX-Redirect (HTMX is already navigating elsewhere —
+//      e.g. auth expiry redirecting to /login. Flashing a misleading
+//      "Request failed. Please check your input." toast before the redirect
+//      is pure UX noise).
+//   2. The request was a background poll (hx-trigger="every …"). The user
+//      didn't initiate it, so a popup is disorienting; worse, a persistent
+//      failure spams a new toast every Nth second.
+function shouldSuppressErrorToast(e) {
+  var xhr = e.detail && e.detail.xhr;
+  if (xhr && typeof xhr.getResponseHeader === 'function' && xhr.getResponseHeader('HX-Redirect')) {
+    return true;
+  }
+  var elt = e.detail && e.detail.elt;
+  if (elt && typeof elt.getAttribute === 'function') {
+    var trigger = elt.getAttribute('hx-trigger') || '';
+    if (/\bevery\s+\d/.test(trigger)) return true;
+  }
+  return false;
+}
+
 document.addEventListener('htmx:responseError', function(e) {
+  if (shouldSuppressErrorToast(e)) return;
   var status = e.detail.xhr ? e.detail.xhr.status : 0;
   if (status === 429) {
     showToast('Too many requests — please wait a moment.', true);
@@ -49,11 +73,13 @@ document.addEventListener('htmx:responseError', function(e) {
   }
 });
 
-document.addEventListener('htmx:sendError', function() {
+document.addEventListener('htmx:sendError', function(e) {
+  if (shouldSuppressErrorToast(e)) return;
   showToast('Connection lost. Check your network and try again.', true);
 });
 
-document.addEventListener('htmx:timeout', function() {
+document.addEventListener('htmx:timeout', function(e) {
+  if (shouldSuppressErrorToast(e)) return;
   showToast('Request timed out. Please try again.', true);
 });
 

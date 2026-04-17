@@ -2104,7 +2104,7 @@ tr:hover td { background: rgba(0,0,0,0.015); }
 
 .manage-header {
   display: grid;
-  grid-template-columns: 36px 80px minmax(180px, 280px) 120px 100px 80px 60px 80px 100px;
+  grid-template-columns: 36px 80px minmax(180px, 280px) 120px 100px 80px 60px 90px 140px;
   gap: 0;
   padding: var(--sp-2) var(--sp-4);
   background: var(--rw-off-white);
@@ -2118,7 +2118,7 @@ tr:hover td { background: rgba(0,0,0,0.015); }
 
 .manage-row {
   display: grid;
-  grid-template-columns: 36px 80px minmax(180px, 280px) 120px 100px 80px 60px 80px 100px;
+  grid-template-columns: 36px 80px minmax(180px, 280px) 120px 100px 80px 60px 90px 140px;
   gap: 0;
   padding: var(--sp-3) var(--sp-4);
   border-bottom: 1px solid var(--rw-border);

@@ -62,6 +62,7 @@ func (h *Handler) loadTemplates() {
 		"climber/quest-detail.html",
 		"climber/my-quests.html",
 		"climber/quest-activity.html",
+		"climber/notifications.html",
 		"error.html",
 	}
 

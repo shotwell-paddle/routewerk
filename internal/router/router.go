@@ -360,13 +360,13 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 		// whole point of refresh is that the access token has expired.
 		r.Group(func(r chi.Router) {
 			r.Use(authLimiter.Limit)
-			r.Use(middleware.AuthenticateAllowExpired(cfg.JWTSecret))
+			r.Use(middleware.AuthenticateAllowExpired(cfg.JWTSecret, cfg.EnforceJWTAudience))
 			r.Post("/auth/refresh", authHandler.Refresh)
 		})
 
 		// Authenticated — all routes below require a valid (non-expired) JWT
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.Authenticate(cfg.JWTSecret))
+			r.Use(middleware.Authenticate(cfg.JWTSecret, cfg.EnforceJWTAudience))
 
 			// ── User's own data (no org context needed) ─────────────
 			r.Get("/me", authHandler.Me)

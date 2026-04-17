@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html/template"
 	"log/slog"
+	"net/mail"
 	"net/smtp"
 	"strings"
 
@@ -143,6 +144,10 @@ func (s *EmailService) send(to, subject, htmlBody string) error {
 		return nil
 	}
 
+	if _, err := mail.ParseAddress(to); err != nil {
+		return fmt.Errorf("invalid recipient %q: %w", to, err)
+	}
+
 	msg := buildMIME(s.cfg.From, to, subject, htmlBody)
 
 	auth := smtp.PlainAuth("", s.cfg.Username, s.cfg.Password, s.cfg.Host)
@@ -156,11 +161,18 @@ func (s *EmailService) send(to, subject, htmlBody string) error {
 	return nil
 }
 
+// sanitizeHeader removes CR and LF so user-controlled values cannot inject
+// additional SMTP headers or split the body. Applied to every header value
+// passed to buildMIME.
+func sanitizeHeader(s string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(s)
+}
+
 func buildMIME(from, to, subject, htmlBody string) []byte {
 	var buf bytes.Buffer
-	buf.WriteString("From: " + from + "\r\n")
-	buf.WriteString("To: " + to + "\r\n")
-	buf.WriteString("Subject: " + subject + "\r\n")
+	buf.WriteString("From: " + sanitizeHeader(from) + "\r\n")
+	buf.WriteString("To: " + sanitizeHeader(to) + "\r\n")
+	buf.WriteString("Subject: " + sanitizeHeader(subject) + "\r\n")
 	buf.WriteString("MIME-Version: 1.0\r\n")
 	buf.WriteString("Content-Type: text/html; charset=\"utf-8\"\r\n")
 	buf.WriteString("\r\n")

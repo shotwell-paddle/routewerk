@@ -295,7 +295,7 @@ func TestRouteRepo_SetTags(t *testing.T) {
 		t.Fatalf("SetTags: %v", err)
 	}
 
-	tags, err := repo.GetTags(ctx, rt.ID)
+	tags, err := repo.GetTags(ctx, f.LocationID, rt.ID)
 	if err != nil {
 		t.Fatalf("GetTags: %v", err)
 	}
@@ -307,9 +307,18 @@ func TestRouteRepo_SetTags(t *testing.T) {
 	if err := repo.SetTags(ctx, rt.ID, []string{tag1}); err != nil {
 		t.Fatalf("SetTags (replace): %v", err)
 	}
-	tags, _ = repo.GetTags(ctx, rt.ID)
+	tags, _ = repo.GetTags(ctx, f.LocationID, rt.ID)
 	if len(tags) != 1 {
 		t.Errorf("Tags count after replace = %d, want 1", len(tags))
+	}
+
+	// Cross-tenant probe: a different location should see zero tags for
+	// this routeID even though the route_tags rows exist.
+	otherLoc := "00000000-0000-0000-0000-000000000000"
+	if other, err := repo.GetTags(ctx, otherLoc, rt.ID); err != nil {
+		t.Fatalf("GetTags cross-tenant: %v", err)
+	} else if len(other) != 0 {
+		t.Errorf("cross-tenant GetTags leaked %d tags", len(other))
 	}
 }
 

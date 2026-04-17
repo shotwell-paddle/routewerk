@@ -136,6 +136,14 @@ func (h *Handler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 	// Set the session cookie
 	h.sessionMgr.SetSessionCookie(w, token, h.cfg.SessionMaxAge)
 
+	// Rotate the CSRF cookie so any token planted before login (session
+	// fixation) stops being valid. Failure here is logged but non-fatal —
+	// the user still has an old-but-working token, and the next page load
+	// will redisplay it correctly.
+	if _, err := middleware.RotateCSRFToken(w, !h.cfg.IsDev()); err != nil {
+		slog.Error("csrf rotate after login failed", "user_id", user.ID, "error", err)
+	}
+
 	// Users with no location need to pick a gym or set up the first one
 	if locationID == nil {
 		http.Redirect(w, r, h.postAuthRedirect(r), http.StatusSeeOther)
@@ -181,6 +189,13 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.sessionMgr.ClearSessionCookie(w)
+
+	// Rotate the CSRF cookie too — on a shared device, the next user
+	// picking up the browser should not inherit the previous user's
+	// pre-logout CSRF token.
+	if _, err := middleware.RotateCSRFToken(w, !h.cfg.IsDev()); err != nil {
+		slog.Error("csrf rotate after logout failed", "error", err)
+	}
 
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("HX-Redirect", "/login")
@@ -332,6 +347,11 @@ func (h *Handler) RegisterSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.sessionMgr.SetSessionCookie(w, token, h.cfg.SessionMaxAge)
+
+	// Rotate CSRF on session creation — same fixation rationale as LoginSubmit.
+	if _, err := middleware.RotateCSRFToken(w, !h.cfg.IsDev()); err != nil {
+		slog.Error("csrf rotate after register failed", "user_id", user.ID, "error", err)
+	}
 
 	// New users have no gym yet — send them to setup or gym selection
 	if locationID == nil {

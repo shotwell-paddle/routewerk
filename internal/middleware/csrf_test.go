@@ -192,3 +192,110 @@ func TestCSRF_ProductionSecureFlag(t *testing.T) {
 		}
 	}
 }
+
+// ── RotateCSRFToken ───────────────────────────────────────────────
+
+func TestRotateCSRFToken_WritesNewCookie(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	token, err := RotateCSRFToken(rec, false)
+	if err != nil {
+		t.Fatalf("RotateCSRFToken returned error: %v", err)
+	}
+	if token == "" {
+		t.Fatal("RotateCSRFToken returned empty token")
+	}
+
+	var found bool
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == csrfCookieName {
+			found = true
+			if c.Value != token {
+				t.Errorf("cookie value = %q, want %q (matches returned token)", c.Value, token)
+			}
+			if c.HttpOnly {
+				t.Error("rotated CSRF cookie must NOT be HttpOnly — JS reads it for HTMX headers")
+			}
+			if c.Secure {
+				t.Error("rotated CSRF cookie should not be Secure when called with secure=false")
+			}
+			if c.SameSite != http.SameSiteStrictMode {
+				t.Errorf("SameSite = %v, want Strict", c.SameSite)
+			}
+			if c.Path != "/" {
+				t.Errorf("Path = %q, want \"/\"", c.Path)
+			}
+		}
+	}
+	if !found {
+		t.Error("RotateCSRFToken did not emit a CSRF cookie on the response")
+	}
+}
+
+func TestRotateCSRFToken_ProductionSetsSecure(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	if _, err := RotateCSRFToken(rec, true); err != nil {
+		t.Fatalf("RotateCSRFToken returned error: %v", err)
+	}
+
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == csrfCookieName && !c.Secure {
+			t.Error("rotated CSRF cookie should have Secure flag when called with secure=true")
+		}
+	}
+}
+
+func TestRotateCSRFToken_InvalidatesOldToken(t *testing.T) {
+	// Simulate a session-fixation scenario: an attacker knows the victim's
+	// pre-login CSRF token. After login, Rotate is called — the cookie now
+	// carries a new value and the old one no longer matches. Downstream
+	// Protect() middleware runs ConstantTimeCompare against the cookie, so
+	// submitting the attacker's old token would fail.
+	rec := httptest.NewRecorder()
+
+	oldToken := "attacker-known-token"
+	newToken, err := RotateCSRFToken(rec, false)
+	if err != nil {
+		t.Fatalf("RotateCSRFToken: %v", err)
+	}
+
+	if newToken == oldToken {
+		t.Error("rotated token equals attacker-known token — rotation didn't occur")
+	}
+
+	// Verify the cookie written is the new token, not the old one.
+	cookies := rec.Result().Cookies()
+	var got string
+	for _, c := range cookies {
+		if c.Name == csrfCookieName {
+			got = c.Value
+		}
+	}
+	if got != newToken {
+		t.Errorf("cookie value %q != new token %q", got, newToken)
+	}
+	if got == oldToken {
+		t.Error("cookie still contains the old (pre-rotation) token")
+	}
+}
+
+func TestRotateCSRFToken_EachCallDistinct(t *testing.T) {
+	// Rotation must produce a fresh random token every call.
+	rec1 := httptest.NewRecorder()
+	t1, err := RotateCSRFToken(rec1, false)
+	if err != nil {
+		t.Fatalf("call 1: %v", err)
+	}
+	rec2 := httptest.NewRecorder()
+	t2, err := RotateCSRFToken(rec2, false)
+	if err != nil {
+		t.Fatalf("call 2: %v", err)
+	}
+	if t1 == t2 {
+		t.Errorf("two Rotate calls returned identical tokens %q — entropy source broken?", t1)
+	}
+	// silence unused imports if refactored
+	_ = url.QueryEscape
+	_ = strings.Contains
+}

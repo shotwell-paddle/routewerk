@@ -124,3 +124,73 @@ func TestNewEmailService(t *testing.T) {
 		t.Fatal("NewEmailService returned nil")
 	}
 }
+
+func TestSanitizeHeader(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain", "Hello world", "Hello world"},
+		{"strip LF", "Hello\nworld", "Helloworld"},
+		{"strip CR", "Hello\rworld", "Helloworld"},
+		{"strip CRLF", "Hello\r\nworld", "Helloworld"},
+		{"strip injection", "Reset\r\nBcc: a@b.c", "ResetBcc: a@b.c"},
+		{"empty", "", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sanitizeHeader(tc.in); got != tc.want {
+				t.Errorf("sanitizeHeader(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildMIME_StripsCRLFFromHeaders(t *testing.T) {
+	tests := []struct {
+		name            string
+		from, to, subj  string
+		wantContains    []string
+		wantNotContains []string
+	}{
+		{
+			name:            "injection via subject",
+			from:            "noreply@test.com",
+			to:              "user@test.com",
+			subj:            "Hello\r\nBcc: attacker@example.com",
+			wantContains:    []string{"Subject: HelloBcc: attacker@example.com\r\n"},
+			wantNotContains: []string{"Subject: Hello\r\nBcc:"},
+		},
+		{
+			name:         "plain subject unchanged",
+			from:         "noreply@test.com",
+			to:           "user@test.com",
+			subj:         "Reset your password",
+			wantContains: []string{"Subject: Reset your password\r\n"},
+		},
+		{
+			name:            "injection via recipient",
+			from:            "noreply@test.com",
+			to:              "user@test.com\r\nBcc: attacker@example.com",
+			subj:            "Hi",
+			wantContains:    []string{"To: user@test.comBcc: attacker@example.com\r\n"},
+			wantNotContains: []string{"To: user@test.com\r\nBcc:"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := string(buildMIME(tc.from, tc.to, tc.subj, "<p>hi</p>"))
+			for _, s := range tc.wantContains {
+				if !strings.Contains(got, s) {
+					t.Errorf("missing %q in output:\n%s", s, got)
+				}
+			}
+			for _, s := range tc.wantNotContains {
+				if strings.Contains(got, s) {
+					t.Errorf("unexpected %q in output:\n%s", s, got)
+				}
+			}
+		})
+	}
+}

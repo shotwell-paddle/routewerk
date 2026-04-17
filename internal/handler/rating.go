@@ -54,11 +54,16 @@ func (h *RatingHandler) Rate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RatingHandler) RouteRatings(w http.ResponseWriter, r *http.Request) {
+	// Scope ratings to the locationID the URL was nested under. The
+	// RequireLocationMember middleware upstream has already verified the
+	// caller has membership at this location; pinning the DB query to the
+	// same locationID closes the cross-tenant probe via a stolen routeID.
+	locationID := chi.URLParam(r, "locationID")
 	routeID := chi.URLParam(r, "routeID")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 
-	ratings, err := h.ratings.ListByRoute(r.Context(), routeID, limit, offset)
+	ratings, err := h.ratings.ListByRoute(r.Context(), routeID, locationID, limit, offset)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "internal error")
 		return

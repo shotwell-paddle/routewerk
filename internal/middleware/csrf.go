@@ -105,3 +105,39 @@ func TokenFromRequest(r *http.Request) string {
 	}
 	return cookie.Value
 }
+
+// RotateCSRFToken issues a fresh CSRF cookie on the given response and
+// returns the new token value. Call this on any privilege boundary
+// crossing — login, logout, registration, password change — so any token
+// captured pre-boundary (e.g. a session-fixation attempt that planted a
+// CSRF cookie before the victim logged in) stops being valid.
+//
+// The Protect middleware normally only mints a token when the cookie is
+// missing; it does NOT refresh existing cookies. That's intentional for
+// regular navigation (so open forms keep working) but leaves a fixation
+// window around login. Rotate closes it.
+//
+// `secure` should be true in production (HTTPS) and false in local dev.
+// Handlers typically pass `!cfg.IsDev()`.
+//
+// NOTE: because rotation changes the cookie value, any already-rendered
+// form that embedded the OLD token will fail its next submit. Login /
+// logout / register all redirect, so the next page gets a fresh render.
+// PasswordChange is an HTMX partial — pair its Rotate call with an
+// `HX-Refresh: true` response header so the browser reloads the page and
+// picks up the new token.
+func RotateCSRFToken(w http.ResponseWriter, secure bool) (string, error) {
+	token, err := generateCSRFToken()
+	if err != nil {
+		return "", err
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     csrfCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: false, // JS reads this for HTMX headers, same as Protect()
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+	})
+	return token, nil
+}

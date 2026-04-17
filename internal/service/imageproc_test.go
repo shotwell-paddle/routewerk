@@ -2,10 +2,13 @@ package service
 
 import (
 	"bytes"
+	"encoding/binary"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"strings"
 	"testing"
 )
 
@@ -157,5 +160,66 @@ func TestProcessImage_InvalidData_Error(t *testing.T) {
 	_, err := ProcessImage(src, "image/jpeg")
 	if err == nil {
 		t.Error("expected error for invalid image data, got nil")
+	}
+}
+
+// makeBombPNGHeader crafts a minimal PNG file (signature + IHDR) declaring
+// dimensions w × h. image.DecodeConfig inspects only the IHDR chunk, so this
+// is enough to exercise the declared-dimensions guard without allocating the
+// corresponding pixel buffer.
+func makeBombPNGHeader(w, h uint32) []byte {
+	buf := new(bytes.Buffer)
+	// PNG signature.
+	buf.Write([]byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a})
+	// IHDR payload: 4 width + 4 height + 5 metadata bytes.
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr[0:4], w)
+	binary.BigEndian.PutUint32(ihdr[4:8], h)
+	ihdr[8] = 8  // bit depth
+	ihdr[9] = 2  // color type (RGB)
+	ihdr[10] = 0 // compression
+	ihdr[11] = 0 // filter
+	ihdr[12] = 0 // interlace
+	writePNGChunk(buf, "IHDR", ihdr)
+	return buf.Bytes()
+}
+
+func writePNGChunk(buf *bytes.Buffer, typ string, data []byte) {
+	_ = binary.Write(buf, binary.BigEndian, uint32(len(data)))
+	buf.WriteString(typ)
+	buf.Write(data)
+	crc := crc32.NewIEEE()
+	crc.Write([]byte(typ))
+	crc.Write(data)
+	_ = binary.Write(buf, binary.BigEndian, crc.Sum32())
+}
+
+func TestProcessImage_RejectsDeclaredBomb(t *testing.T) {
+	bomb := makeBombPNGHeader(65535, 65535) // ~4.3 billion pixels
+	_, err := ProcessImage(bytes.NewReader(bomb), "image/png")
+	if err == nil {
+		t.Fatal("expected error for oversized dimensions")
+	}
+	if !strings.Contains(err.Error(), "exceed maximum pixels") {
+		t.Errorf("wrong error message: %v", err)
+	}
+}
+
+func TestProcessImage_RejectsOversizePayload(t *testing.T) {
+	big := bytes.Repeat([]byte{0x00}, maxInputBytes+1)
+	_, err := ProcessImage(bytes.NewReader(big), "image/jpeg")
+	if err == nil {
+		t.Fatal("expected error for oversize payload")
+	}
+	if !strings.Contains(err.Error(), "exceeds") {
+		t.Errorf("wrong error message: %v", err)
+	}
+}
+
+func TestProcessImage_AcceptsAtLimit(t *testing.T) {
+	// A modest 1000x1000 image is well under both limits and should still process.
+	src := makeTestJPEG(t, 1000, 1000)
+	if _, err := ProcessImage(src, "image/jpeg"); err != nil {
+		t.Fatalf("unexpected error for normal image: %v", err)
 	}
 }

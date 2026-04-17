@@ -2104,7 +2104,7 @@ tr:hover td { background: rgba(0,0,0,0.015); }
 
 .manage-header {
   display: grid;
-  grid-template-columns: 36px 80px 1fr 120px 100px 80px 60px 80px 100px;
+  grid-template-columns: 36px 80px minmax(180px, 280px) 120px 100px 80px 60px 80px 100px;
   gap: 0;
   padding: var(--sp-2) var(--sp-4);
   background: var(--rw-off-white);
@@ -2118,7 +2118,7 @@ tr:hover td { background: rgba(0,0,0,0.015); }
 
 .manage-row {
   display: grid;
-  grid-template-columns: 36px 80px 1fr 120px 100px 80px 60px 80px 100px;
+  grid-template-columns: 36px 80px minmax(180px, 280px) 120px 100px 80px 60px 80px 100px;
   gap: 0;
   padding: var(--sp-3) var(--sp-4);
   border-bottom: 1px solid var(--rw-border);
@@ -2528,22 +2528,11 @@ tr:hover td { background: rgba(0,0,0,0.015); }
   color: var(--rw-charcoal);
 }
 
-/* Feed list (ascent timeline) */
-.feed-list {
-  display: flex;
-  flex-direction: column;
-}
-
-.feed-item {
-  display: flex;
-  gap: 0.75rem;
-  padding: 0.75rem 0;
-  border-bottom: 1px solid var(--rw-warm-gray);
-}
-
-.feed-item:last-child {
-  border-bottom: none;
-}
+/* Feed list (ascent timeline) — legacy overrides kept for avatar styling.
+   NOTE: .feed-item / .feed-list intentionally omitted here so the card-style
+   rules earlier in this file (near .feed-item around line 1174) win.
+   Previously this block set `padding: 0.75rem 0` which zeroed horizontal
+   padding on the dashboard activity cards, pinning the avatar to the edge. */
 
 .feed-avatar {
   flex-shrink: 0;

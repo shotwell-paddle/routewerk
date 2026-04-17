@@ -87,18 +87,23 @@ func TestHealthy_UnconfiguredService(t *testing.T) {
 	// The health check path in the handler checks IsConfigured() before Healthy()
 }
 
-// ── URL construction / key extraction (via Delete path parsing) ────
+// ── KeyFromURL: legacy URL → storage-key derivation ────────────────
+//
+// After migration 28 new rows persist storage_key directly. KeyFromURL is
+// only used for legacy rows that predate that column; these tests pin the
+// format we committed to so a future endpoint change doesn't break the
+// derivation before the legacy rows have aged out.
 
-func TestDeleteKeyExtraction(t *testing.T) {
+func TestKeyFromURL(t *testing.T) {
 	svc := &StorageService{
 		endpoint: "https://s3.example.com",
 		bucket:   "my-bucket",
 	}
 
 	tests := []struct {
-		name     string
-		input    string
-		wantKey  string
+		name    string
+		input   string
+		wantKey string
 	}{
 		{
 			"full URL",
@@ -106,28 +111,27 @@ func TestDeleteKeyExtraction(t *testing.T) {
 			"photos/route-1/123.jpg",
 		},
 		{
-			"just key",
-			"photos/route-2/456.jpg",
-			"photos/route-2/456.jpg",
+			"empty string returns empty (don't attempt delete)",
+			"",
+			"",
 		},
 		{
-			"trailing slash endpoint",
-			"https://s3.example.com/my-bucket/photos/route-3/789.jpg",
-			"photos/route-3/789.jpg",
+			"URL with different bucket returns empty",
+			"https://s3.example.com/other-bucket/photos/route-2/456.jpg",
+			"",
+		},
+		{
+			"URL with different endpoint returns empty",
+			"https://other.example.com/my-bucket/photos/route-3/789.jpg",
+			"",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// We can test the key extraction logic by examining what Delete would pass.
-			// The logic is: strip the prefix "{endpoint}/{bucket}/" from the URL.
-			key := tc.input
-			prefix := svc.endpoint + "/" + svc.bucket + "/"
-			if len(key) > len(prefix) && key[:len(prefix)] == prefix {
-				key = key[len(prefix):]
-			}
-			if key != tc.wantKey {
-				t.Errorf("extracted key = %q, want %q", key, tc.wantKey)
+			got := svc.KeyFromURL(tc.input)
+			if got != tc.wantKey {
+				t.Errorf("KeyFromURL(%q) = %q, want %q", tc.input, got, tc.wantKey)
 			}
 		})
 	}

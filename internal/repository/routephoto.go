@@ -26,20 +26,21 @@ type PhotoWithUploader struct {
 	UploaderInitial string
 }
 
-// Create inserts a new route photo.
+// Create inserts a new route photo. StorageKey may be nil for legacy callers;
+// new upload paths should always supply it so future deletes can hit S3 by key.
 func (r *RoutePhotoRepo) Create(ctx context.Context, p *model.RoutePhoto) error {
 	return r.db.QueryRow(ctx, `
-		INSERT INTO route_photos (route_id, photo_url, caption, uploaded_by, sort_order)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO route_photos (route_id, photo_url, storage_key, caption, uploaded_by, sort_order)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, created_at`,
-		p.RouteID, p.PhotoURL, p.Caption, p.UploadedBy, p.SortOrder,
+		p.RouteID, p.PhotoURL, p.StorageKey, p.Caption, p.UploadedBy, p.SortOrder,
 	).Scan(&p.ID, &p.CreatedAt)
 }
 
 // ListByRoute returns all photos for a route, ordered by sort_order then newest.
 func (r *RoutePhotoRepo) ListByRoute(ctx context.Context, routeID string) ([]PhotoWithUploader, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT rp.id, rp.route_id, rp.photo_url, rp.caption, rp.uploaded_by,
+		SELECT rp.id, rp.route_id, rp.photo_url, rp.storage_key, rp.caption, rp.uploaded_by,
 		       rp.sort_order, rp.created_at,
 		       COALESCE(u.display_name, 'Unknown') AS uploader_name
 		FROM route_photos rp
@@ -57,7 +58,7 @@ func (r *RoutePhotoRepo) ListByRoute(ctx context.Context, routeID string) ([]Pho
 	for rows.Next() {
 		var p PhotoWithUploader
 		if err := rows.Scan(
-			&p.ID, &p.RouteID, &p.PhotoURL, &p.Caption, &p.UploadedBy,
+			&p.ID, &p.RouteID, &p.PhotoURL, &p.StorageKey, &p.Caption, &p.UploadedBy,
 			&p.SortOrder, &p.CreatedAt,
 			&p.UploaderName,
 		); err != nil {
@@ -75,11 +76,11 @@ func (r *RoutePhotoRepo) ListByRoute(ctx context.Context, routeID string) ([]Pho
 func (r *RoutePhotoRepo) GetByID(ctx context.Context, id string) (*model.RoutePhoto, error) {
 	p := &model.RoutePhoto{}
 	err := r.db.QueryRow(ctx, `
-		SELECT id, route_id, photo_url, caption, uploaded_by, sort_order, created_at
+		SELECT id, route_id, photo_url, storage_key, caption, uploaded_by, sort_order, created_at
 		FROM route_photos
 		WHERE id = $1`,
 		id,
-	).Scan(&p.ID, &p.RouteID, &p.PhotoURL, &p.Caption, &p.UploadedBy, &p.SortOrder, &p.CreatedAt)
+	).Scan(&p.ID, &p.RouteID, &p.PhotoURL, &p.StorageKey, &p.Caption, &p.UploadedBy, &p.SortOrder, &p.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil

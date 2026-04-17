@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 
@@ -20,8 +19,19 @@ func NewAuditService(repo *repository.AuditRepo) *AuditService {
 	return &AuditService{repo: repo}
 }
 
-// Record logs an audit event. It extracts the actor from the request context.
-// Extra key-value pairs are stored as metadata.
+// Record logs an audit event synchronously. It extracts the actor from the
+// request context. Extra key-value pairs are stored as metadata.
+//
+// The DB write happens inline on the request context so:
+//   - Its deadline is bound to the HTTP request (can't leak past shutdown).
+//   - Audit writes complete before the caller sees success, so we can't
+//     ack a state change without a durable audit trail.
+//   - Failures are still swallowed (logged, not returned) so a transient
+//     audit-table outage doesn't cascade into user-visible errors.
+//
+// The trade-off vs. the previous fire-and-forget goroutine is a small (~1
+// round-trip) latency bump per state-changing request. Ratings and other
+// read-only endpoints don't Record, so this stays off the hot path.
 func (s *AuditService) Record(r *http.Request, action, resource, resourceID, orgID string, meta map[string]interface{}) {
 	actorID := middleware.GetUserID(r.Context())
 	if actorID == "" {
@@ -38,15 +48,13 @@ func (s *AuditService) Record(r *http.Request, action, resource, resourceID, org
 		IPAddress:  r.RemoteAddr,
 	}
 
-	// Write to DB (non-blocking — fire and forget on a goroutine so we
-	// don't add latency to the request). Use a background context because
-	// the request context may be cancelled after the response is sent.
-	go func() {
-		s.repo.Log(context.Background(), entry)
-	}()
+	// Synchronous insert. AuditRepo.Log swallows its own errors into slog
+	// so a DB hiccup doesn't turn a successful business op into a 500.
+	s.repo.Log(r.Context(), entry)
 
-	// Also emit a structured log line so audit events are searchable in
-	// log aggregators even if the DB write fails.
+	// Structured log line as a second, independent audit surface. Even if
+	// the DB write was dropped (e.g. audit_logs locked), log aggregators
+	// still see the event.
 	slog.Info("audit",
 		"actor_id", actorID,
 		"action", action,

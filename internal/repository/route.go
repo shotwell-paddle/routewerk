@@ -441,14 +441,21 @@ func (r *RouteRepo) BulkArchiveByWall(ctx context.Context, wallID string) (int, 
 
 // Tag operations
 
-func (r *RouteRepo) GetTags(ctx context.Context, routeID string) ([]model.Tag, error) {
+// GetTags returns the tags attached to a route, scoped to a specific
+// location for tenant isolation. Returns an empty slice if routeID isn't
+// owned by locationID. Callers that want the tags for "whatever location
+// owns this route" must look the route up first and pass its location_id.
+func (r *RouteRepo) GetTags(ctx context.Context, locationID, routeID string) ([]model.Tag, error) {
 	query := `
 		SELECT t.id, t.org_id, t.category, t.name, t.color
 		FROM tags t
 		JOIN route_tags rt ON rt.tag_id = t.id
-		WHERE rt.route_id = $1`
+		JOIN routes r ON r.id = rt.route_id
+		WHERE rt.route_id = $1
+		  AND r.location_id = $2
+		  AND r.deleted_at IS NULL`
 
-	rows, err := r.db.Query(ctx, query, routeID)
+	rows, err := r.db.Query(ctx, query, routeID, locationID)
 	if err != nil {
 		return nil, fmt.Errorf("get route tags: %w", err)
 	}

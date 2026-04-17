@@ -22,7 +22,7 @@ func TestAuthenticate_ValidToken(t *testing.T) {
 	}
 
 	var gotUserID, gotEmail string
-	handler := Authenticate(testJWTSecret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := Authenticate(testJWTSecret, true)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotUserID = GetUserID(r.Context())
 		gotEmail = GetEmail(r.Context())
 		w.WriteHeader(http.StatusOK)
@@ -45,7 +45,7 @@ func TestAuthenticate_ValidToken(t *testing.T) {
 }
 
 func TestAuthenticate_MissingHeader(t *testing.T) {
-	handler := Authenticate(testJWTSecret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := Authenticate(testJWTSecret, true)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("handler should not be called")
 	}))
 
@@ -59,7 +59,7 @@ func TestAuthenticate_MissingHeader(t *testing.T) {
 }
 
 func TestAuthenticate_InvalidFormat(t *testing.T) {
-	handler := Authenticate(testJWTSecret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := Authenticate(testJWTSecret, true)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("handler should not be called")
 	}))
 
@@ -82,7 +82,7 @@ func TestAuthenticate_ExpiredToken(t *testing.T) {
 		t.Fatalf("failed to generate token: %v", err)
 	}
 
-	handler := Authenticate(testJWTSecret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := Authenticate(testJWTSecret, true)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("handler should not be called for expired token")
 	}))
 
@@ -102,7 +102,7 @@ func TestAuthenticate_WrongSecret(t *testing.T) {
 		t.Fatalf("failed to generate token: %v", err)
 	}
 
-	handler := Authenticate("wrong-secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := Authenticate("wrong-secret", true)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("handler should not be called for wrong secret")
 	}))
 
@@ -122,7 +122,7 @@ func TestAuthenticate_CaseInsensitiveBearer(t *testing.T) {
 		t.Fatalf("failed to generate token: %v", err)
 	}
 
-	handler := Authenticate(testJWTSecret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := Authenticate(testJWTSecret, true)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -146,7 +146,7 @@ func TestAuthenticateAllowExpired_AcceptsExpiredToken(t *testing.T) {
 	}
 
 	var gotUserID string
-	handler := AuthenticateAllowExpired(testJWTSecret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := AuthenticateAllowExpired(testJWTSecret, true)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotUserID = GetUserID(r.Context())
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -170,7 +170,7 @@ func TestAuthenticateAllowExpired_RejectsWrongSignature(t *testing.T) {
 		t.Fatalf("failed to generate token: %v", err)
 	}
 
-	handler := AuthenticateAllowExpired("wrong-secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := AuthenticateAllowExpired("wrong-secret", true)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("handler should not be called for wrong signature")
 	}))
 

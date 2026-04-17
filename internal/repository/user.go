@@ -122,13 +122,16 @@ func (r *UserRepo) GetMemberships(ctx context.Context, userID string) ([]model.U
 	return memberships, rows.Err()
 }
 
-// SaveRefreshToken stores a hashed refresh token.
-func (r *UserRepo) SaveRefreshToken(ctx context.Context, userID, tokenHash string, expiresAt interface{}) error {
+// SaveRefreshToken stores a hashed refresh token with the given hash scheme.
+// scheme must be either "bcrypt" (legacy) or "hmac" (current). All new tokens
+// written by the auth service should use "hmac"; the bcrypt branch exists
+// only so rows written before the C4 migration can still be looked up.
+func (r *UserRepo) SaveRefreshToken(ctx context.Context, userID, tokenHash, scheme string, expiresAt interface{}) error {
 	query := `
-		INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
-		VALUES ($1, $2, $3)`
+		INSERT INTO refresh_tokens (user_id, token_hash, hash_scheme, expires_at)
+		VALUES ($1, $2, $3, $4)`
 
-	_, err := r.db.Exec(ctx, query, userID, tokenHash, expiresAt)
+	_, err := r.db.Exec(ctx, query, userID, tokenHash, scheme, expiresAt)
 	if err != nil {
 		return fmt.Errorf("save refresh token: %w", err)
 	}
@@ -149,31 +152,61 @@ func (r *UserRepo) RevokeRefreshTokens(ctx context.Context, userID string) error
 	return nil
 }
 
-// RevokeRefreshToken atomically revokes a single refresh token by its hash.
-// Returns true if the token was revoked, false if it was already consumed or expired.
-func (r *UserRepo) RevokeRefreshToken(ctx context.Context, tokenHash string) (bool, error) {
+// RevokeRefreshToken atomically revokes a single refresh token by its hash
+// and scheme. Returns true if the token was revoked, false if it was already
+// consumed, expired, or the scheme didn't match. Scoping by scheme avoids
+// the (astronomically unlikely) case where an HMAC hex digest collides with
+// a bcrypt hash string — the two alphabets overlap (both contain hex chars).
+func (r *UserRepo) RevokeRefreshToken(ctx context.Context, tokenHash, scheme string) (bool, error) {
 	query := `
 		UPDATE refresh_tokens
 		SET revoked_at = NOW()
-		WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > NOW()`
+		WHERE token_hash = $1 AND hash_scheme = $2
+		  AND revoked_at IS NULL AND expires_at > NOW()`
 
-	ct, err := r.db.Exec(ctx, query, tokenHash)
+	ct, err := r.db.Exec(ctx, query, tokenHash, scheme)
 	if err != nil {
 		return false, fmt.Errorf("revoke refresh token: %w", err)
 	}
 	return ct.RowsAffected() > 0, nil
 }
 
-// GetActiveRefreshTokens returns all active (non-revoked, non-expired) refresh tokens for a user.
-func (r *UserRepo) GetActiveRefreshTokens(ctx context.Context, userID string) ([]string, error) {
+// FindActiveRefreshTokenHMAC looks up an active HMAC-scheme refresh token by
+// exact hash match. Returns ("", nil) when no such token exists. This is the
+// fast path — an indexed equality lookup — that replaces bcrypt-scanning
+// every token for the user.
+func (r *UserRepo) FindActiveRefreshTokenHMAC(ctx context.Context, tokenHash string) (string, error) {
 	query := `
 		SELECT token_hash
 		FROM refresh_tokens
-		WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()`
+		WHERE token_hash = $1 AND hash_scheme = 'hmac'
+		  AND revoked_at IS NULL AND expires_at > NOW()`
+
+	var found string
+	err := r.db.QueryRow(ctx, query, tokenHash).Scan(&found)
+	if err == pgx.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("find hmac refresh token: %w", err)
+	}
+	return found, nil
+}
+
+// GetActiveBcryptRefreshTokens returns all legacy bcrypt-scheme refresh
+// token hashes for a user that are still active. Used only by the dual-scheme
+// fallback path in Refresh(); once all bcrypt rows have aged out past
+// REFRESH_TOKEN_EXPIRY this method (and its caller) can be dropped.
+func (r *UserRepo) GetActiveBcryptRefreshTokens(ctx context.Context, userID string) ([]string, error) {
+	query := `
+		SELECT token_hash
+		FROM refresh_tokens
+		WHERE user_id = $1 AND hash_scheme = 'bcrypt'
+		  AND revoked_at IS NULL AND expires_at > NOW()`
 
 	rows, err := r.db.Query(ctx, query, userID)
 	if err != nil {
-		return nil, fmt.Errorf("get refresh tokens: %w", err)
+		return nil, fmt.Errorf("get bcrypt refresh tokens: %w", err)
 	}
 	defer rows.Close()
 
@@ -181,7 +214,7 @@ func (r *UserRepo) GetActiveRefreshTokens(ctx context.Context, userID string) ([
 	for rows.Next() {
 		var h string
 		if err := rows.Scan(&h); err != nil {
-			return nil, fmt.Errorf("scan refresh token: %w", err)
+			return nil, fmt.Errorf("scan bcrypt refresh token: %w", err)
 		}
 		hashes = append(hashes, h)
 	}

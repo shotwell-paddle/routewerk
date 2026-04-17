@@ -16,8 +16,10 @@ const (
 )
 
 // Authenticate validates the JWT from the Authorization header and injects
-// the user's ID and email into the request context.
-func Authenticate(jwtSecret string) func(http.Handler) http.Handler {
+// the user's ID and email into the request context. enforceAudience gates
+// the audience claim check so the stricter rule can be enabled in staging
+// before production (see Config.EnforceJWTAudience).
+func Authenticate(jwtSecret string, enforceAudience bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			header := r.Header.Get("Authorization")
@@ -32,7 +34,7 @@ func Authenticate(jwtSecret string) func(http.Handler) http.Handler {
 				return
 			}
 
-			claims, err := auth.ValidateAccessToken(parts[1], jwtSecret)
+			claims, err := auth.ValidateAccessToken(parts[1], jwtSecret, enforceAudience)
 			if err != nil {
 				http.Error(w, `{"error":"invalid or expired token"}`, http.StatusUnauthorized)
 				return
@@ -49,7 +51,7 @@ func Authenticate(jwtSecret string) func(http.Handler) http.Handler {
 // It still validates the signature — only the expiry check is skipped.
 // Used exclusively for the refresh token endpoint so users can refresh after
 // their access token has expired (which is the whole point of refresh tokens).
-func AuthenticateAllowExpired(jwtSecret string) func(http.Handler) http.Handler {
+func AuthenticateAllowExpired(jwtSecret string, enforceAudience bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			header := r.Header.Get("Authorization")
@@ -64,7 +66,7 @@ func AuthenticateAllowExpired(jwtSecret string) func(http.Handler) http.Handler 
 				return
 			}
 
-			claims, err := auth.ParseExpiredClaims(parts[1], jwtSecret)
+			claims, err := auth.ParseExpiredClaims(parts[1], jwtSecret, enforceAudience)
 			if err != nil {
 				http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
 				return

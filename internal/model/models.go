@@ -140,6 +140,9 @@ type RoutePhoto struct {
 	ID         string    `json:"id"`
 	RouteID    string    `json:"route_id"`
 	PhotoURL   string    `json:"photo_url"`
+	// StorageKey is the stable object-store key (e.g. photos/<routeID>/<ts>.webp)
+	// used for Delete. Nullable for legacy rows inserted before migration 28.
+	StorageKey *string   `json:"-"`
 	Caption    *string   `json:"caption,omitempty"`
 	UploadedBy *string   `json:"uploaded_by,omitempty"`
 	SortOrder  int       `json:"sort_order"`

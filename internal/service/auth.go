@@ -161,17 +161,32 @@ func (s *AuthService) ValidateCredentials(ctx context.Context, email, password s
 }
 
 func (s *AuthService) Refresh(ctx context.Context, userID, refreshToken string) (*AuthResult, error) {
-	hashes, err := s.users.GetActiveRefreshTokens(ctx, userID)
+	// Fast path: HMAC scheme. Equality-indexed lookup — no per-token hashing.
+	hmacHash := auth.HashRefreshToken(refreshToken, s.cfg.JWTSecret)
+	found, err := s.users.FindActiveRefreshTokenHMAC(ctx, hmacHash)
 	if err != nil {
 		return nil, err
 	}
 
-	// Find the matching bcrypt hash for this token.
-	var matchedHash string
-	for _, hash := range hashes {
-		if auth.CheckRefreshToken(refreshToken, hash) {
-			matchedHash = hash
-			break
+	var matchedHash, matchedScheme string
+	if found != "" {
+		matchedHash = found
+		matchedScheme = "hmac"
+	} else {
+		// Fallback: legacy bcrypt scheme. Load every active bcrypt hash
+		// for this user and bcrypt-compare against each. Remove this branch
+		// (and GetActiveBcryptRefreshTokens) once all bcrypt rows have aged
+		// out past REFRESH_TOKEN_EXPIRY.
+		bcryptHashes, err := s.users.GetActiveBcryptRefreshTokens(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		for _, h := range bcryptHashes {
+			if auth.CheckRefreshTokenBcrypt(refreshToken, h) {
+				matchedHash = h
+				matchedScheme = "bcrypt"
+				break
+			}
 		}
 	}
 	if matchedHash == "" {
@@ -180,7 +195,7 @@ func (s *AuthService) Refresh(ctx context.Context, userID, refreshToken string) 
 
 	// Atomically revoke this specific token. If another request already
 	// consumed it (race), the UPDATE affects zero rows and we fail.
-	revoked, err := s.users.RevokeRefreshToken(ctx, matchedHash)
+	revoked, err := s.users.RevokeRefreshToken(ctx, matchedHash, matchedScheme)
 	if err != nil {
 		return nil, err
 	}
@@ -278,9 +293,11 @@ func (s *AuthService) generateResult(ctx context.Context, u *model.User) (*AuthR
 		return nil, err
 	}
 
-	refreshHash := auth.HashRefreshToken(refreshToken)
+	// All new tokens use the HMAC scheme. Bcrypt-scheme rows are only
+	// encountered on the read path during the dual-scheme migration window.
+	refreshHash := auth.HashRefreshToken(refreshToken, s.cfg.JWTSecret)
 	refreshExpiry := time.Now().Add(s.cfg.RefreshTokenExpiry)
-	if err := s.users.SaveRefreshToken(ctx, u.ID, refreshHash, refreshExpiry); err != nil {
+	if err := s.users.SaveRefreshToken(ctx, u.ID, refreshHash, "hmac", refreshExpiry); err != nil {
 		return nil, err
 	}
 

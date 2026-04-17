@@ -265,7 +265,10 @@ func (h *Handler) ProfileSettingsSave(w http.ResponseWriter, r *http.Request) {
 		if header.Size <= 2<<20 && h.storageService.IsConfigured() {
 			ct := header.Header.Get("Content-Type")
 			if ct == "image/jpeg" || ct == "image/png" || ct == "image/webp" {
-				url, uErr := h.storageService.Upload(ctx, "avatars/"+user.ID, header.Filename, ct, file)
+				// Avatars don't get a storage_key persisted (the users table
+				// predates migration 28 and we don't delete avatars on change
+				// — old blobs orphan intentionally, TTL'd by bucket lifecycle).
+				_, url, uErr := h.storageService.Upload(ctx, "avatars/"+user.ID, header.Filename, ct, file)
 				if uErr == nil {
 					user.AvatarURL = &url
 				} else {
@@ -367,6 +370,16 @@ func (h *Handler) PasswordChange(w http.ResponseWriter, r *http.Request) {
 			slog.Info("revoked sessions after password change", "user_id", user.ID, "revoked", revoked)
 		}
 	}
+
+	// Rotate CSRF token on password change. A password change is a privilege
+	// boundary (if an attacker had captured the pre-change token they lose
+	// it) AND the surrounding UI has rendered forms with the now-stale token
+	// embedded. HX-Refresh forces the HTMX client to reload the page so the
+	// new cookie lands before any other form gets submitted.
+	if _, err := middleware.RotateCSRFToken(w, !h.cfg.IsDev()); err != nil {
+		slog.Error("csrf rotate after password change failed", "user_id", user.ID, "error", err)
+	}
+	w.Header().Set("HX-Refresh", "true")
 
 	fmt.Fprint(w, `<div class="form-alert form-alert-success mb-4">Password updated. Other sessions have been signed out.</div>`)
 }

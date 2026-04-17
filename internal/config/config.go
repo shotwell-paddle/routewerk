@@ -15,6 +15,11 @@ type Config struct {
 	JWTSecret           string
 	JWTExpiry           time.Duration
 	RefreshTokenExpiry  time.Duration
+	// EnforceJWTAudience gates the audience-claim check on the read path.
+	// New tokens always write the audience claim; once old tokens have drained
+	// (≥ JWTExpiry past rollout) this can be flipped to true to make the
+	// stricter rule binding. Env: JWT_ENFORCE_AUDIENCE.
+	EnforceJWTAudience  bool
 	StorageEndpoint     string
 	StorageBucket       string
 	StorageAccessKey    string
@@ -59,6 +64,7 @@ func Load() *Config {
 		JWTSecret:          getEnv("JWT_SECRET", "change-me"),
 		JWTExpiry:          jwtExpiry,
 		RefreshTokenExpiry: refreshExpiry,
+		EnforceJWTAudience: getEnvBool("JWT_ENFORCE_AUDIENCE", false),
 		StorageEndpoint:    getEnv("STORAGE_ENDPOINT", ""),
 		StorageBucket:      getEnv("STORAGE_BUCKET", "routewerk-images"),
 		StorageAccessKey:   getEnv("STORAGE_ACCESS_KEY", ""),
@@ -219,4 +225,18 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+// getEnvBool parses common truthy/falsy strings. Anything unparseable or
+// empty returns the fallback so misconfiguration can't silently flip a flag.
+func getEnvBool(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return b
 }

@@ -2,6 +2,7 @@ package webhandler
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -67,8 +68,23 @@ func (h *Handler) PhotoUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Validate content type
-	contentType := header.Header.Get("Content-Type")
+	// Validate content type by sniffing the first 512 bytes rather than
+	// trusting the multipart header (which is attacker-controlled). The
+	// sniffed type is also what we pass to ProcessImage below, so any
+	// mismatch between the declared and actual type is immaterial.
+	sniff := make([]byte, 512)
+	n, err := io.ReadFull(file, sniff)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+		http.Error(w, "Could not read upload", http.StatusBadRequest)
+		return
+	}
+	sniff = sniff[:n]
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		slog.Error("failed to rewind upload", "error", err)
+		http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		return
+	}
+	contentType := http.DetectContentType(sniff)
 	if !allowedImageTypes[contentType] {
 		http.Error(w, "Only JPEG, PNG, and WebP images are allowed", http.StatusBadRequest)
 		return
@@ -112,8 +128,10 @@ func (h *Handler) PhotoUpload(w http.ResponseWriter, r *http.Request) {
 	// Use the processed image's content type and extension for the upload key.
 	uploadFilename := strings.TrimSuffix(header.Filename, ".webp") + processed.Extension
 
-	// Upload to S3
-	photoURL, err := h.storageService.Upload(ctx, routeID, uploadFilename, processed.ContentType, processed.Data)
+	// Upload to S3 — capture BOTH the stable storage key (for future Delete)
+	// and the public URL (for rendering). Storing only the URL means a CDN or
+	// endpoint rotation silently breaks deletes.
+	storageKey, photoURL, err := h.storageService.Upload(ctx, routeID, uploadFilename, processed.ContentType, processed.Data)
 	if err != nil {
 		slog.Error("photo upload failed", "route_id", routeID, "error", err)
 		http.Error(w, "Upload failed — please try again", http.StatusInternalServerError)
@@ -138,15 +156,17 @@ func (h *Handler) PhotoUpload(w http.ResponseWriter, r *http.Request) {
 	photo := &model.RoutePhoto{
 		RouteID:    routeID,
 		PhotoURL:   photoURL,
+		StorageKey: &storageKey,
 		Caption:    captionPtr,
 		UploadedBy: &user.ID,
 		SortOrder:  sortOrder,
 	}
 	if err := h.photoRepo.Create(ctx, photo); err != nil {
 		slog.Error("failed to save photo record", "route_id", routeID, "error", err)
-		// Try to clean up the uploaded file
-		if delErr := h.storageService.Delete(ctx, photoURL); delErr != nil {
-			slog.Error("failed to clean up orphaned S3 photo", "route_id", routeID, "url", photoURL, "error", delErr)
+		// Try to clean up the uploaded file (we still have the key in memory,
+		// so we don't need to round-trip through the DB or parse a URL).
+		if delErr := h.storageService.Delete(ctx, storageKey); delErr != nil {
+			slog.Error("failed to clean up orphaned S3 photo", "route_id", routeID, "key", storageKey, "error", delErr)
 		}
 		http.Error(w, "Something went wrong", http.StatusInternalServerError)
 		return
@@ -229,10 +249,21 @@ func (h *Handler) PhotoDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete from S3
+	// Delete from S3 by stable storage key. Legacy rows (inserted before
+	// migration 28) have storage_key = NULL, so fall back to deriving the key
+	// from the URL — that fallback only works while StorageEndpoint matches
+	// what was configured when the row was written, so we want it to fade out.
 	if h.storageService.IsConfigured() {
-		if err := h.storageService.Delete(ctx, photo.PhotoURL); err != nil {
-			slog.Error("failed to delete photo from storage", "photo_id", photoID, "error", err)
+		var keyToDelete string
+		if photo.StorageKey != nil && *photo.StorageKey != "" {
+			keyToDelete = *photo.StorageKey
+		} else {
+			keyToDelete = h.storageService.KeyFromURL(photo.PhotoURL)
+		}
+		if keyToDelete == "" {
+			slog.Warn("photo delete: could not determine storage key", "photo_id", photoID, "url", photo.PhotoURL)
+		} else if err := h.storageService.Delete(ctx, keyToDelete); err != nil {
+			slog.Error("failed to delete photo from storage", "photo_id", photoID, "key", keyToDelete, "error", err)
 			// Continue with DB deletion even if S3 fails
 		}
 	}

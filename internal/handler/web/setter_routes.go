@@ -311,7 +311,7 @@ func (h *Handler) processRoutePhoto(ctx context.Context, r *http.Request, route 
 	}
 
 	uploadFilename := strings.TrimSuffix(header.Filename, ".webp") + processed.Extension
-	photoURL, err := h.storageService.Upload(ctx, route.ID, uploadFilename, processed.ContentType, processed.Data)
+	storageKey, photoURL, err := h.storageService.Upload(ctx, route.ID, uploadFilename, processed.ContentType, processed.Data)
 	if err != nil {
 		slog.Error("route create photo: upload failed", "route_id", route.ID, "error", err)
 		return
@@ -326,12 +326,14 @@ func (h *Handler) processRoutePhoto(ctx context.Context, r *http.Request, route 
 	photo := &model.RoutePhoto{
 		RouteID:    route.ID,
 		PhotoURL:   photoURL,
+		StorageKey: &storageKey,
 		UploadedBy: uploaderID,
 		SortOrder:  0,
 	}
 	if err := h.photoRepo.Create(ctx, photo); err != nil {
 		slog.Error("route create photo: save failed", "route_id", route.ID, "error", err)
-		_ = h.storageService.Delete(ctx, photoURL)
+		// Orphan cleanup: delete by the key we just received — no URL parsing.
+		_ = h.storageService.Delete(ctx, storageKey)
 		return
 	}
 

@@ -73,6 +73,15 @@ const (
 	cutG        = 0
 	cutB        = 0
 	cutStrokePT = 0.1
+
+	// cardCornerRadiusMM rounds the four corners of every card's cut path.
+	// Climbing-gym route tags live on plastic holds that are gripped,
+	// brushed, and yanked dozens of times a day; sharp corners fray and
+	// peel first. 2mm is subtle enough to stay visually unobtrusive, big
+	// enough to survive handling, and well within the Silhouette's
+	// min-radius tolerance. The cut path is what the cutter physically
+	// follows — this is the durability win, not a decorative outline.
+	cardCornerRadiusMM = 2.0
 )
 
 const defaultBleedMM = 0.5
@@ -209,15 +218,20 @@ func drawRegistrationMarks(pdf *gofpdf.Fpdf) {
 	)
 }
 
-// drawCutPath strokes a hairline pure-red rectangle exactly at the card
-// edge. Silhouette Studio's "Cut by Color" picks up RGB(255,0,0) as the
+// drawCutPath strokes a hairline pure-red rounded rectangle exactly at the
+// card edge. Silhouette Studio's "Cut by Color" picks up RGB(255,0,0) as the
 // cut geometry; anything off that value is ignored, so do not tweak the
 // constants without re-testing on the cutter.
+//
+// Corners are rounded at cardCornerRadiusMM (see the constant for rationale).
+// Because the cutter follows the drawn path, this produces physically
+// rounded cards out of the Silhouette — no separate corner-round step.
 func drawCutPath(pdf *gofpdf.Fpdf, x, y float64) {
 	pdf.SetDrawColor(cutR, cutG, cutB)
 	// gofpdf line width is in user units (mm here); convert from points.
 	pdf.SetLineWidth(cutStrokePT * 25.4 / 72.0)
-	pdf.Rect(x, y, cardWMM, cardHMM, "D")
+	// "1234" = round all four corners.
+	pdf.RoundedRect(x, y, cardWMM, cardHMM, cardCornerRadiusMM, "1234", "D")
 }
 
 // rotatePNG90CCW decodes a PNG, rotates the pixel data 90° counter-clockwise,

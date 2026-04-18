@@ -183,10 +183,12 @@ func (g *CardGenerator) generateGradedPrintPNG(data CardData) ([]byte, error) {
 		infoY += 32
 	}
 
-	// Wall name
+	// Wall name — truncate to card width so long names don't overflow off
+	// the right edge of the digital card. Fits the same column the route
+	// name uses above.
 	dc.SetColor(color.RGBA{180, 175, 170, 255})
 	setFont(dc, fontRegular, 16)
-	dc.DrawString(data.WallName, textX, infoY)
+	dc.DrawString(truncateText(dc, data.WallName, float64(printW)-textX-20), textX, infoY)
 	infoY += 24
 
 	// Route type
@@ -201,7 +203,7 @@ func (g *CardGenerator) generateGradedPrintPNG(data CardData) ([]byte, error) {
 	if data.SetterName != "" {
 		dc.SetColor(color.RGBA{140, 135, 130, 255})
 		setFont(dc, fontRegular, 12)
-		dc.DrawString("Set by "+data.SetterName, textX, footerY)
+		dc.DrawString(truncateText(dc, "Set by "+data.SetterName, float64(printW)-textX-20), textX, footerY)
 		footerY += 18
 	}
 	dc.SetColor(color.RGBA{100, 96, 92, 255})
@@ -282,10 +284,11 @@ func (g *CardGenerator) generateCircuitPrintPNG(data CardData) ([]byte, error) {
 		infoY += 28
 	}
 
-	// -- Wall name --
+	// -- Wall name -- truncate to available width so long names don't run
+	// past the QR code on the right.
 	dc.SetColor(color.RGBA{180, 175, 170, 255})
 	setFont(dc, fontRegular, 16)
-	dc.DrawString(data.WallName, textX, infoY)
+	dc.DrawString(truncateText(dc, data.WallName, float64(printW)-textX-120), textX, infoY)
 	infoY += 22
 
 	// -- Grade (if present, secondary) --

@@ -241,6 +241,7 @@ document.addEventListener('htmx:afterSwap', function() {
   initCircuitAddColor();
   initHoldColorAdd();
   initCardBatchPicker();
+  initCardBatchPreviewFallback();
 });
 
 // ── Settings: circuit color drag-and-drop reorder ─────────────
@@ -533,6 +534,26 @@ function initCardBatchPicker() {
   applySearch();
 }
 
+// ── Card batch preview fallback ───────────────────────────────
+// The /preview.png endpoint renders synchronously and can legitimately fail
+// (route deleted mid-session, storage blip). A raw broken-image icon looks
+// alarming, so we swap in a friendly "preview unavailable" placeholder and
+// hide the <img> entirely when it errors. CSP blocks inline onerror, so we
+// bind the handler from here.
+function initCardBatchPreviewFallback() {
+  document.querySelectorAll('[data-card-batch-preview-img]').forEach(function(img) {
+    if (img.dataset.fallbackBound === '1') return;
+    img.dataset.fallbackBound = '1';
+    img.addEventListener('error', function() {
+      var fig = img.closest('[data-card-batch-preview-figure]');
+      if (!fig) return;
+      img.hidden = true;
+      var fallback = fig.querySelector('.card-batch-preview-fallback');
+      if (fallback) fallback.hidden = false;
+    }, { once: true });
+  });
+}
+
 // ── Settings: auto-dismiss success toast ──────────────────────
 document.addEventListener('DOMContentLoaded', function() {
   initCircuitDragDrop();
@@ -540,6 +561,7 @@ document.addEventListener('DOMContentLoaded', function() {
   initCircuitAddColor();
   initHoldColorAdd();
   initCardBatchPicker();
+  initCardBatchPreviewFallback();
 
   var toast = document.getElementById('settings-toast');
   if (toast) {

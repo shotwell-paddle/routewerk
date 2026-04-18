@@ -68,11 +68,17 @@
       <div><dt>Status</dt><dd>{{.Status}}</dd></div>
     </dl>
     {{if .Routes}}
-    <figure class="card-batch-preview">
+    <figure class="card-batch-preview" data-card-batch-preview-figure>
       <img src="/card-batches/{{.ID}}/preview.png"
            alt="Preview of the first card in this batch"
            loading="lazy"
-           width="240">
+           width="240"
+           data-card-batch-preview-img>
+      <div class="card-batch-preview-fallback" hidden>
+        <span aria-hidden="true">⚑</span>
+        <p>Preview unavailable</p>
+        <small>The PDF download will still work.</small>
+      </div>
       <figcaption class="text-muted">First card preview</figcaption>
     </figure>
     {{end}}

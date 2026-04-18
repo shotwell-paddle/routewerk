@@ -5212,6 +5212,43 @@ details.review-route-card > summary::marker { display: none; content: ''; }
   margin-top: var(--sp-1);
   font-size: var(--text-xs);
 }
+/* Graceful fallback shown by app.js when the preview endpoint fails. Matches
+ * the 240px image footprint so the page doesn't reflow when it swaps in. */
+.card-batch-preview-fallback {
+  width: 240px;
+  max-width: 100%;
+  aspect-ratio: 5 / 3;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: var(--sp-3);
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(0, 0, 0, 0.02),
+    rgba(0, 0, 0, 0.02) 6px,
+    rgba(0, 0, 0, 0.04) 6px,
+    rgba(0, 0, 0, 0.04) 12px
+  );
+  color: var(--rw-text-muted);
+  border-radius: var(--radius-md);
+  border: 1px dashed rgba(0, 0, 0, 0.12);
+}
+.card-batch-preview-fallback p {
+  margin: 0;
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+.card-batch-preview-fallback small {
+  font-size: var(--text-xs);
+}
+.card-batch-preview-fallback > span {
+  font-size: 1.5rem;
+  line-height: 1;
+  opacity: 0.55;
+}
 
 /* Card batch meta grid on detail page. */
 .card-batch-meta .meta-grid {

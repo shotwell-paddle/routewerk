@@ -171,10 +171,25 @@ func drawCardPortrait(pdf *gofpdf.Fpdf, data service.CardData, ox, oy float64, u
 	}
 
 	// Metadata grid — 2 columns. Left column gets wall + date, right column
-	// gets setter. QR occupies the bottom-right ~14mm so the right column
-	// must not extend below ~oy + portraitH - qrSizeMM.
+	// gets setter. Wall names are more variable in length than setter names
+	// (gyms often use long descriptors like "Competition Wall South" while
+	// setters go by first name), so we give WALL the larger slot. A 1.5mm
+	// gutter prevents "fully-truncated" wall values from colliding with the
+	// SETTER column — that was the overlap that "broke the design" on long
+	// wall names.
+	//
+	//   |── col1W ──|·gutter·|── col2W ──|
+	//   col1X                 col2X
+	//
+	// QR occupies the bottom-right ~14mm so the right column must not extend
+	// below ~oy + portraitH - qrSizeMM.
+	const (
+		colGutter = 1.5
+	)
 	col1X := infoX
-	col2X := ox + portraitW*0.50
+	col1W := portraitW*0.48 - infoPadX // ≈ 21.4mm, enough for "Competition Wall" at 9pt
+	col2X := col1X + col1W + colGutter // ≈ 25.9mm
+	col2W := portraitW - infoPadX - (col2X - ox)
 
 	// Row 1: labels
 	pdf.SetFont(cardFontFamily, "B", 5.5)
@@ -183,12 +198,17 @@ func drawCardPortrait(pdf *gofpdf.Fpdf, data service.CardData, ox, oy float64, u
 	pdf.Text(col2X, currentY, "SETTER")
 	currentY += 3.6
 
-	// Row 1: values
-	pdf.SetFont(cardFontFamily, "", 9)
+	// Row 1: values. Auto-shrink the font before giving up and truncating —
+	// a wall name like "Main Overhang Boulder" reads better at 7.5pt than at
+	// 9pt+ellipsis. Floor at 7pt; truncate only if even 7pt still overflows.
 	pdf.SetTextColor(40, 40, 40)
-	pdf.Text(col1X, currentY, truncatePDF(pdf, data.WallName, portraitW*0.46))
+	wallPt := fitFontSizeStyle(pdf, data.WallName, col1W, 9.0, 7.0, "")
+	pdf.SetFont(cardFontFamily, "", wallPt)
+	pdf.Text(col1X, currentY, truncatePDF(pdf, data.WallName, col1W))
 	if data.SetterName != "" {
-		pdf.Text(col2X, currentY, truncatePDF(pdf, data.SetterName, portraitW*0.46))
+		setterPt := fitFontSizeStyle(pdf, data.SetterName, col2W, 9.0, 7.0, "")
+		pdf.SetFont(cardFontFamily, "", setterPt)
+		pdf.Text(col2X, currentY, truncatePDF(pdf, data.SetterName, col2W))
 	}
 	currentY += 4.8
 
@@ -246,9 +266,16 @@ func registerCardFonts(pdf *gofpdf.Fpdf) {
 // increments) that measures ≤ maxWidth for text under the currently-set
 // family+style.
 func fitFontSize(pdf *gofpdf.Fpdf, text string, maxWidth, startPt, minPt float64) float64 {
+	return fitFontSizeStyle(pdf, text, maxWidth, startPt, minPt, "B")
+}
+
+// fitFontSizeStyle is the style-aware variant used when we need to measure
+// against a non-bold style (e.g., the wall/setter metadata values that render
+// in regular weight). Behaves the same as fitFontSize otherwise.
+func fitFontSizeStyle(pdf *gofpdf.Fpdf, text string, maxWidth, startPt, minPt float64, style string) float64 {
 	pt := startPt
 	for pt >= minPt {
-		pdf.SetFont(cardFontFamily, "B", pt)
+		pdf.SetFont(cardFontFamily, style, pt)
 		if pdf.GetStringWidth(text) <= maxWidth {
 			return pt
 		}

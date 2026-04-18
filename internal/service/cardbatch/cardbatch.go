@@ -161,10 +161,17 @@ func (s *Service) RenderPreviewPNG(
 		locationName = loc.Name
 	}
 
+	// Try each route until we successfully render one. A single broken route
+	// (deleted, moved, transient DB blip) shouldn't break the whole thumbnail
+	// — setters lean on the preview to spot-check the output, so we prefer a
+	// "good enough" card from further down the list over an unhelpful broken
+	// image. This mirrors RenderBatch's silent-skip policy on missing routes.
+	var lastErr error
 	for _, id := range routeIDs {
 		rt, err := s.routes.GetByID(ctx, id)
 		if err != nil {
-			return fmt.Errorf("cardbatch: load route %s: %w", id, err)
+			lastErr = fmt.Errorf("load route %s: %w", id, err)
+			continue
 		}
 		if rt == nil || rt.LocationID != locationID {
 			continue
@@ -189,7 +196,8 @@ func (s *Service) RenderPreviewPNG(
 			QRTargetURL:  s.cards.RouteURL(locationID, rt.ID),
 		})
 		if err != nil {
-			return fmt.Errorf("cardbatch: render preview: %w", err)
+			lastErr = fmt.Errorf("render route %s: %w", id, err)
+			continue
 		}
 		if _, err := w.Write(png); err != nil {
 			return fmt.Errorf("cardbatch: write preview: %w", err)
@@ -197,6 +205,9 @@ func (s *Service) RenderPreviewPNG(
 		return nil
 	}
 
+	if lastErr != nil {
+		return fmt.Errorf("cardbatch: no renderable routes for preview (last error: %w)", lastErr)
+	}
 	return fmt.Errorf("cardbatch: no renderable routes for preview")
 }
 

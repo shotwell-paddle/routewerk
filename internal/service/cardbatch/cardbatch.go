@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 
 	"github.com/shotwell-paddle/routewerk/internal/repository"
 	"github.com/shotwell-paddle/routewerk/internal/service"
@@ -166,14 +167,21 @@ func (s *Service) RenderPreviewPNG(
 	// — setters lean on the preview to spot-check the output, so we prefer a
 	// "good enough" card from further down the list over an unhelpful broken
 	// image. This mirrors RenderBatch's silent-skip policy on missing routes.
+	//
+	// We log each skip at Warn so that when previews fail in prod we can see
+	// *which* route failed first and whether the rest were poisoned by a
+	// cascading context deadline. Without this, only the final "last error"
+	// surfaces in logs, which hides the actual trigger.
 	var lastErr error
 	for _, id := range routeIDs {
 		rt, err := s.routes.GetByID(ctx, id)
 		if err != nil {
+			slog.Warn("cardbatch preview: skip route (load failed)", "route_id", id, "error", err)
 			lastErr = fmt.Errorf("load route %s: %w", id, err)
 			continue
 		}
 		if rt == nil || rt.LocationID != locationID {
+			slog.Warn("cardbatch preview: skip route (missing or cross-location)", "route_id", id)
 			continue
 		}
 
@@ -196,6 +204,7 @@ func (s *Service) RenderPreviewPNG(
 			QRTargetURL:  s.cards.RouteURL(locationID, rt.ID),
 		})
 		if err != nil {
+			slog.Warn("cardbatch preview: skip route (render failed)", "route_id", id, "error", err)
 			lastErr = fmt.Errorf("render route %s: %w", id, err)
 			continue
 		}

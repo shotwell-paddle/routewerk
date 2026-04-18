@@ -2,11 +2,13 @@ package webhandler
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
@@ -455,8 +457,22 @@ func (h *Handler) renderBatchEditError(w http.ResponseWriter, r *http.Request, b
 // Synchronously renders on each request. The render is cheap for a single
 // card (~50 ms) and we set a short browser cache so the image doesn't
 // re-fetch on every detail-page reload.
+//
+// Timeout handling: the global web RequestTimeout (QUERY_TIMEOUT, default 5s)
+// is too tight for this endpoint — one cold-pool DB query on GetByID can
+// easily eat most of that budget, leaving nothing for the remaining per-route
+// lookups + PNG render. We decouple from the request deadline here and use a
+// dedicated 15s budget, but still honor client cancellation via AfterFunc so
+// a setter closing the page doesn't leak a render goroutine.
+const previewRenderTimeout = 15 * time.Second
+
 func (h *Handler) CardBatchPreview(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	// Detach from the 5s request deadline, but keep client cancel propagation.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), previewRenderTimeout)
+	defer cancel()
+	stop := context.AfterFunc(r.Context(), cancel)
+	defer stop()
+
 	batchID := chi.URLParam(r, "batchID")
 
 	batch, err := h.cardBatchRepo.GetByID(ctx, batchID)

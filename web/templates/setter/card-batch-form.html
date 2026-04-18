@@ -3,6 +3,10 @@
 {{define "content"}}
 {{$selected := .BatchForm.Selected}}
 {{$isEdit := .BatchForm.IsEdit}}
+{{$groups := .BatchForm.GroupByWall}}
+{{$cancelHref := "/card-batches"}}
+{{if $isEdit}}{{$cancelHref = printf "/card-batches/%s" .BatchForm.EditBatchID}}{{end}}
+
 <div class="page-header">
   <div class="flex items-center justify-between">
     <div>
@@ -12,8 +16,8 @@
         {{else}}Pick the routes you want on this sheet. Eight cards fit on each letter-sized page.{{end}}
       </p>
     </div>
-    <a href="{{if $isEdit}}/card-batches/{{.BatchForm.EditBatchID}}{{else}}/card-batches{{end}}" class="btn btn-secondary"
-       hx-get="{{if $isEdit}}/card-batches/{{.BatchForm.EditBatchID}}{{else}}/card-batches{{end}}" hx-target="#main-content" hx-push-url="true">Cancel</a>
+    <a href="{{$cancelHref}}" class="btn btn-secondary"
+       hx-get="{{$cancelHref}}" hx-target="#main-content" hx-push-url="true">Cancel</a>
   </div>
 </div>
 
@@ -22,8 +26,21 @@
   <div class="alert alert-error mb-4">{{.BatchFormError}}</div>
   {{end}}
 
-  <form method="post" action="{{.BatchForm.FormAction}}" class="card-batch-form">
-    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  {{if not $isEdit}}
+  <!-- Filter chips live OUTSIDE the form so HTMX navigation doesn't conflict
+       with form submission or nested button semantics. -->
+  <div class="filter-bar mb-4">
+    <div class="flex gap-2 flex-wrap">
+      <a class="filter-chip {{if not .BatchForm.ShowAll}}active{{end}}" href="/card-batches/new"
+         hx-get="/card-batches/new" hx-target="#main-content" hx-push-url="true">Uncarded</a>
+      <a class="filter-chip {{if .BatchForm.ShowAll}}active{{end}}" href="/card-batches/new?all=1"
+         hx-get="/card-batches/new?all=1" hx-target="#main-content" hx-push-url="true">All active</a>
+    </div>
+  </div>
+  {{end}}
+
+  <form method="post" action="{{.BatchForm.FormAction}}" class="card-batch-form" id="card-batch-picker">
+    <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
 
     {{if not $isEdit}}
     <div class="form-row">
@@ -45,39 +62,88 @@
         </select>
       </div>
     </div>
-
-    <div class="filter-bar mb-4 mt-6">
-      <div class="flex gap-2 flex-wrap">
-        <a class="filter-chip active" href="/card-batches/new"
-           hx-get="/card-batches/new" hx-target="#main-content" hx-push-url="true">Uncarded</a>
-        <a class="filter-chip" href="/card-batches/new?all=1"
-           hx-get="/card-batches/new?all=1" hx-target="#main-content" hx-push-url="true">All active</a>
-      </div>
-    </div>
     {{end}}
 
     {{if .BatchForm.CandidateRoutes}}
-    <div class="route-picker">
-      {{range .BatchForm.CandidateRoutes}}
-      <label class="route-picker-row">
-        <input type="checkbox" name="route_ids" value="{{.ID}}" {{if index $selected .ID}}checked{{end}}>
-        <span class="route-swatch" style="{{safeCSS (printf "background: %s;" .SafeColor)}}"></span>
-        <span class="route-picker-grade">{{.Grade}}</span>
-        <span class="route-picker-name">{{if .Name}}{{.Name}}{{else}}Unnamed{{end}}</span>
-        <span class="route-picker-meta">{{.WallName}} · {{.DateSet.Format "Jan 2"}}</span>
+    <!-- Toolbar: search + bulk select -->
+    <div class="route-picker-toolbar">
+      <label class="route-picker-search" aria-label="Search routes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="search"
+               id="card-batch-search"
+               placeholder="Search by name, grade, or wall…"
+               autocomplete="off"
+               data-card-batch-search>
       </label>
+      <div class="route-picker-bulk">
+        <button type="button" class="btn btn-ghost btn-sm" data-card-batch-select-all>Select all visible</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-card-batch-clear>Clear</button>
+      </div>
+    </div>
+
+    <div class="route-picker-empty" data-card-batch-empty hidden>
+      <p>No routes match your search.</p>
+    </div>
+
+    <div class="route-picker" data-card-batch-list>
+      {{range $groups}}
+      <section class="route-picker-group" data-card-batch-group data-wall-name="{{.WallName}}">
+        <header class="route-picker-group-header">
+          <button type="button"
+                  class="route-picker-group-select"
+                  data-card-batch-select-wall
+                  data-wall-name="{{.WallName}}"
+                  aria-label="Select all routes on {{.WallName}}">
+            <span class="route-picker-group-title">{{.WallName}}</span>
+            <span class="route-picker-group-count" data-card-batch-group-count>{{len .Routes}}</span>
+          </button>
+        </header>
+        {{range .Routes}}
+        <label class="route-picker-row"
+               data-card-batch-row
+               data-search-haystack="{{.Grade}} {{if .Name}}{{.Name}}{{else}}Unnamed{{end}} {{.WallName}}">
+          <input type="checkbox"
+                 name="route_ids"
+                 value="{{.ID}}"
+                 class="route-picker-checkbox"
+                 data-card-batch-checkbox
+                 {{if index $selected .ID}}checked{{end}}>
+          <span class="route-swatch" style="{{safeCSS (printf "background: %s;" .SafeColor)}}" aria-hidden="true"></span>
+          <span class="route-picker-grade">{{.Grade}}</span>
+          <span class="route-picker-name">
+            {{if .Name}}{{.Name}}{{else}}<span class="route-picker-name-placeholder">Unnamed</span>{{end}}
+          </span>
+          <span class="route-picker-meta">{{.WallName}} · {{.DateSet.Format "Jan 2"}}</span>
+        </label>
+        {{end}}
+      </section>
       {{end}}
     </div>
 
-    <div class="form-actions mt-6">
-      <button type="submit" class="btn btn-primary">{{if $isEdit}}Save changes{{else}}Save Batch{{end}}</button>
-      <a href="{{if $isEdit}}/card-batches/{{.BatchForm.EditBatchID}}{{else}}/card-batches{{end}}" class="btn btn-secondary"
-         hx-get="{{if $isEdit}}/card-batches/{{.BatchForm.EditBatchID}}{{else}}/card-batches{{end}}" hx-target="#main-content" hx-push-url="true">Cancel</a>
+    <!-- Sticky action bar: selection count, page count, save -->
+    <div class="route-picker-actionbar" role="status" aria-live="polite">
+      <div class="route-picker-summary">
+        <strong data-card-batch-count>0</strong> selected
+        · <span data-card-batch-sheets>0</span> sheet<span data-card-batch-sheets-plural></span>
+      </div>
+      <div class="route-picker-actions">
+        <a href="{{$cancelHref}}" class="btn btn-secondary"
+           hx-get="{{$cancelHref}}" hx-target="#main-content" hx-push-url="true">Cancel</a>
+        <button type="submit" class="btn btn-primary" data-card-batch-submit disabled>
+          {{if $isEdit}}Save changes{{else}}Save Batch{{end}}
+        </button>
+      </div>
     </div>
     {{else}}
     <div class="empty-state">
       <h3>No routes to choose from</h3>
-      <p>Every active route at this gym already has a card. Switch to "All active" above to reprint.</p>
+      {{if .BatchForm.ShowAll}}
+      <p>No active routes at this location yet. Set some routes, then come back to print cards.</p>
+      {{else}}
+      <p>Every active route at this gym already has a card. Switch to <strong>All active</strong> above to reprint cards for existing routes.</p>
+      {{end}}
     </div>
     {{end}}
   </form>

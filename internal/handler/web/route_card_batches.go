@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -94,6 +95,7 @@ func (h *Handler) CardBatchNewForm(w http.ResponseWriter, r *http.Request) {
 			Theme:           model.CardThemeTradingCard,
 			CutterProfile:   model.CutterSilhouetteType2,
 			CandidateRoutes: candidates,
+			ShowAll:         r.URL.Query().Get("all") == "1",
 		},
 	}
 	h.render(w, r, "setter/card-batch-form.html", data)
@@ -346,6 +348,7 @@ func (h *Handler) CardBatchEditForm(w http.ResponseWriter, r *http.Request) {
 			RouteIDs:        batch.RouteIDs,
 			CandidateRoutes: candidates,
 			EditBatchID:     batch.ID,
+			ShowAll:         true,
 		},
 	}
 	h.render(w, r, "setter/card-batch-form.html", data)
@@ -437,6 +440,7 @@ func (h *Handler) renderBatchEditError(w http.ResponseWriter, r *http.Request, b
 			RouteIDs:        routeIDs,
 			CandidateRoutes: candidates,
 			EditBatchID:     batch.ID,
+			ShowAll:         true,
 		},
 		BatchFormError: msg,
 	}
@@ -602,22 +606,22 @@ func canDeleteCardBatch(creatorID, actorID, actorRole string) bool {
 // creating a new batch. Default behaviour: "routes with no card yet" at this
 // location. When ?all=1 is set, returns every active route at the location
 // so setters can reprint cards for already-carded routes after a regrade.
+//
+// The two filters are STRICT — "Uncarded" returning an empty list must stay
+// empty so the template can show a real empty-state rather than silently
+// swapping to the full active pool (which looks identical to "All active"
+// and makes the filter chips feel broken).
+//
+// Routes are sorted wall-asc → date-set-desc → grade-asc so the picker
+// groups by wall naturally and the printed sheet mirrors how setters walk
+// the gym (wall by wall, newest routes first).
 func (h *Handler) loadBatchCandidates(r *http.Request, locationID string) ([]CardBatchRoutePreview, error) {
 	ctx := r.Context()
 
 	showAll := r.URL.Query().Get("all") == "1"
 
 	var routeIDs []string
-	if !showAll {
-		ids, err := h.cardBatchRepo.RoutesWithoutCard(ctx, locationID)
-		if err != nil {
-			return nil, err
-		}
-		routeIDs = ids
-	}
-
-	// Fallback (or ?all=1 path): pull all active routes at the location.
-	if showAll || len(routeIDs) == 0 {
+	if showAll {
 		activeRoutes, _, err := h.routeRepo.List(ctx, repository.RouteFilter{
 			LocationID: locationID,
 			Status:     "active",
@@ -630,8 +634,34 @@ func (h *Handler) loadBatchCandidates(r *http.Request, locationID string) ([]Car
 		for _, rt := range activeRoutes {
 			routeIDs = append(routeIDs, rt.ID)
 		}
+	} else {
+		ids, err := h.cardBatchRepo.RoutesWithoutCard(ctx, locationID)
+		if err != nil {
+			return nil, err
+		}
+		routeIDs = ids
 	}
-	return h.loadBatchRoutePreviews(r, routeIDs), nil
+
+	previews := h.loadBatchRoutePreviews(r, routeIDs)
+	sortBatchRoutePreviews(previews)
+	return previews, nil
+}
+
+// sortBatchRoutePreviews orders rows for the picker: wall name ascending,
+// then newest set date first within a wall, then grade ascending for
+// stability. Grade comparison is lexical — good enough for "5.9", "5.10a",
+// and circuit colors, and the wall grouping already dominates the visual
+// order anyway.
+func sortBatchRoutePreviews(previews []CardBatchRoutePreview) {
+	sort.SliceStable(previews, func(i, j int) bool {
+		if previews[i].WallName != previews[j].WallName {
+			return previews[i].WallName < previews[j].WallName
+		}
+		if !previews[i].DateSet.Equal(previews[j].DateSet) {
+			return previews[i].DateSet.After(previews[j].DateSet)
+		}
+		return previews[i].Grade < previews[j].Grade
+	})
 }
 
 // loadBatchRoutePreviews hydrates a list of route IDs into preview rows. Wall
@@ -687,6 +717,7 @@ func (h *Handler) renderBatchFormError(w http.ResponseWriter, r *http.Request, l
 		slog.Error("card batch form: reload candidates failed", "error", err)
 	}
 	values.CandidateRoutes = candidates
+	values.ShowAll = r.URL.Query().Get("all") == "1"
 
 	data := &PageData{
 		TemplateData:   templateDataFromContext(r, "card-batches"),

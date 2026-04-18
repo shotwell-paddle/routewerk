@@ -275,6 +275,17 @@ type CardBatchFormValues struct {
 	// EditBatchID, when set, flips the form into edit mode — the template
 	// POSTs to /card-batches/{id}/edit and changes its copy to match.
 	EditBatchID string
+	// ShowAll mirrors ?all=1 on the form URL. Drives the active state on
+	// the "Uncarded" / "All active" filter chips and the empty-state copy.
+	ShowAll bool
+}
+
+// CardBatchRouteGroup clusters candidate routes by wall so the picker can
+// show a scannable "print cards for the overhang, then the slab" workflow
+// instead of one flat 200-row list.
+type CardBatchRouteGroup struct {
+	WallName string
+	Routes   []CardBatchRoutePreview
 }
 
 // IsEdit reports whether the form is being rendered in edit mode. Template
@@ -299,6 +310,33 @@ func (v CardBatchFormValues) FormAction() string {
 		return "/card-batches/" + v.EditBatchID + "/edit"
 	}
 	return "/card-batches/new"
+}
+
+// GroupByWall clusters CandidateRoutes by wall name while preserving the
+// slice order (the handler sorts wall → date desc → grade before passing
+// them in, so the template just walks the existing order). Used by the
+// picker template to render "wall sections" with headers and per-wall
+// "select all in wall" affordances.
+func (v CardBatchFormValues) GroupByWall() []CardBatchRouteGroup {
+	if len(v.CandidateRoutes) == 0 {
+		return nil
+	}
+	groups := make([]CardBatchRouteGroup, 0, 8)
+	idx := map[string]int{}
+	for _, rt := range v.CandidateRoutes {
+		name := rt.WallName
+		if name == "" {
+			name = "Unassigned"
+		}
+		i, ok := idx[name]
+		if !ok {
+			idx[name] = len(groups)
+			groups = append(groups, CardBatchRouteGroup{WallName: name, Routes: []CardBatchRoutePreview{rt}})
+			continue
+		}
+		groups[i].Routes = append(groups[i].Routes, rt)
+	}
+	return groups
 }
 
 // HealthCheckResult represents one dependency check.

@@ -33,7 +33,7 @@
       <a href="/card-batches/{{.ID}}/edit" class="btn btn-secondary"
          hx-get="/card-batches/{{.ID}}/edit" hx-target="#main-content" hx-push-url="true">Edit</a>
       <form method="post" action="/card-batches/{{.ID}}/delete" onsubmit="return confirm('Delete this batch? The PDF will need to be re-created.');">
-        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
         <button type="submit" class="btn btn-danger">Delete</button>
       </form>
     </div>
@@ -47,7 +47,7 @@
       <strong>Last render failed:</strong> {{deref .ErrorMessage}}
     </div>
     <form method="post" action="/card-batches/{{.ID}}/retry">
-      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <input type="hidden" name="_csrf_token" value="{{$.CSRFToken}}">
       <button type="submit" class="btn btn-sm btn-secondary">Retry</button>
     </form>
   </div>

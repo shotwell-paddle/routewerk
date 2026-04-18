@@ -62,6 +62,13 @@ func main() {
 	// Background housekeeping — clean up expired web sessions every hour
 	go cleanupExpiredSessions(db)
 
+	// Purge old card batches (>30 days) once a day. Batches are tiny rows
+	// (route_ids array + metadata) but they accumulate as setters print
+	// weekly sheets — drop anything old enough that a reprint is vanishingly
+	// unlikely. Storage-backed PDFs (future) would need a matching cleanup
+	// against the object store; none exist yet.
+	go cleanupOldCardBatches(db)
+
 	// Job queue — lightweight Postgres-backed async processing
 	jobQueue := jobs.NewQueue(db)
 
@@ -159,6 +166,36 @@ func cleanupExpiredSessions(db *pgxpool.Pool) {
 		}
 		if n := tag.RowsAffected(); n > 0 {
 			slog.Info("cleaned up expired sessions", "count", n)
+		}
+	}
+}
+
+// cardBatchRetention is the age past which batches are purged. Setters rarely
+// reprint card sheets more than a month after a set, and routes typically
+// rotate in less time than that. Tuneable via env if we ever need it, but
+// hardcoded for now to keep config surface small.
+const cardBatchRetention = 30 * 24 * time.Hour
+
+// cleanupOldCardBatches runs daily and hard-deletes card batches older than
+// cardBatchRetention. First tick fires after one interval so the server
+// doesn't spend its first boot minute on a sweep — retention isn't latency-
+// sensitive, and a delayed first run also avoids restart loops racing with
+// a long DELETE on a cold connection pool.
+func cleanupOldCardBatches(db *pgxpool.Pool) {
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		cutoff := time.Now().Add(-cardBatchRetention)
+		tag, err := db.Exec(ctx,
+			`DELETE FROM route_card_batches WHERE created_at < $1`, cutoff)
+		cancel()
+		if err != nil {
+			slog.Error("card batch retention sweep failed", "error", err)
+			continue
+		}
+		if n := tag.RowsAffected(); n > 0 {
+			slog.Info("purged old card batches", "count", n, "cutoff", cutoff.Format(time.RFC3339))
 		}
 	}
 }

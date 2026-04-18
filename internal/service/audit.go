@@ -89,4 +89,6 @@ const (
 	AuditLoginSuccess     = "auth.login"
 	AuditLoginFailed      = "auth.login_failed"
 	AuditAccountLocked    = "auth.account_locked"
+	AuditCardBatchCreate  = "card_batch.create"
+	AuditCardBatchDelete  = "card_batch.delete"
 )

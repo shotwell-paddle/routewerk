@@ -1,0 +1,101 @@
+{{define "title"}}Card Batch — Routewerk{{end}}
+
+{{define "content"}}
+{{with .CardBatchDetail}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>Card Batch</h1>
+      <p class="page-subtitle">
+        {{len .RouteIDs}} card{{if ne (len .RouteIDs) 1}}s{{end}} · {{.PageCount}} sheet{{if ne .PageCount 1}}s{{end}}
+        · Created by {{.CreatorName}} {{reltime .CreatedAt}}
+        {{if eq .Status "ready"}}<span class="status-badge status-complete">Ready</span>
+        {{else if eq .Status "failed"}}<span class="status-badge status-active">Failed</span>
+        {{else}}<span class="status-badge">Pending</span>{{end}}
+      </p>
+    </div>
+    <div class="flex gap-2">
+      {{if .Routes}}
+      <a href="/card-batches/{{.ID}}/download.pdf"
+         class="btn btn-primary"
+         download="routewerk-cards-{{.ID}}.pdf"
+         target="_blank">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Download PDF
+      </a>
+      {{else}}
+      <button type="button" class="btn btn-primary" disabled title="No renderable routes">
+        Download PDF
+      </button>
+      {{end}}
+      <a href="/card-batches/{{.ID}}/edit" class="btn btn-secondary"
+         hx-get="/card-batches/{{.ID}}/edit" hx-target="#main-content" hx-push-url="true">Edit</a>
+      <form method="post" action="/card-batches/{{.ID}}/delete" onsubmit="return confirm('Delete this batch? The PDF will need to be re-created.');">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <button type="submit" class="btn btn-danger">Delete</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="page-body">
+  {{if eq .Status "failed"}}
+  <div class="alert alert-error mb-4 flex items-center justify-between gap-4">
+    <div>
+      <strong>Last render failed:</strong> {{deref .ErrorMessage}}
+    </div>
+    <form method="post" action="/card-batches/{{.ID}}/retry">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <button type="submit" class="btn btn-sm btn-secondary">Retry</button>
+    </form>
+  </div>
+  {{end}}
+
+  {{if and .Routes (gt .MissingCount 0)}}
+  <div class="alert alert-warn mb-4">
+    <strong>{{.MissingCount}} of {{len .RouteIDs}} routes are no longer available</strong>
+    — they were deleted or moved to another location. The PDF will render only the
+    {{len .Routes}} remaining card{{if ne (len .Routes) 1}}s{{end}}.
+  </div>
+  {{end}}
+
+  <section class="card-batch-meta mb-4 flex items-start gap-6">
+    <dl class="meta-grid flex-1">
+      <div><dt>Theme</dt><dd>{{.Theme}}</dd></div>
+      <div><dt>Cutter</dt><dd>{{.CutterProfile}}</dd></div>
+      <div><dt>Status</dt><dd>{{.Status}}</dd></div>
+    </dl>
+    {{if .Routes}}
+    <figure class="card-batch-preview">
+      <img src="/card-batches/{{.ID}}/preview.png"
+           alt="Preview of the first card in this batch"
+           loading="lazy"
+           width="240">
+      <figcaption class="text-muted">First card preview</figcaption>
+    </figure>
+    {{end}}
+  </section>
+
+  <h2 class="section-title">Routes on this sheet</h2>
+  {{if .Routes}}
+  <div class="route-picker route-picker-readonly">
+    {{range .Routes}}
+    <div class="route-picker-row">
+      <span class="route-swatch" style="{{safeCSS (printf "background: %s;" .SafeColor)}}"></span>
+      <span class="route-picker-grade">{{.Grade}}</span>
+      <span class="route-picker-name">{{if .Name}}{{.Name}}{{else}}Unnamed{{end}}</span>
+      <span class="route-picker-meta">{{.WallName}} · {{.DateSet.Format "Jan 2, 2006"}}</span>
+    </div>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty-state">
+    <h3>No renderable routes</h3>
+    <p>Every route in this batch has been deleted or moved to another location. The PDF will be empty — delete the batch to clean up.</p>
+  </div>
+  {{end}}
+</div>
+{{end}}
+{{end}}

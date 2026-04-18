@@ -203,8 +203,8 @@ func TestCircuitPrintPNG(t *testing.T) {
 	gen := NewCardGenerator("https://app.routewerk.com")
 	data := testCircuitCardData()
 
-	if !data.isCircuit() {
-		t.Fatal("expected isCircuit() == true")
+	if !data.IsCircuit() {
+		t.Fatal("expected IsCircuit() == true")
 	}
 
 	pngBytes, err := gen.GeneratePrintPNG(data)
@@ -301,34 +301,34 @@ func TestIsCircuitDetection(t *testing.T) {
 	// Circuit via CircuitColor field
 	cc := "Blue"
 	d1 := CardData{Route: &model.Route{CircuitColor: &cc, GradingSystem: "v_scale"}}
-	if !d1.isCircuit() {
-		t.Error("expected isCircuit() for CircuitColor set")
+	if !d1.IsCircuit() {
+		t.Error("expected IsCircuit() for CircuitColor set")
 	}
 
 	// Circuit via GradingSystem
 	d2 := CardData{Route: &model.Route{GradingSystem: "circuit"}}
-	if !d2.isCircuit() {
-		t.Error("expected isCircuit() for GradingSystem=circuit")
+	if !d2.IsCircuit() {
+		t.Error("expected IsCircuit() for GradingSystem=circuit")
 	}
 
 	// Graded route
 	d3 := CardData{Route: &model.Route{GradingSystem: "v_scale"}}
-	if d3.isCircuit() {
-		t.Error("expected !isCircuit() for graded route")
+	if d3.IsCircuit() {
+		t.Error("expected !IsCircuit() for graded route")
 	}
 }
 
 func TestColorLabel(t *testing.T) {
 	cc := "ORANGE"
 	d := CardData{Route: &model.Route{CircuitColor: &cc, Color: "#ff9800"}}
-	if got := d.colorLabel(); got != "Orange" {
-		t.Errorf("colorLabel() = %q, want %q", got, "Orange")
+	if got := d.ColorLabel(); got != "Orange" {
+		t.Errorf("ColorLabel() = %q, want %q", got, "Orange")
 	}
 
 	// Falls back to hex name
 	d2 := CardData{Route: &model.Route{Color: "#e53935"}}
-	if got := d2.colorLabel(); got != "Red" {
-		t.Errorf("colorLabel() = %q, want %q", got, "Red")
+	if got := d2.ColorLabel(); got != "Red" {
+		t.Errorf("ColorLabel() = %q, want %q", got, "Red")
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
 	"github.com/shotwell-paddle/routewerk/internal/service"
+	"github.com/shotwell-paddle/routewerk/internal/service/cardbatch"
 )
 
 // SettingsStore abstracts settings access so the handler can work with
@@ -55,37 +56,40 @@ func sanitizeColor(color string) string {
 
 // Handler serves the HTMX-powered web frontend.
 type Handler struct {
-	templates      map[string]*template.Template
-	routeRepo      *repository.RouteRepo
-	wallRepo       *repository.WallRepo
-	locationRepo   *repository.LocationRepo
-	userRepo       *repository.UserRepo
-	tagRepo        *repository.TagRepo
-	ascentRepo     *repository.AscentRepo
-	ratingRepo     *repository.RatingRepo
-	difficultyRepo *repository.DifficultyRepo
-	orgRepo        *repository.OrgRepo
-	sessionRepo    *repository.SessionRepo
-	analyticsRepo  *repository.AnalyticsRepo
-	webSessionRepo *repository.WebSessionRepo
-	photoRepo      *repository.RoutePhotoRepo
-	settingsRepo   SettingsStore
-	authService    *service.AuthService
-	storageService *service.StorageService
-	cardGen        *service.CardGenerator
-	userTagRepo      *repository.UserTagRepo
-	questRepo        *repository.QuestRepo
-	badgeRepo        *repository.BadgeRepo
-	activityRepo     *repository.ActivityRepo
+	templates         map[string]*template.Template
+	routeRepo         *repository.RouteRepo
+	wallRepo          *repository.WallRepo
+	locationRepo      *repository.LocationRepo
+	userRepo          *repository.UserRepo
+	tagRepo           *repository.TagRepo
+	ascentRepo        *repository.AscentRepo
+	ratingRepo        *repository.RatingRepo
+	difficultyRepo    *repository.DifficultyRepo
+	orgRepo           *repository.OrgRepo
+	sessionRepo       *repository.SessionRepo
+	analyticsRepo     *repository.AnalyticsRepo
+	webSessionRepo    *repository.WebSessionRepo
+	photoRepo         *repository.RoutePhotoRepo
+	settingsRepo      SettingsStore
+	authService       *service.AuthService
+	storageService    *service.StorageService
+	cardGen           *service.CardGenerator
+	cardBatchRepo     *repository.CardBatchRepo
+	batchService      *cardbatch.Service
+	auditSvc          *service.AuditService
+	userTagRepo       *repository.UserTagRepo
+	questRepo         *repository.QuestRepo
+	badgeRepo         *repository.BadgeRepo
+	activityRepo      *repository.ActivityRepo
 	routeSkillTagRepo *repository.RouteSkillTagRepo
-	notifRepo        *repository.NotificationRepo
-	questSvc         *service.QuestService
-	eventBus         event.Bus
-	profanity        *service.ProfanityFilter
-	sessionMgr       *middleware.SessionManager
-	cfg              *config.Config
-	uploadSem        chan struct{} // limits concurrent image processing
-	db               *pgxpool.Pool
+	notifRepo         *repository.NotificationRepo
+	questSvc          *service.QuestService
+	eventBus          event.Bus
+	profanity         *service.ProfanityFilter
+	sessionMgr        *middleware.SessionManager
+	cfg               *config.Config
+	uploadSem         chan struct{} // limits concurrent image processing
+	db                *pgxpool.Pool
 }
 
 func NewHandler(
@@ -114,6 +118,9 @@ func NewHandler(
 	authService *service.AuthService,
 	storageService *service.StorageService,
 	cardGen *service.CardGenerator,
+	cardBatchRepo *repository.CardBatchRepo,
+	batchService *cardbatch.Service,
+	auditSvc *service.AuditService,
 	sessionMgr *middleware.SessionManager,
 	cfg *config.Config,
 	db *pgxpool.Pool,
@@ -145,6 +152,9 @@ func NewHandler(
 		authService:       authService,
 		storageService:    storageService,
 		cardGen:           cardGen,
+		cardBatchRepo:     cardBatchRepo,
+		batchService:      batchService,
+		auditSvc:          auditSvc,
 		sessionMgr:        sessionMgr,
 		cfg:               cfg,
 		uploadSem:         make(chan struct{}, 3), // limit concurrent image processing
@@ -168,8 +178,8 @@ var funcMap = template.FuncMap{
 		return template.CSS(s)
 	},
 	"roleName": roleDisplayName,
-	"add": func(a, b int) int { return a + b },
-	"sub": func(a, b int) int { return a - b },
+	"add":      func(a, b int) int { return a + b },
+	"sub":      func(a, b int) int { return a - b },
 	"pct": func(n, total int) int {
 		if total <= 0 {
 			return 0

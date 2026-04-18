@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/shotwell-paddle/routewerk/internal/database"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 )
 
@@ -133,6 +134,13 @@ func (r *RouteRepo) CreateWithTags(ctx context.Context, rt *model.Route, tagIDs 
 }
 
 func (r *RouteRepo) GetByID(ctx context.Context, id string) (*model.Route, error) {
+	// Per-query timeout: a single route lookup with the tags LEFT JOIN is a
+	// cheap indexed query. Cap at TimeoutFast so one pathologically slow
+	// lookup can't drain a whole request budget (callers like the card-batch
+	// preview do many of these in series under a shared ctx).
+	ctx, cancel := database.QueryTimeout(ctx, database.TimeoutFast)
+	defer cancel()
+
 	// Single query with LEFT JOIN to load route + tags in one round trip
 	query := `
 		SELECT r.id, r.location_id, r.wall_id, r.setter_id, r.route_type, r.status,

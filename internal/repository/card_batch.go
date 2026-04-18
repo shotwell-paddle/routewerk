@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/shotwell-paddle/routewerk/internal/database"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 )
 
@@ -34,6 +35,9 @@ func (r *CardBatchRepo) Create(ctx context.Context, b *model.CardBatch) error {
 
 // GetByID returns a single batch or (nil, nil) when the batch does not exist.
 func (r *CardBatchRepo) GetByID(ctx context.Context, id string) (*model.CardBatch, error) {
+	ctx, cancel := database.QueryTimeout(ctx, database.TimeoutFast)
+	defer cancel()
+
 	query := `
 		SELECT id, location_id, created_by, route_ids, theme, cutter_profile,
 			storage_key, status, error_message, created_at, updated_at

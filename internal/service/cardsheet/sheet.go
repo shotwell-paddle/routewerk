@@ -77,11 +77,13 @@ const (
 	// cardCornerRadiusMM rounds the four corners of every card's cut path.
 	// Climbing-gym route tags live on plastic holds that are gripped,
 	// brushed, and yanked dozens of times a day; sharp corners fray and
-	// peel first. 2mm is subtle enough to stay visually unobtrusive, big
-	// enough to survive handling, and well within the Silhouette's
-	// min-radius tolerance. The cut path is what the cutter physically
-	// follows — this is the durability win, not a decorative outline.
-	cardCornerRadiusMM = 2.0
+	// peel first. 4mm is pronounced enough to give meaningful durability
+	// (the rounded arc distributes handling stress instead of
+	// concentrating it at a point), reads clearly as "rounded" visually,
+	// and is well within the Silhouette's min-radius tolerance. The cut
+	// path is what the cutter physically follows — this is the durability
+	// win, not a decorative outline.
+	cardCornerRadiusMM = 4.0
 )
 
 const defaultBleedMM = 0.5

@@ -2,9 +2,6 @@ package cardsheet
 
 import (
 	"bytes"
-	"image"
-	"image/color"
-	"image/png"
 	"strings"
 	"testing"
 	"time"
@@ -75,52 +72,9 @@ func TestPageCount(t *testing.T) {
 	}
 }
 
-// TestRotatePNG90CCW puts a known 4-color gradient into a 2×3 image and
-// checks that after CCW rotation the pixels land where we expect: the
-// top-left of the source becomes the bottom-left of the destination.
-func TestRotatePNG90CCW(t *testing.T) {
-	// 2×3 source. x is width, y is height. Pixel (0,0) is red, everything
-	// else colored so we can disambiguate rotation direction.
-	src := image.NewRGBA(image.Rect(0, 0, 2, 3))
-	src.Set(0, 0, color.RGBA{255, 0, 0, 255})   // top-left
-	src.Set(1, 0, color.RGBA{0, 255, 0, 255})   // top-right
-	src.Set(0, 2, color.RGBA{0, 0, 255, 255})   // bottom-left
-	src.Set(1, 2, color.RGBA{255, 255, 0, 255}) // bottom-right
-
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, src); err != nil {
-		t.Fatalf("encode source: %v", err)
-	}
-
-	rotated, err := rotatePNG90CCW(buf.Bytes())
-	if err != nil {
-		t.Fatalf("rotatePNG90CCW: %v", err)
-	}
-	img, err := png.Decode(bytes.NewReader(rotated))
-	if err != nil {
-		t.Fatalf("decode rotated: %v", err)
-	}
-
-	// CCW rotation of a 2×3 image gives a 3×2 image.
-	if b := img.Bounds(); b.Dx() != 3 || b.Dy() != 2 {
-		t.Fatalf("rotated bounds: got %dx%d, want 3x2", b.Dx(), b.Dy())
-	}
-
-	// Source (x,y) → destination (y, w-1-x) where w = src.Dx() = 2.
-	// So source top-left (0,0) → destination (0, 1) — which is the
-	// bottom-left of the new image. Verify that pixel is red.
-	got := color.RGBAModel.Convert(img.At(0, 1)).(color.RGBA)
-	want := color.RGBA{255, 0, 0, 255}
-	if got != want {
-		t.Errorf("rotated(0,1) = %v, want %v (source top-left red should be new bottom-left)", got, want)
-	}
-	// Source top-right (1,0) → destination (0, 0) — the new top-left.
-	got = color.RGBAModel.Convert(img.At(0, 0)).(color.RGBA)
-	want = color.RGBA{0, 255, 0, 255}
-	if got != want {
-		t.Errorf("rotated(0,0) = %v, want %v", got, want)
-	}
-}
+// (TestRotatePNG90CCW removed along with rotatePNG90CCW — the vector
+// card-draw path never called it; rotation is handled natively by
+// gofpdf's transform stack in drawCardVector.)
 
 // ────────────────────────────────────────────────────────────
 // Cut path color — must be pure RGB(255,0,0)

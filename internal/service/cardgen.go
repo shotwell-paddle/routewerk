@@ -7,13 +7,13 @@ import (
 	"image/color"
 	"image/png"
 	"math"
-	"os"
 	"strings"
 
 	"github.com/fogleman/gg"
 	"github.com/golang/freetype/truetype"
 	"github.com/jung-kurt/gofpdf/v2"
 	qrcode "github.com/skip2/go-qrcode"
+	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/goregular"
 
@@ -22,38 +22,51 @@ import (
 
 // ============================================================
 // Fonts
+//
+// We ship the Go typeface (Bigelow & Holmes) embedded in the binary via
+// golang.org/x/image/font/gofont. That keeps rendering identical across
+// Linux/macOS/Windows hosts and the Alpine Docker image, where DejaVu isn't
+// installed — the previous host-filesystem lookup would silently fall back
+// to the Go fonts in production anyway. Shipping bytes also lets the
+// vector PDF renderer in cardsheet embed the same font via
+// gofpdf.AddUTF8FontFromBytes.
 // ============================================================
 
 var (
+	// Raw TTF bytes, exported at package scope for sibling packages
+	// (cardsheet) that need to embed them in PDFs.
+	FontRegularTTF = goregular.TTF
+	FontBoldTTF    = gobold.TTF
+
 	fontRegular *truetype.Font
 	fontBold    *truetype.Font
 )
 
 func init() {
-	fontRegular = loadSystemFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
-	if fontRegular == nil {
-		fontRegular, _ = truetype.Parse(goregular.TTF)
-	}
-	fontBold = loadSystemFont("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
-	if fontBold == nil {
-		fontBold, _ = truetype.Parse(gobold.TTF)
-	}
+	fontRegular, _ = truetype.Parse(FontRegularTTF)
+	fontBold, _ = truetype.Parse(FontBoldTTF)
 }
 
-func loadSystemFont(path string) *truetype.Font {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	f, err := truetype.Parse(data)
-	if err != nil {
-		return nil
-	}
-	return f
-}
-
-func setFont(dc *gg.Context, font *truetype.Font, size float64) {
-	face := truetype.NewFace(font, &truetype.Options{Size: size, DPI: 72})
+// setFont sets the current font face for screen-resolution rendering (the
+// digital + small print-card variants).
+//
+// Hinting=Full snaps outlines to the pixel grid so stems and crossbars land
+// on whole pixels instead of being anti-aliased across two rows. That keeps
+// body copy and tag labels from looking soft at OG-card display sizes, where
+// browsers typically downscale the 2x canvas to fit article previews. We
+// previously used HintingNone for "smoother curves" but it visibly fuzzes
+// everything below ~20pt — crispness wins at this scale.
+//
+// Size is treated as pixels (DPI 72 → 1pt == 1px) because the rest of the
+// drawing code uses pixel coordinates on a high-DPI canvas. Sheet cards use
+// a separate setPrintFont (see cardgen_sheet_face.go) tuned for 300 DPI
+// print, where grid-snapping lines up with the physical pixel density.
+func setFont(dc *gg.Context, f *truetype.Font, size float64) {
+	face := truetype.NewFace(f, &truetype.Options{
+		Size:    size,
+		DPI:     72,
+		Hinting: font.HintingFull,
+	})
 	dc.SetFontFace(face)
 }
 
@@ -69,18 +82,19 @@ type CardData struct {
 	QRTargetURL  string
 }
 
-// isCircuit returns true if this route uses a circuit/color-based system
-// rather than a numeric grade.
-func (d CardData) isCircuit() bool {
+// IsCircuit returns true if this route uses a circuit/color-based system
+// rather than a numeric grade. Exported so sibling packages (cardsheet) can
+// branch on it when drawing card faces directly into PDFs.
+func (d CardData) IsCircuit() bool {
 	if d.Route.CircuitColor != nil && *d.Route.CircuitColor != "" {
 		return true
 	}
 	return d.Route.GradingSystem == "circuit"
 }
 
-// colorLabel returns a human-readable color name for accessibility.
+// ColorLabel returns a human-readable color name for accessibility.
 // Uses CircuitColor if set, otherwise derives from the hex Color field.
-func (d CardData) colorLabel() string {
+func (d CardData) ColorLabel() string {
 	if d.Route.CircuitColor != nil && *d.Route.CircuitColor != "" {
 		return titleCase(strings.ToLower(*d.Route.CircuitColor))
 	}
@@ -118,7 +132,7 @@ const (
 
 // GeneratePrintPNG auto-selects graded vs circuit layout.
 func (g *CardGenerator) GeneratePrintPNG(data CardData) ([]byte, error) {
-	if data.isCircuit() {
+	if data.IsCircuit() {
 		return g.generateCircuitPrintPNG(data)
 	}
 	return g.generateGradedPrintPNG(data)
@@ -153,7 +167,7 @@ func (g *CardGenerator) generateGradedPrintPNG(data CardData) ([]byte, error) {
 	// -- Color name below grade in block --
 	dc.SetColor(withAlpha(contrastColor(routeColor), 180))
 	setFont(dc, fontBold, 10)
-	colorLabel := strings.ToUpper(data.colorLabel())
+	colorLabel := strings.ToUpper(data.ColorLabel())
 	clw, _ := dc.MeasureString(colorLabel)
 	dc.DrawString(colorLabel, 20+(blockW-clw)/2, 170)
 
@@ -169,10 +183,12 @@ func (g *CardGenerator) generateGradedPrintPNG(data CardData) ([]byte, error) {
 		infoY += 32
 	}
 
-	// Wall name
+	// Wall name — truncate to card width so long names don't overflow off
+	// the right edge of the digital card. Fits the same column the route
+	// name uses above.
 	dc.SetColor(color.RGBA{180, 175, 170, 255})
 	setFont(dc, fontRegular, 16)
-	dc.DrawString(data.WallName, textX, infoY)
+	dc.DrawString(truncateText(dc, data.WallName, float64(printW)-textX-20), textX, infoY)
 	infoY += 24
 
 	// Route type
@@ -187,7 +203,7 @@ func (g *CardGenerator) generateGradedPrintPNG(data CardData) ([]byte, error) {
 	if data.SetterName != "" {
 		dc.SetColor(color.RGBA{140, 135, 130, 255})
 		setFont(dc, fontRegular, 12)
-		dc.DrawString("Set by "+data.SetterName, textX, footerY)
+		dc.DrawString(truncateText(dc, "Set by "+data.SetterName, float64(printW)-textX-20), textX, footerY)
 		footerY += 18
 	}
 	dc.SetColor(color.RGBA{100, 96, 92, 255})
@@ -249,7 +265,7 @@ func (g *CardGenerator) generateCircuitPrintPNG(data CardData) ([]byte, error) {
 
 	// -- Circuit color name — huge, the primary identifier --
 	textX := stripeW + 24
-	circuitLabel := strings.ToUpper(data.colorLabel())
+	circuitLabel := strings.ToUpper(data.ColorLabel())
 	dc.SetColor(color.RGBA{255, 255, 255, 255})
 	setFont(dc, fontBold, 52)
 	dc.DrawString(circuitLabel, textX, 72)
@@ -268,10 +284,11 @@ func (g *CardGenerator) generateCircuitPrintPNG(data CardData) ([]byte, error) {
 		infoY += 28
 	}
 
-	// -- Wall name --
+	// -- Wall name -- truncate to available width so long names don't run
+	// past the QR code on the right.
 	dc.SetColor(color.RGBA{180, 175, 170, 255})
 	setFont(dc, fontRegular, 16)
-	dc.DrawString(data.WallName, textX, infoY)
+	dc.DrawString(truncateText(dc, data.WallName, float64(printW)-textX-120), textX, infoY)
 	infoY += 22
 
 	// -- Grade (if present, secondary) --
@@ -306,224 +323,219 @@ func (g *CardGenerator) generateCircuitPrintPNG(data CardData) ([]byte, error) {
 
 
 // ============================================================
-// DIGITAL CARD — shareable, landscape 640×360
+// DIGITAL CARD — shareable, landscape 1200×630 (OG-standard)
 //
-// Auto-selects graded vs circuit layout. Both include live stats
-// and tags since digital cards are generated on demand.
+// Both graded and circuit routes render through the same unified
+// layout: a full-bleed color hero on the left carries the route's
+// primary identifier (grade or color name), and a dark info panel
+// on the right carries name, location, setter, tags, and stats.
+// The two variants differ only in what fills the hero zone — every
+// other measurement is identical so they feel like the same product.
 // ============================================================
 
+// Digital cards render at 2x the nominal OG size (1200×630) so browsers have
+// retina-quality pixels to downscale from. Every coordinate below is written
+// in the 2x pixel space directly — there is no "scale" multiplier threaded
+// through the code because that would invite drift between layout math and
+// constants.
 const (
-	digitalW = 640
-	digitalH = 360
+	digitalW     = 2400
+	digitalH     = 1260
+	heroW        = 960 // width of the left color hero zone
+	infoPadLeft  = 112 // left padding inside the info panel
+	infoPadRight = 96  // right padding inside the info panel
+	infoPadTopY  = 144 // top padding inside the info panel
+	infoPadBot   = 80  // bottom padding inside the info panel
 )
 
 func (g *CardGenerator) GenerateDigitalPNG(data CardData) ([]byte, error) {
-	if data.isCircuit() {
-		return g.generateCircuitDigitalPNG(data)
-	}
-	return g.generateGradedDigitalPNG(data)
+	return g.generateDigitalPNG(data)
 }
 
 func (g *CardGenerator) GenerateDigitalPDF(data CardData) ([]byte, error) {
 	return g.wrapPDF(data, g.GenerateDigitalPNG, digitalW, digitalH)
 }
 
-func (g *CardGenerator) generateGradedDigitalPNG(data CardData) ([]byte, error) {
+// generateDigitalPNG renders a unified layout for graded + circuit routes.
+// Only the hero zone contents differ between variants; everything else is
+// laid out the same way so the two feel like the same card family.
+func (g *CardGenerator) generateDigitalPNG(data CardData) ([]byte, error) {
 	dc := gg.NewContext(digitalW, digitalH)
 	routeColor := parseHexColor(data.Route.Color)
+	onHero := contrastColor(routeColor)
 
-	// Dark background
-	bgColor := color.RGBA{20, 20, 18, 255}
-	dc.SetColor(bgColor)
+	// ---- Panel backgrounds ----
+	// Info panel (right): warm near-black. Drawn first so hero sits on top.
+	panelBG := color.RGBA{20, 18, 16, 255}
+	dc.SetColor(panelBG)
 	dc.Clear()
 
-	// -- Left color accent block --
-	blockW := 120.0
-	blockH := float64(digitalH) - 80
+	// Hero panel (left): full-bleed route color.
 	dc.SetColor(routeColor)
-	dc.DrawRoundedRectangle(28, 28, blockW, blockH, 16)
+	dc.DrawRectangle(0, 0, heroW, digitalH)
 	dc.Fill()
 
-	// -- Grade inside color block --
-	textOnColor := contrastColor(routeColor)
-	gradeText := data.Route.Grade
-	setFont(dc, fontBold, 48)
-	gw, gh := dc.MeasureString(gradeText)
-	dc.SetColor(textOnColor)
-	dc.DrawString(gradeText, 28+(blockW-gw)/2, 28+(blockH/2)-(gh/2)+gh*0.3)
-
-	// -- Color name below grade --
-	dc.SetColor(withAlpha(textOnColor, 160))
-	setFont(dc, fontBold, 10)
-	colorLabel := strings.ToUpper(data.colorLabel())
-	clw, _ := dc.MeasureString(colorLabel)
-	dc.DrawString(colorLabel, 28+(blockW-clw)/2, 28+blockH-16)
-
-	// -- Route info (right side) --
-	textX := 172.0
-	infoY := 52.0
-
-	// Route type label
-	if data.Route.RouteType != "" {
-		dc.SetColor(color.RGBA{252, 82, 0, 255}) // accent orange
-		setFont(dc, fontBold, 10)
-		dc.DrawString(formatRouteType(data.Route.RouteType), textX, infoY)
-		infoY += 22
-	}
-
-	// Route name
-	if data.Route.Name != nil && *data.Route.Name != "" {
-		dc.SetColor(color.RGBA{255, 255, 255, 255})
-		setFont(dc, fontBold, 24)
-		dc.DrawString(truncateText(dc, *data.Route.Name, float64(digitalW)-textX-30), textX, infoY)
-		infoY += 32
-	}
-
-	// Wall + Location
-	dc.SetColor(color.RGBA{180, 175, 170, 255})
-	setFont(dc, fontRegular, 14)
-	loc := data.WallName
-	if data.LocationName != "" {
-		loc = data.WallName + "  ·  " + data.LocationName
-	}
-	dc.DrawString(loc, textX, infoY)
-	infoY += 22
-
-	// Setter + date
-	if data.SetterName != "" {
-		dc.SetColor(color.RGBA{120, 115, 110, 255})
-		setFont(dc, fontRegular, 12)
-		dc.DrawString("Set by "+data.SetterName+"  ·  "+data.Route.DateSet.Format("Jan 2, 2006"), textX, infoY)
-	}
-
-	// -- Stats row --
-	drawDigitalStats(dc, data, textX)
-
-	// -- Tags --
-	drawDigitalTags(dc, data, textX)
-
-	// -- Route link (bottom right, replacing QR — QR is useless on phones) --
-	if data.QRTargetURL != "" {
-		dc.SetColor(color.RGBA{90, 86, 82, 255})
-		setFont(dc, fontRegular, 9)
-		dc.DrawStringAnchored(data.QRTargetURL, float64(digitalW)-20, float64(digitalH)-16, 1.0, 0.5)
-	}
-
-	// -- Branding --
-	dc.SetColor(color.RGBA{70, 67, 64, 255})
-	setFont(dc, fontBold, 9)
-	dc.DrawString("ROUTEWERK", 28, float64(digitalH)-14)
-
-	return encodePNG(dc)
-}
-
-func (g *CardGenerator) generateCircuitDigitalPNG(data CardData) ([]byte, error) {
-	dc := gg.NewContext(digitalW, digitalH)
-	routeColor := parseHexColor(data.Route.Color)
-
-	// Full route color background — color IS the identity
-	dc.SetColor(routeColor)
-	dc.Clear()
-
-	// Gradient overlay at bottom for depth + text readability
-	for y := float64(digitalH) - 120; y < float64(digitalH); y++ {
-		alpha := uint8((y - (float64(digitalH) - 120)) / 120 * 100)
+	// Subtle vertical shadow on the panel seam so the hero feels slightly
+	// elevated over the info panel.
+	for i := 0; i < 48; i++ {
+		alpha := uint8(60 - i)
+		if alpha > 60 {
+			alpha = 0
+		}
 		dc.SetColor(color.RGBA{0, 0, 0, alpha})
-		dc.DrawLine(0, y, float64(digitalW), y)
+		dc.DrawLine(float64(heroW+i), 0, float64(heroW+i), digitalH)
 		dc.Stroke()
 	}
 
-	textOnColor := contrastColor(routeColor)
+	// ---- Hero content ----
+	// Primary identifier: grade for graded routes, color name for circuits.
+	// Auto-size down if it overflows the hero zone.
+	var primary, secondary string
+	var primaryStart float64
+	if data.IsCircuit() {
+		primary = strings.ToUpper(data.ColorLabel())
+		secondary = "CIRCUIT"
+		primaryStart = 360 // color names run wider than V-grades
+	} else {
+		primary = data.Route.Grade
+		secondary = strings.ToUpper(data.ColorLabel())
+		primaryStart = 440
+	}
+	heroMax := float64(heroW) - 160
+	primaryPt := fitWidth(dc, fontBold, primary, heroMax, primaryStart, 144)
+	setFont(dc, fontBold, primaryPt)
+	pw, _ := dc.MeasureString(primary)
+	// Use cap-height (~0.72×em) to center visually; gg's MeasureString
+	// returns em-advance height which over-pads the block.
+	primaryCap := primaryPt * 0.72
+	centerY := float64(digitalH) / 2
+	primaryBaseline := centerY + primaryCap*0.35
+	dc.SetColor(onHero)
+	dc.DrawString(primary, (float64(heroW)-pw)/2, primaryBaseline)
 
-	// -- Circuit color name — huge, the primary identifier --
-	circuitLabel := strings.ToUpper(data.colorLabel())
-	dc.SetColor(textOnColor)
-	setFont(dc, fontBold, 56)
-	dc.DrawString(circuitLabel, 36, 80)
+	// Secondary label sits below the primary baseline, letter-spaced so it
+	// reads as a small-caps subtitle.
+	setFont(dc, fontBold, 40)
+	spaced := letterSpace(secondary, 2)
+	sw, _ := dc.MeasureString(spaced)
+	dc.SetColor(withAlpha(onHero, 200))
+	dc.DrawString(spaced, (float64(heroW)-sw)/2, primaryBaseline+96)
 
-	// "CIRCUIT" subtitle
-	dc.SetColor(withAlpha(textOnColor, 160))
-	setFont(dc, fontBold, 14)
-	dc.DrawString("CIRCUIT", 38, 104)
+	// ---- Info panel content ----
+	textX := float64(heroW + infoPadLeft)
+	textRight := float64(digitalW - infoPadRight)
+	textMaxW := textRight - textX
+	y := float64(infoPadTopY)
 
-	// -- Route name --
-	nameY := 140.0
+	// No eyebrow — the hero already communicates what kind of route this is
+	// (a grade for graded, a color name + CIRCUIT for circuits). The eyebrow
+	// above the title added little beyond visual noise.
+
+	// H1 — route name, up to two lines.
 	if data.Route.Name != nil && *data.Route.Name != "" {
-		dc.SetColor(withAlpha(textOnColor, 240))
-		setFont(dc, fontBold, 20)
-		dc.DrawString(*data.Route.Name, 36, nameY)
-		nameY += 28
+		setFont(dc, fontBold, 112)
+		dc.SetColor(color.RGBA{246, 242, 236, 255})
+		lines := wrapString(dc, *data.Route.Name, textMaxW, 2)
+		for _, line := range lines {
+			y += 116
+			dc.DrawString(line, textX, y)
+		}
+		y += 40
 	}
 
-	// -- Wall + Location --
-	dc.SetColor(withAlpha(textOnColor, 190))
-	setFont(dc, fontRegular, 14)
+	// Location line — wall · gym.
+	setFont(dc, fontRegular, 44)
+	dc.SetColor(color.RGBA{188, 180, 170, 255})
 	loc := data.WallName
 	if data.LocationName != "" {
-		loc = data.WallName + "  ·  " + data.LocationName
+		if loc != "" {
+			loc += "  ·  " + data.LocationName
+		} else {
+			loc = data.LocationName
+		}
 	}
-	dc.DrawString(loc, 36, nameY)
+	if loc != "" {
+		y += 24
+		dc.DrawString(truncateText(dc, loc, textMaxW), textX, y)
+	}
 
-	// -- Stats row (bottom left) --
-	statsY := float64(digitalH) - 56
-	stats := buildStatPairs(data)
-	statX := 36.0
-	for i, s := range stats {
-		setFont(dc, fontBold, 18)
-		dc.SetColor(withAlpha(textOnColor, 240))
-		dc.DrawString(s.value, statX, statsY)
-		vw, _ := dc.MeasureString(s.value)
+	// Setter + date line.
+	if data.SetterName != "" {
+		y += 56
+		setFont(dc, fontRegular, 36)
+		dc.SetColor(color.RGBA{130, 124, 116, 255})
+		dc.DrawString("Set by "+data.SetterName+"  ·  "+data.Route.DateSet.Format("Jan 2, 2006"), textX, y)
+	}
 
-		setFont(dc, fontRegular, 10)
-		dc.SetColor(withAlpha(textOnColor, 140))
-		dc.DrawString(s.label, statX+vw+5, statsY)
-		lw, _ := dc.MeasureString(s.label)
+	// Thin rule across the panel, separating identity from tags/stats.
+	ruleY := float64(digitalH - 392)
+	dc.SetColor(color.RGBA{60, 54, 48, 255})
+	dc.SetLineWidth(2)
+	dc.DrawLine(textX, ruleY, textRight, ruleY)
+	dc.Stroke()
 
-		statX += vw + lw + 10
-		if i < len(stats)-1 {
-			dc.SetColor(withAlpha(textOnColor, 80))
-			setFont(dc, fontRegular, 10)
-			dc.DrawString("·", statX, statsY)
-			statX += 14
+	// Tag pills — just below the rule.
+	if len(data.Route.Tags) > 0 {
+		tagY := ruleY + 72
+		tagX := textX
+		setFont(dc, fontBold, 28)
+		for _, tag := range data.Route.Tags {
+			name := tag.Name
+			tw, _ := dc.MeasureString(name)
+			pillW := tw + 48
+			if tagX+pillW > textRight {
+				break
+			}
+			dc.SetColor(color.RGBA{38, 34, 30, 255})
+			drawPill(dc, tagX, tagY-32, pillW, 52, 26)
+			dc.Fill()
+			dc.SetColor(color.RGBA{220, 212, 202, 255})
+			setFont(dc, fontBold, 28)
+			dc.DrawString(name, tagX+24, tagY+6)
+			tagX += pillW + 16
 		}
 	}
 
-	// -- Tags (bottom, above stats) --
-	if len(data.Route.Tags) > 0 {
-		tagY := float64(digitalH) - 80
-		tagX := 36.0
-		for _, tag := range data.Route.Tags {
-			setFont(dc, fontBold, 10)
-			tw, _ := dc.MeasureString(tag.Name)
-			pillW := tw + 14
+	// Stats row — always pinned to a fixed distance from the bottom so the
+	// footer has a predictable clearance.
+	statsY := float64(digitalH - 144)
+	stats := buildStatPairs(data)
+	if len(stats) > 0 {
+		statX := textX
+		for i, s := range stats {
+			setFont(dc, fontBold, 68)
+			dc.SetColor(color.RGBA{246, 242, 236, 255})
+			dc.DrawString(s.value, statX, statsY)
+			vw, _ := dc.MeasureString(s.value)
 
-			// Dark semi-transparent pill
-			dc.SetColor(color.RGBA{0, 0, 0, 80})
-			drawPill(dc, tagX, tagY-10, pillW, 20, 10)
-			dc.Fill()
+			setFont(dc, fontRegular, 28)
+			dc.SetColor(color.RGBA{140, 132, 122, 255})
+			dc.DrawString(s.label, statX+vw+16, statsY-4)
+			lw, _ := dc.MeasureString(s.label)
 
-			dc.SetColor(withAlpha(textOnColor, 220))
-			setFont(dc, fontBold, 10)
-			dc.DrawString(tag.Name, tagX+7, tagY+3)
-
-			tagX += pillW + 6
-			if tagX > float64(digitalW)-80 {
-				break
+			statX += vw + lw + 48
+			if i < len(stats)-1 {
+				dc.SetColor(color.RGBA{90, 82, 74, 255})
+				setFont(dc, fontRegular, 56)
+				dc.DrawString("·", statX-16, statsY-8)
 			}
 		}
 	}
 
-	// -- Route link (bottom right, replacing QR) --
-	if data.QRTargetURL != "" {
-		dc.SetColor(withAlpha(textOnColor, 80))
-		setFont(dc, fontRegular, 9)
-		dc.DrawStringAnchored(data.QRTargetURL, float64(digitalW)-20, float64(digitalH)-16, 1.0, 0.5)
-	}
+	// Footer — brand left, URL right, muted tones.
+	footY := float64(digitalH - 56)
+	setFont(dc, fontBold, 24)
+	dc.SetColor(color.RGBA{120, 112, 102, 255})
+	dc.DrawString(letterSpace("ROUTEWERK", 3), textX, footY)
 
-	// -- Branding --
-	dc.SetColor(withAlpha(textOnColor, 60))
-	setFont(dc, fontBold, 9)
-	dc.DrawString("ROUTEWERK", 36, float64(digitalH)-14)
+	if data.QRTargetURL != "" {
+		setFont(dc, fontRegular, 22)
+		dc.SetColor(color.RGBA{100, 92, 84, 255})
+		dc.DrawStringAnchored(
+			truncateText(dc, data.QRTargetURL, textMaxW*0.6),
+			textRight, footY-2, 1.0, 0.5,
+		)
+	}
 
 	return encodePNG(dc)
 }
@@ -612,6 +624,86 @@ func truncateText(dc *gg.Context, text string, maxWidth float64) string {
 		}
 	}
 	return text
+}
+
+// fitWidth returns the largest point size ≤ startPt (stepping in 1pt
+// increments) at which the given text measures ≤ maxWidth under font f.
+// Used to auto-shrink the hero identifier so long color names don't overflow.
+func fitWidth(dc *gg.Context, f *truetype.Font, text string, maxWidth, startPt, minPt float64) float64 {
+	pt := startPt
+	for pt >= minPt {
+		setFont(dc, f, pt)
+		w, _ := dc.MeasureString(text)
+		if w <= maxWidth {
+			return pt
+		}
+		pt -= 1
+	}
+	return minPt
+}
+
+// letterSpace inserts spaces between runes so gg renders the text with
+// pseudo-tracking. gg has no tracking API, so this is the simplest way to get
+// the small-caps eyebrow look without shipping a glyph-layout pass.
+func letterSpace(text string, gap int) string {
+	if gap <= 0 || text == "" {
+		return text
+	}
+	runes := []rune(text)
+	var b strings.Builder
+	b.Grow(len(text) * (gap + 1))
+	for i, r := range runes {
+		b.WriteRune(r)
+		if i < len(runes)-1 {
+			for j := 0; j < gap; j++ {
+				b.WriteByte(' ')
+			}
+		}
+	}
+	return b.String()
+}
+
+// wrapString greedy-wraps text to at most maxLines lines whose widths do not
+// exceed maxWidth under the currently-set font. The final line is ellipsis-
+// truncated if overflow remains after the line budget is exhausted.
+func wrapString(dc *gg.Context, text string, maxWidth float64, maxLines int) []string {
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return nil
+	}
+	var lines []string
+	cur := ""
+	for _, w := range words {
+		trial := w
+		if cur != "" {
+			trial = cur + " " + w
+		}
+		tw, _ := dc.MeasureString(trial)
+		if tw <= maxWidth {
+			cur = trial
+			continue
+		}
+		if cur != "" {
+			lines = append(lines, cur)
+		}
+		cur = w
+		if len(lines) >= maxLines-1 {
+			break
+		}
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+	}
+	if n := len(lines); n > 0 {
+		lw, _ := dc.MeasureString(lines[n-1])
+		if lw > maxWidth {
+			lines[n-1] = truncateText(dc, lines[n-1], maxWidth)
+		}
+	}
+	return lines
 }
 
 // ============================================================

@@ -10,21 +10,23 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/shotwell-paddle/routewerk/internal/config"
+	"github.com/shotwell-paddle/routewerk/internal/event"
 	"github.com/shotwell-paddle/routewerk/internal/handler"
 	webhandler "github.com/shotwell-paddle/routewerk/internal/handler/web"
-	"github.com/shotwell-paddle/routewerk/internal/event"
 	"github.com/shotwell-paddle/routewerk/internal/jobs"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
 	"github.com/shotwell-paddle/routewerk/internal/service"
+	"github.com/shotwell-paddle/routewerk/internal/service/cardbatch"
+	"github.com/shotwell-paddle/routewerk/internal/service/cardsheet"
 )
 
 // Deps holds dependencies passed from main.
 type Deps struct {
-	JobQueue    *jobs.Queue
-	EventBus    event.Bus
-	NotifSvc    *service.NotificationService
-	QuestSvc    *service.QuestService
+	JobQueue *jobs.Queue
+	EventBus event.Bus
+	NotifSvc *service.NotificationService
+	QuestSvc *service.QuestService
 }
 
 func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
@@ -117,6 +119,14 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsRepo)
 	cardHandler := handler.NewCardHandler(routeRepo, wallRepo, locationRepo, userRepo, cardGen)
 
+	// Card batch pipeline: the sheet composer wraps cardGen for 8-up print-and-cut
+	// PDF rendering; CardBatchService coordinates ID → CardData lookups and drives
+	// the composer. Both web and JSON API handlers share the same service.
+	cardBatchRepo := repository.NewCardBatchRepo(db)
+	sheetComposer := cardsheet.NewComposer(cardGen)
+	batchSvc := cardbatch.NewService(routeRepo, wallRepo, locationRepo, userRepo, sheetComposer, cardGen)
+	cardBatchHandler := handler.NewCardBatchHandler(cardBatchRepo, batchSvc, auditService)
+
 	// Health check — public (Fly.io probes need this), but pool details
 	// are only returned for internal IPs (see health.go).
 	r.Get("/health", healthHandler.Check)
@@ -136,13 +146,28 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	routeSkillTagRepo := repository.NewRouteSkillTagRepo(db)
 	notifRepo := repository.NewNotificationRepo(db)
 
-	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, questRepo, badgeRepo, activityRepo, routeSkillTagRepo, notifRepo, deps.QuestSvc, deps.EventBus, authService, storageSvc, cardGen, sessionMgr, cfg, db)
+	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, questRepo, badgeRepo, activityRepo, routeSkillTagRepo, notifRepo, deps.QuestSvc, deps.EventBus, authService, storageSvc, cardGen, cardBatchRepo, batchSvc, auditService, sessionMgr, cfg, db)
 
 	// Rate limiter for web pages: 120 requests per minute per IP
 	webLimiter := middleware.NewRateLimiter(120, 1*time.Minute)
 
 	// Stricter rate limiter for login: 10 requests per minute per IP
 	loginLimiter := middleware.NewRateLimiter(10, 1*time.Minute)
+
+	// Per-user throttle for card-batch creation: 10 per hour. PDF rendering
+	// is CPU-heavy (8 cards × fontdraw + PDF encode) and a shared setter
+	// account behind one gym IP shouldn't collapse into a single bucket —
+	// key on user id. Applied to both the web form POST and the JSON API.
+	batchCreateLimiter := middleware.NewRateLimiter(10, 1*time.Hour)
+	batchCreateLimitByUser := batchCreateLimiter.LimitByKey(func(r *http.Request) string {
+		if u := middleware.GetWebUser(r.Context()); u != nil {
+			return "web:" + u.ID
+		}
+		if id := middleware.GetUserID(r.Context()); id != "" {
+			return "api:" + id
+		}
+		return ""
+	})
 
 	// CSRF protection for state-changing requests
 	csrf := middleware.NewCSRFProtection(cfg.IsDev())
@@ -275,13 +300,29 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 				r.Post("/sessions/{sessionID}/checklist/{itemID}/toggle", webHandler.SessionToggleChecklist)
 				r.Post("/sessions/{sessionID}/delete", webHandler.SessionDelete)
 				r.Get("/sessions/{sessionID}/complete", webHandler.SessionComplete)
-			r.Get("/sessions/{sessionID}/photos", webHandler.SessionPhotos)
+				r.Get("/sessions/{sessionID}/photos", webHandler.SessionPhotos)
 				r.Post("/sessions/{sessionID}/publish", webHandler.SessionPublish)
 				r.Post("/sessions/{sessionID}/reopen", webHandler.SessionReopen)
 				r.Get("/sessions/{sessionID}/route-fields", webHandler.SessionRouteFields)
 				r.Post("/sessions/{sessionID}/routes", webHandler.SessionAddRoute)
 				r.Post("/sessions/{sessionID}/routes/{routeID}/edit", webHandler.SessionEditRoute)
 				r.Post("/sessions/{sessionID}/routes/{routeID}/delete", webHandler.SessionDeleteRoute)
+
+				// Route card print batches — 8-up print-and-cut sheets.
+				// Download and detail are behind the setter group (same as the
+				// session-management tooling) because the batch picker exposes
+				// the full route inventory and the PDF is intended for the
+				// setter's print workflow.
+				r.Get("/card-batches", webHandler.CardBatchList)
+				r.Get("/card-batches/new", webHandler.CardBatchNewForm)
+				r.With(batchCreateLimitByUser).Post("/card-batches/new", webHandler.CardBatchCreate)
+				r.Get("/card-batches/{batchID}", webHandler.CardBatchDetail)
+				r.Get("/card-batches/{batchID}/edit", webHandler.CardBatchEditForm)
+				r.Post("/card-batches/{batchID}/edit", webHandler.CardBatchUpdate)
+				r.Get("/card-batches/{batchID}/download.pdf", webHandler.CardBatchDownload)
+				r.Get("/card-batches/{batchID}/preview.png", webHandler.CardBatchPreview)
+				r.With(batchCreateLimitByUser).Post("/card-batches/{batchID}/retry", webHandler.CardBatchRetry)
+				r.Post("/card-batches/{batchID}/delete", webHandler.CardBatchDelete)
 
 				// Gym settings — head_setter or above (handler checks role internally)
 				r.Get("/settings", webHandler.GymSettingsPage)
@@ -477,7 +518,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 					})
 
 					r.Route("/{routeID}", func(r chi.Router) {
-						r.Get("/", routeHandler.Get)       // any member
+						r.Get("/", routeHandler.Get) // any member
 						r.Get("/ascents", ascentHandler.RouteAscents)
 						r.Get("/ratings", ratingHandler.RouteRatings)
 
@@ -498,6 +539,21 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 							r.Patch("/status", routeHandler.UpdateStatus)
 						})
 					})
+				})
+
+				// Card print batches — setter or above can manage. List and
+				// download are shared across the setter team; there's no per-
+				// creator ownership check because the print pipeline is
+				// inherently collaborative (anyone on shift might re-run a
+				// prior batch after adding a new route to it).
+				r.Route("/card-batches", func(r chi.Router) {
+					r.Use(authz.RequireLocationRole("setter"))
+
+					r.Get("/", cardBatchHandler.List)
+					r.With(batchCreateLimitByUser).Post("/", cardBatchHandler.Create)
+					r.Get("/{batchID}", cardBatchHandler.Get)
+					r.Get("/{batchID}/pdf", cardBatchHandler.Download)
+					r.Delete("/{batchID}", cardBatchHandler.Delete)
 				})
 
 				// Setting sessions — head_setter or above

@@ -1,0 +1,66 @@
+{{define "title"}}Card Batches — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1>Route Card Batches</h1>
+      <p class="page-subtitle">{{if .Location}}{{.Location.Name}}{{end}} · 8-up print-and-cut sheets for the Silhouette cutter</p>
+    </div>
+    <a href="/card-batches/new" class="btn btn-primary"
+       hx-get="/card-batches/new" hx-target="#main-content" hx-push-url="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      New Batch
+    </a>
+  </div>
+</div>
+
+<div class="page-body">
+  {{if .CardBatches}}
+  <div class="session-list">
+    {{range .CardBatches}}
+    <a href="/card-batches/{{.ID}}" class="session-card"
+       hx-get="/card-batches/{{.ID}}" hx-target="#main-content" hx-push-url="true">
+      <div class="session-card-date">
+        <span class="session-month">{{.CreatedAt.Format "Jan"}}</span>
+        <span class="session-day">{{.CreatedAt.Format "02"}}</span>
+        <span class="session-year">{{.CreatedAt.Format "2006"}}</span>
+      </div>
+      <div class="session-card-body">
+        <div class="session-card-title">
+          {{.CardCount}} card{{if ne .CardCount 1}}s{{end}} · {{.PageCount}} sheet{{if ne .PageCount 1}}s{{end}}
+        </div>
+        <div class="session-card-meta">
+          Created by {{.CreatorName}} · {{reltime .CreatedAt}}
+          {{if eq .Status "ready"}}
+          <span class="status-badge status-complete">Ready</span>
+          {{else if eq .Status "failed"}}
+          <span class="status-badge status-active">Failed</span>
+          {{else}}
+          <span class="status-badge">Pending</span>
+          {{end}}
+        </div>
+      </div>
+      <div class="session-card-arrow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </div>
+    </a>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty-state">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/>
+    </svg>
+    <h3>No card batches yet</h3>
+    <p>Build your first print-and-cut sheet. Select a set of routes and we'll render a Silhouette-ready PDF you can drop straight into Silhouette Studio.</p>
+    <a href="/card-batches/new" class="btn btn-primary mt-4"
+       hx-get="/card-batches/new" hx-target="#main-content" hx-push-url="true">Create First Batch</a>
+  </div>
+  {{end}}
+</div>
+{{end}}

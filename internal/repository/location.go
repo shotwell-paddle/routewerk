@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/shotwell-paddle/routewerk/internal/database"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 )
 
@@ -31,6 +32,9 @@ func (r *LocationRepo) Create(ctx context.Context, l *model.Location) error {
 }
 
 func (r *LocationRepo) GetByID(ctx context.Context, id string) (*model.Location, error) {
+	ctx, cancel := database.QueryTimeout(ctx, database.TimeoutFast)
+	defer cancel()
+
 	query := `
 		SELECT id, org_id, name, slug, address, timezone, website_url, phone,
 			hours_json, day_pass_info, waiver_url, allow_shared_setters,

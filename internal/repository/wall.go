@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/shotwell-paddle/routewerk/internal/database"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 )
 
@@ -34,6 +35,9 @@ func (r *WallRepo) Create(ctx context.Context, w *model.Wall) error {
 // Callers that need to hide archived walls from unprivileged users must check
 // wall.IsArchived().
 func (r *WallRepo) GetByID(ctx context.Context, id string) (*model.Wall, error) {
+	ctx, cancel := database.QueryTimeout(ctx, database.TimeoutFast)
+	defer cancel()
+
 	query := `
 		SELECT id, location_id, name, wall_type, angle, height_meters, num_anchors,
 			surface_type, sort_order, map_x, map_y, map_width, map_height,

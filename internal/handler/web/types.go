@@ -18,17 +18,17 @@ type TemplateData struct {
 	IsOrgAdmin   bool
 	IsAppAdmin   bool
 	UserName     string
-	UserInitial string
-	UserRole    string
-	Location    *model.Location
-	CSRFToken   string
+	UserInitial  string
+	UserRole     string
+	Location     *model.Location
+	CSRFToken    string
 
 	// ProgressionsEnabled mirrors Location.ProgressionsEnabled for templates.
 	// False when no location is loaded. Gates the climber-facing /quests UI.
 	ProgressionsEnabled bool
 
 	// Location switcher
-	UserLocations []repository.UserLocationItem
+	UserLocations        []repository.UserLocationItem
 	HasMultipleLocations bool
 
 	// Notifications
@@ -43,9 +43,9 @@ type TemplateData struct {
 
 // ViewAsOption represents a role the user can "view as" in the switcher.
 type ViewAsOption struct {
-	Value   string // role key (e.g. "setter", "climber")
-	Label   string // display name
-	Active  bool   // currently selected
+	Value  string // role key (e.g. "setter", "climber")
+	Label  string // display name
+	Active bool   // currently selected
 }
 
 // PageData embeds TemplateData so templates can access layout fields at top level.
@@ -74,15 +74,15 @@ type PageData struct {
 	Consensus     *ConsensusData
 
 	// Route form (create / edit)
-	FormWalls   []model.Wall
-	FormTags    []model.Tag
-	FormValues  RouteFormValues
-	FormError   string
-	FormSuccess string
-	HoldColors  []HoldColor
-	VScaleGrades   []string
-	YDSGrades      []string
-	CircuitColors  []string
+	FormWalls     []model.Wall
+	FormTags      []model.Tag
+	FormValues    RouteFormValues
+	FormError     string
+	FormSuccess   string
+	HoldColors    []HoldColor
+	VScaleGrades  []string
+	YDSGrades     []string
+	CircuitColors []string
 
 	// Manage routes
 	StatusFilter string
@@ -102,9 +102,9 @@ type PageData struct {
 	WallFormError  string
 
 	// Climber interactions
-	UserRating    int  // the logged-in user's star rating (1-5, 0 = not yet rated)
-	CanFlash      bool // true if user has no prior ascents on this route (flash = first try)
-	HasCompleted  bool // true if user already has a send/flash on this route
+	UserRating   int  // the logged-in user's star rating (1-5, 0 = not yet rated)
+	CanFlash     bool // true if user has no prior ascents on this route (flash = first try)
+	HasCompleted bool // true if user already has a send/flash on this route
 
 	// Climber profile
 	ClimberStats     *repository.UserClimbingStats
@@ -136,9 +136,9 @@ type PageData struct {
 	SessionRoutes      []repository.SessionRouteDetail
 
 	// Grading context
-	BoulderMethod        string // "v_scale", "circuit", or "both"
-	ShowGradesOnCircuit  bool   // whether climbers see V-grade on circuit boulders
-	RouteFields          RouteFieldsData
+	BoulderMethod       string // "v_scale", "circuit", or "both"
+	ShowGradesOnCircuit bool   // whether climbers see V-grade on circuit boulders
+	RouteFields         RouteFieldsData
 
 	// Community tags (user-submitted)
 	CommunityTags []repository.AggregatedTag
@@ -170,35 +170,35 @@ type PageData struct {
 	SettingsSuccess bool
 
 	// Progressions — admin
-	QuestDomains      []model.QuestDomain
-	QuestDomain       *model.QuestDomain
-	DomainFormValues  DomainFormValues
-	DomainFormError   string
-	Quests            []repository.QuestListItem
-	QuestDetail       *model.Quest
-	QuestFormValues   QuestFormValues
-	QuestFormError    string
-	Badges            []model.Badge
-	BadgeDetail       *model.Badge
-	BadgeFormValues   BadgeFormValues
-	BadgeFormError    string
-	SkillTagCoverage  map[string]int
+	QuestDomains     []model.QuestDomain
+	QuestDomain      *model.QuestDomain
+	DomainFormValues DomainFormValues
+	DomainFormError  string
+	Quests           []repository.QuestListItem
+	QuestDetail      *model.Quest
+	QuestFormValues  QuestFormValues
+	QuestFormError   string
+	Badges           []model.Badge
+	BadgeDetail      *model.Badge
+	BadgeFormValues  BadgeFormValues
+	BadgeFormError   string
+	SkillTagCoverage map[string]int
 
 	// Progressions — climber
-	DomainFilter      string
-	SkillFilter       string
-	AvailableQuests   []repository.QuestListItem
-	QuestSuggestions  []service.QuestSuggestion
-	ActiveQuests      []model.ClimberQuest
-	CompletedQuests   []model.ClimberQuest
-	ClimberBadges     []model.ClimberBadge
-	EarnedBadgeIDs    map[string]bool
-	ActiveQuestMap    map[string]*model.ClimberQuest // keyed by quest ID
-	DomainProgress    []repository.DomainProgress
-	QuestLogs         []model.QuestLog
-	ClimberQuest      *model.ClimberQuest
-	ActivityFeed      []model.ActivityLogEntry
-	Notifications     []repository.Notification
+	DomainFilter     string
+	SkillFilter      string
+	AvailableQuests  []repository.QuestListItem
+	QuestSuggestions []service.QuestSuggestion
+	ActiveQuests     []model.ClimberQuest
+	CompletedQuests  []model.ClimberQuest
+	ClimberBadges    []model.ClimberBadge
+	EarnedBadgeIDs   map[string]bool
+	ActiveQuestMap   map[string]*model.ClimberQuest // keyed by quest ID
+	DomainProgress   []repository.DomainProgress
+	QuestLogs        []model.QuestLog
+	ClimberQuest     *model.ClimberQuest
+	ActivityFeed     []model.ActivityLogEntry
+	Notifications    []repository.Notification
 
 	// Error page
 	ErrorCode    int
@@ -206,13 +206,137 @@ type PageData struct {
 	ErrorMessage string
 
 	// Admin — health dashboard
-	HealthChecks []HealthCheckResult
+	HealthChecks  []HealthCheckResult
 	OverallHealth string // "healthy", "degraded", "down"
 
 	// Admin — metrics dashboard
 	MetricsData *middleware.MetricsSnapshot
 	Uptime      string // human-readable uptime
 	JobStats    map[string]int64
+
+	// Card batches — print-and-cut sheet queue
+	CardBatches     []CardBatchListItem
+	CardBatchDetail *CardBatchDetailView
+	BatchForm       CardBatchFormValues
+	BatchFormError  string
+}
+
+// CardBatchListItem is a row on the batch-history page.
+type CardBatchListItem struct {
+	model.CardBatch
+	CreatorName string
+	CardCount   int
+	PageCount   int
+}
+
+// CardBatchDetailView describes a single batch plus the routes it contains.
+// Used by the "review before print" and "post-create confirmation" pages.
+//
+// MissingCount is (len(RouteIDs) - len(Routes)) — how many of the batch's
+// routes could not be hydrated (deleted, moved to another location). Used
+// by the template to explain why the sheet count shrunk.
+type CardBatchDetailView struct {
+	model.CardBatch
+	CreatorName  string
+	Routes       []CardBatchRoutePreview
+	PageCount    int
+	MissingCount int
+}
+
+// CardBatchRoutePreview is a thin route row shown in the batch picker and
+// review pages. Pulled from repository.RouteRepo.GetByID — same fields as
+// RouteView but scoped to what the batch UI needs.
+type CardBatchRoutePreview struct {
+	ID        string
+	Name      string
+	Grade     string
+	Color     string
+	WallName  string
+	DateSet   time.Time
+	IsCircuit bool
+}
+
+// SafeColor validates the hex color before CSS interpolation.
+func (p CardBatchRoutePreview) SafeColor() string { return sanitizeColor(p.Color) }
+
+// CardBatchFormValues holds form state for new-batch creation so validation
+// errors can round-trip to the template without losing user input.
+//
+// The same struct powers the edit form; EditBatchID is non-empty only when
+// the template should POST to the update endpoint rather than /new.
+type CardBatchFormValues struct {
+	Theme         string
+	CutterProfile string
+	RouteIDs      []string // selected route IDs, preserved on form re-render
+	// CandidateRoutes is the pool of routes the user can pick from. Typically
+	// "routes at this location with no card yet" but the form accepts any
+	// valid routes at the location.
+	CandidateRoutes []CardBatchRoutePreview
+	// EditBatchID, when set, flips the form into edit mode — the template
+	// POSTs to /card-batches/{id}/edit and changes its copy to match.
+	EditBatchID string
+	// ShowAll mirrors ?all=1 on the form URL. Drives the active state on
+	// the "Uncarded" / "All active" filter chips and the empty-state copy.
+	ShowAll bool
+}
+
+// CardBatchRouteGroup clusters candidate routes by wall so the picker can
+// show a scannable "print cards for the overhang, then the slab" workflow
+// instead of one flat 200-row list.
+type CardBatchRouteGroup struct {
+	WallName string
+	Routes   []CardBatchRoutePreview
+}
+
+// IsEdit reports whether the form is being rendered in edit mode. Template
+// helper so the card-batch-form.html can branch on form submission target.
+func (v CardBatchFormValues) IsEdit() bool { return v.EditBatchID != "" }
+
+// Selected returns a set-like map of the IDs already on the batch so the
+// template can render pre-checked checkboxes without a linear scan per row.
+// html/template can't do "is X in slice" cleanly, so we materialise a map.
+func (v CardBatchFormValues) Selected() map[string]bool {
+	set := make(map[string]bool, len(v.RouteIDs))
+	for _, id := range v.RouteIDs {
+		set[id] = true
+	}
+	return set
+}
+
+// FormAction returns the POST target for this form — /new for create mode,
+// /{id}/edit for edit mode. Used in the template's <form action=...>.
+func (v CardBatchFormValues) FormAction() string {
+	if v.EditBatchID != "" {
+		return "/card-batches/" + v.EditBatchID + "/edit"
+	}
+	return "/card-batches/new"
+}
+
+// GroupByWall clusters CandidateRoutes by wall name while preserving the
+// slice order (the handler sorts wall → date desc → grade before passing
+// them in, so the template just walks the existing order). Used by the
+// picker template to render "wall sections" with headers and per-wall
+// "select all in wall" affordances.
+func (v CardBatchFormValues) GroupByWall() []CardBatchRouteGroup {
+	if len(v.CandidateRoutes) == 0 {
+		return nil
+	}
+	groups := make([]CardBatchRouteGroup, 0, 8)
+	idx := map[string]int{}
+	for _, rt := range v.CandidateRoutes {
+		name := rt.WallName
+		if name == "" {
+			name = "Unassigned"
+		}
+		i, ok := idx[name]
+		if !ok {
+			idx[name] = len(groups)
+			groups = append(groups, CardBatchRouteGroup{WallName: name, Routes: []CardBatchRoutePreview{rt}})
+			continue
+		}
+		groups[i].Routes = append(groups[i].Routes, rt)
+	}
+	return groups
 }
 
 // HealthCheckResult represents one dependency check.

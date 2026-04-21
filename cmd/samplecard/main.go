@@ -1,18 +1,31 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/service"
+	"github.com/shotwell-paddle/routewerk/internal/service/cardsheet"
 )
 
 func main() {
-	gen := service.NewCardGenerator("https://app.routewerk.com")
+	sheet := flag.Bool("sheet", false,
+		"also render an 8-up Silhouette Cameo print-and-cut sheet to <outDir>/sample_sheet.pdf")
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "usage: samplecard [--sheet] <outDir>\n")
+		flag.PrintDefaults()
+	}
+	flag.Parse()
+	if flag.NArg() != 1 {
+		flag.Usage()
+		os.Exit(2)
+	}
+	outDir := flag.Arg(0)
 
-	outDir := os.Args[1]
+	gen := service.NewCardGenerator("https://app.routewerk.com")
 
 	// ── Graded route ──
 	name := "Crimson Crush"
@@ -87,6 +100,8 @@ func main() {
 		{"graded_digital.png", func() ([]byte, error) { return gen.GenerateDigitalPNG(graded) }},
 		{"circuit_print.png", func() ([]byte, error) { return gen.GeneratePrintPNG(circuit) }},
 		{"circuit_digital.png", func() ([]byte, error) { return gen.GenerateDigitalPNG(circuit) }},
+		{"graded_sheet_face.png", func() ([]byte, error) { return gen.GenerateSheetCardPNG(graded) }},
+		{"circuit_sheet_face.png", func() ([]byte, error) { return gen.GenerateSheetCardPNG(circuit) }},
 	}
 
 	for _, s := range samples {
@@ -101,5 +116,36 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Printf("wrote %s (%d bytes)\n", path, len(data))
+	}
+
+	// ── Print-and-cut sheet (optional) ──
+	//
+	// Fills an 8-up sheet by alternating graded + circuit cards so every
+	// rendering branch ends up on the first physical test cut. Output lands
+	// next to the PNG samples so a tester can run:
+	//   silhouette studio → open sample_sheet.pdf → Cut by Color → red
+	if *sheet {
+		composer := cardsheet.NewComposer(gen)
+		cards := []service.CardData{
+			graded, circuit, graded, circuit,
+			graded, circuit, graded, circuit,
+		}
+		path := outDir + "/sample_sheet.pdf"
+		f, err := os.Create(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "create %s: %v\n", path, err)
+			os.Exit(1)
+		}
+		if err := composer.Render(f, cards, cardsheet.SheetConfig{}); err != nil {
+			f.Close()
+			fmt.Fprintf(os.Stderr, "render sheet: %v\n", err)
+			os.Exit(1)
+		}
+		if err := f.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "close %s: %v\n", path, err)
+			os.Exit(1)
+		}
+		info, _ := os.Stat(path)
+		fmt.Printf("wrote %s (%d bytes)\n", path, info.Size())
 	}
 }

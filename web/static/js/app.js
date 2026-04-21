@@ -240,6 +240,8 @@ document.addEventListener('htmx:afterSwap', function() {
   initSettingsFormSync();
   initCircuitAddColor();
   initHoldColorAdd();
+  initCardBatchPicker();
+  initCardBatchPreviewFallback();
 });
 
 // ── Settings: circuit color drag-and-drop reorder ─────────────
@@ -426,12 +428,140 @@ function initHoldColorAdd() {
   });
 }
 
+// ── Card batch picker ─────────────────────────────────────────
+// Client-side glue for the route-card batch creation form:
+//   - live search that filters candidate rows (+ hides empty wall groups)
+//   - bulk actions: "Select all visible", "Clear", per-wall "select all"
+//   - running selection summary: count, derived sheet count, Save enable
+// Everything is data-attribute driven so the template stays declarative
+// and we don't have to import a framework just to tick some boxes.
+function initCardBatchPicker() {
+  var root = document.getElementById('card-batch-picker');
+  if (!root) return;
+
+  var search       = root.querySelector('[data-card-batch-search]');
+  var rows         = root.querySelectorAll('[data-card-batch-row]');
+  var groups       = root.querySelectorAll('[data-card-batch-group]');
+  var emptyState   = root.querySelector('[data-card-batch-empty]');
+  var countEl      = root.querySelector('[data-card-batch-count]');
+  var sheetsEl     = root.querySelector('[data-card-batch-sheets]');
+  var sheetsPlural = root.querySelector('[data-card-batch-sheets-plural]');
+  var submit       = root.querySelector('[data-card-batch-submit]');
+
+  var CARDS_PER_SHEET = 8;
+
+  function refreshSelection() {
+    var checked = root.querySelectorAll('[data-card-batch-checkbox]:checked').length;
+    var sheets = Math.ceil(checked / CARDS_PER_SHEET);
+    if (countEl)  countEl.textContent  = String(checked);
+    if (sheetsEl) sheetsEl.textContent = String(sheets);
+    if (sheetsPlural) sheetsPlural.textContent = sheets === 1 ? '' : 's';
+    if (submit) submit.disabled = checked === 0;
+
+    // Per-wall row counts: the "(12)" badge in each header reflects the
+    // number of rows currently visible in that wall group so setters know
+    // how many they'd grab with "Select all in wall".
+    groups.forEach(function(group) {
+      var visible = group.querySelectorAll('[data-card-batch-row]:not([hidden])').length;
+      var countBadge = group.querySelector('[data-card-batch-group-count]');
+      if (countBadge) countBadge.textContent = String(visible);
+      // Hide the whole group if every row is filtered out.
+      group.hidden = visible === 0;
+    });
+  }
+
+  function applySearch() {
+    var q = search ? search.value.trim().toLowerCase() : '';
+    var anyVisible = false;
+    rows.forEach(function(row) {
+      var hay = (row.getAttribute('data-search-haystack') || '').toLowerCase();
+      var match = q === '' || hay.indexOf(q) !== -1;
+      row.hidden = !match;
+      if (match) anyVisible = true;
+    });
+    if (emptyState) emptyState.hidden = anyVisible;
+    refreshSelection();
+  }
+
+  if (search) {
+    search.addEventListener('input', applySearch);
+  }
+
+  root.addEventListener('change', function(e) {
+    if (e.target && e.target.matches('[data-card-batch-checkbox]')) {
+      refreshSelection();
+    }
+  });
+
+  root.addEventListener('click', function(e) {
+    var selectAll = e.target.closest('[data-card-batch-select-all]');
+    if (selectAll) {
+      e.preventDefault();
+      rows.forEach(function(row) {
+        if (row.hidden) return;
+        var cb = row.querySelector('[data-card-batch-checkbox]');
+        if (cb) cb.checked = true;
+      });
+      refreshSelection();
+      return;
+    }
+
+    var clearBtn = e.target.closest('[data-card-batch-clear]');
+    if (clearBtn) {
+      e.preventDefault();
+      root.querySelectorAll('[data-card-batch-checkbox]').forEach(function(cb) {
+        cb.checked = false;
+      });
+      refreshSelection();
+      return;
+    }
+
+    var wallBtn = e.target.closest('[data-card-batch-select-wall]');
+    if (wallBtn) {
+      e.preventDefault();
+      var group = wallBtn.closest('[data-card-batch-group]');
+      if (!group) return;
+      var wallRows = group.querySelectorAll('[data-card-batch-row]:not([hidden]) [data-card-batch-checkbox]');
+      // Toggle: if all visible are already checked, uncheck them; otherwise
+      // check them all. Makes the button a true bulk toggle rather than a
+      // one-way selector.
+      var allChecked = Array.prototype.every.call(wallRows, function(cb) { return cb.checked; });
+      wallRows.forEach(function(cb) { cb.checked = !allChecked; });
+      refreshSelection();
+    }
+  });
+
+  applySearch();
+}
+
+// ── Card batch preview fallback ───────────────────────────────
+// The /preview.png endpoint renders synchronously and can legitimately fail
+// (route deleted mid-session, storage blip). A raw broken-image icon looks
+// alarming, so we swap in a friendly "preview unavailable" placeholder and
+// hide the <img> entirely when it errors. CSP blocks inline onerror, so we
+// bind the handler from here.
+function initCardBatchPreviewFallback() {
+  document.querySelectorAll('[data-card-batch-preview-img]').forEach(function(img) {
+    if (img.dataset.fallbackBound === '1') return;
+    img.dataset.fallbackBound = '1';
+    img.addEventListener('error', function() {
+      var fig = img.closest('[data-card-batch-preview-figure]');
+      if (!fig) return;
+      img.hidden = true;
+      var fallback = fig.querySelector('.card-batch-preview-fallback');
+      if (fallback) fallback.hidden = false;
+    }, { once: true });
+  });
+}
+
 // ── Settings: auto-dismiss success toast ──────────────────────
 document.addEventListener('DOMContentLoaded', function() {
   initCircuitDragDrop();
   initSettingsFormSync();
   initCircuitAddColor();
   initHoldColorAdd();
+  initCardBatchPicker();
+  initCardBatchPreviewFallback();
 
   var toast = document.getElementById('settings-toast');
   if (toast) {

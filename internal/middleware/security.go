@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -214,36 +215,64 @@ func clientIP(r *http.Request) string {
 }
 
 // Limit returns middleware that rejects requests over the rate limit with 429.
+// Keying is per client IP.
 func (rl *RateLimiter) Limit(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := clientIP(r)
+	return rl.LimitByKey(clientIP)(next)
+}
 
-		rl.mu.Lock()
-		cw, exists := rl.clients[ip]
-		now := time.Now()
-
-		if !exists || now.Sub(cw.windowStart) > rl.window {
-			// Evict oldest entry if at capacity
-			if !exists && rl.maxClients > 0 && len(rl.clients) >= rl.maxClients {
-				rl.evictOldest()
+// LimitByKey returns middleware that rate-limits based on a caller-supplied
+// key function. Use this for per-user or per-resource limits that should not
+// collapse setters behind the same gym IP into a single bucket.
+//
+// If keyFn returns "", the limiter lets the request through unthrottled — the
+// caller is responsible for gating anonymous traffic with a separate IP-based
+// limiter (or requiring auth before this middleware runs).
+func (rl *RateLimiter) LimitByKey(keyFn func(*http.Request) string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			key := keyFn(r)
+			if key == "" {
+				next.ServeHTTP(w, r)
+				return
 			}
-			rl.clients[ip] = &clientWindow{count: 1, windowStart: now}
+
+			rl.mu.Lock()
+			cw, exists := rl.clients[key]
+			now := time.Now()
+
+			if !exists || now.Sub(cw.windowStart) > rl.window {
+				if !exists && rl.maxClients > 0 && len(rl.clients) >= rl.maxClients {
+					rl.evictOldest()
+				}
+				rl.clients[key] = &clientWindow{count: 1, windowStart: now}
+				rl.mu.Unlock()
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			cw.count++
+			if cw.count > rl.limit {
+				rl.mu.Unlock()
+				// Retry-After is approximate — it reports the full window
+				// length rather than the time remaining. Accurate enough
+				// for clients that just want a sane backoff.
+				w.Header().Set("Retry-After", retryAfterSeconds(rl.window))
+				http.Error(w, `{"error":"too many requests"}`, http.StatusTooManyRequests)
+				return
+			}
+
 			rl.mu.Unlock()
 			next.ServeHTTP(w, r)
-			return
-		}
+		})
+	}
+}
 
-		cw.count++
-		if cw.count > rl.limit {
-			rl.mu.Unlock()
-			w.Header().Set("Retry-After", "60")
-			http.Error(w, `{"error":"too many requests"}`, http.StatusTooManyRequests)
-			return
-		}
-
-		rl.mu.Unlock()
-		next.ServeHTTP(w, r)
-	})
+func retryAfterSeconds(d time.Duration) string {
+	sec := int(d.Seconds())
+	if sec < 1 {
+		sec = 1
+	}
+	return strconv.Itoa(sec)
 }
 
 // RequestTimeout wraps each request context with a deadline so that all

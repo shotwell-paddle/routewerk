@@ -33,7 +33,6 @@ package cardsheet
 //       (50.8 × 88.9)                                      (88.9 × 50.8)
 
 import (
-	"bytes"
 	"fmt"
 	"strings"
 
@@ -73,7 +72,7 @@ const (
 // drawn by drawCardPortrait in portrait coordinates; this wrapper applies a
 // 90° CCW rotation (via gofpdf's transform stack) so the color zone — which
 // sits on TOP of the portrait design — ends up on the LEFT of the landscape
-// slot, matching the rotatePNG90CCW convention the old raster path used.
+// slot, matching the visual orientation the old raster path produced.
 //
 // uniqueKey must be unique within the whole PDF — it names the per-card QR
 // image registration.
@@ -223,28 +222,28 @@ func drawCardPortrait(pdf *gofpdf.Fpdf, data service.CardData, ox, oy float64, u
 	pdf.SetTextColor(40, 40, 40)
 	pdf.Text(col1X, currentY, data.Route.DateSet.Format("Jan 2, 2006"))
 
-	// QR — bottom right of the info zone. Generated fresh per card at 300 px
-	// so scaling to 14 mm yields ~540 DPI effective density.
+	// QR — bottom right of the info zone, drawn as native PDF vector rects
+	// (one filled rect per dark module). The previous approach encoded a
+	// 300×300 PNG per card and fed it to pdf.RegisterImageOptionsReader,
+	// which retains the decoded pixel data for every card in a single
+	// *Fpdf until Output() — for a large batch that's tens of MB held
+	// across the entire render and was the primary OOM contributor when
+	// routewerk-dev crashed (256MB VM). Vector rendering keeps the QR at
+	// effectively infinite DPI, shrinks the resulting PDF, and frees the
+	// per-card QR memory with the page's content stream instead of
+	// accumulating it globally.
 	if data.QRTargetURL != "" {
-		qrPNG, err := qrcode.Encode(data.QRTargetURL, qrcode.Medium, 300)
-		if err == nil {
-			name := "qr-" + uniqueKey
-			pdf.RegisterImageOptionsReader(
-				name,
-				gofpdf.ImageOptions{ImageType: "PNG"},
-				bytes.NewReader(qrPNG),
-			)
-			pdf.ImageOptions(
-				name,
-				ox+portraitW-qrSizeMM-qrMarginRight,
-				oy+portraitH-qrSizeMM-qrMarginBottom,
-				qrSizeMM, qrSizeMM,
-				false,
-				gofpdf.ImageOptions{ImageType: "PNG"},
-				0, "",
-			)
-		}
+		drawQRVector(
+			pdf,
+			data.QRTargetURL,
+			ox+portraitW-qrSizeMM-qrMarginRight,
+			oy+portraitH-qrSizeMM-qrMarginBottom,
+			qrSizeMM,
+		)
 	}
+	// uniqueKey is retained in the signature so callers don't have to change;
+	// we no longer need it now that there's no per-card image registration.
+	_ = uniqueKey
 
 	// ROUTEWERK footer — bottom-left of the info zone.
 	pdf.SetFont(cardFontFamily, "B", 5)
@@ -261,6 +260,45 @@ func registerCardFonts(pdf *gofpdf.Fpdf) {
 }
 
 // ── helpers ──────────────────────────────────────────────────
+
+// drawQRVector renders a QR code for content into a (size × size) mm square
+// with its top-left at (x, y) using filled black rectangles — one per dark
+// module in the encoded QR bitmap. The QR's built-in 4-module quiet zone is
+// preserved (DisableBorder stays false) so scan reliability matches the
+// previous raster output.
+//
+// Silent no-op on encode error: a failed QR shouldn't tank the whole sheet,
+// the old raster path had the same "skip on error" semantics.
+func drawQRVector(pdf *gofpdf.Fpdf, content string, x, y, size float64) {
+	qr, err := qrcode.New(content, qrcode.Medium)
+	if err != nil {
+		return
+	}
+	bitmap := qr.Bitmap()
+	n := len(bitmap)
+	if n == 0 {
+		return
+	}
+	// Module size in mm. n already includes the quiet zone when
+	// DisableBorder is false, which is the default and what we want.
+	mod := size / float64(n)
+	pdf.SetFillColor(0, 0, 0)
+	for row := 0; row < n; row++ {
+		// Cache the row slice to shave a bounds-check per module — noticeable
+		// only in aggregate, but drawCardPortrait runs per card per page.
+		cells := bitmap[row]
+		for col := 0; col < n; col++ {
+			if cells[col] {
+				pdf.Rect(
+					x+float64(col)*mod,
+					y+float64(row)*mod,
+					mod, mod,
+					"F",
+				)
+			}
+		}
+	}
+}
 
 // fitFontSize returns the largest font size ≤ startPt (stepping in 0.5pt
 // increments) that measures ≤ maxWidth for text under the currently-set

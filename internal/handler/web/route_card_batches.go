@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -15,6 +17,7 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
 	"github.com/shotwell-paddle/routewerk/internal/service"
+	"github.com/shotwell-paddle/routewerk/internal/service/cardbatch"
 	"github.com/shotwell-paddle/routewerk/internal/service/cardsheet"
 )
 
@@ -132,6 +135,20 @@ func (h *Handler) CardBatchCreate(w http.ResponseWriter, r *http.Request) {
 
 	if len(routeIDs) == 0 {
 		h.renderBatchFormError(w, r, locationID, "Select at least one route to include on the sheet.", CardBatchFormValues{
+			Theme:         theme,
+			CutterProfile: cutter,
+			RouteIDs:      routeIDs,
+		})
+		return
+	}
+	if len(routeIDs) > cardbatch.MaxBatchCards {
+		// Reject oversize batches at form-submit time so setters get a clear
+		// error before committing, rather than hitting it at download. The
+		// service-level cap is the real guard; this just makes the UX sane.
+		h.renderBatchFormError(w, r, locationID, fmt.Sprintf(
+			"Too many routes selected (%d). Maximum is %d per batch — split into multiple batches.",
+			len(routeIDs), cardbatch.MaxBatchCards,
+		), CardBatchFormValues{
 			Theme:         theme,
 			CutterProfile: cutter,
 			RouteIDs:      routeIDs,
@@ -266,13 +283,29 @@ func (h *Handler) CardBatchDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer h.releaseUploadSem()
 
-	// Buffer the PDF so failures in the composer translate to a proper 5xx
-	// rather than a truncated body with 200 OK.
-	var buf bytes.Buffer
+	// Render into a temp file rather than a bytes.Buffer: the "5xx on render
+	// error instead of truncated 200" property is what we actually care about,
+	// and a tmp file gives us that without doubling peak RSS (gofpdf already
+	// buffers the whole PDF internally; the old bytes.Buffer held a second
+	// complete copy during the w.Write call). On Fly.io the ephemeral disk
+	// is abundant relative to the 256MB RAM cap.
+	tmp, err := os.CreateTemp("", "routewerk-cardbatch-*.pdf")
+	if err != nil {
+		slog.Error("card batch render: tmpfile create failed", "batch_id", batchID, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	// Always clean up both on error and success paths. Closing twice is a
+	// no-op after the defer; the named remove catches both.
+	defer func() {
+		tmp.Close()
+		os.Remove(tmp.Name())
+	}()
+
 	count, err := h.batchService.RenderBatch(ctx, batch.LocationID, batch.RouteIDs, cardsheet.SheetConfig{
 		Cutter: cardsheet.CutterProfile(batch.CutterProfile),
 		Theme:  batch.Theme,
-	}, &buf)
+	}, tmp)
 	if err != nil {
 		slog.Error("card batch render failed", "batch_id", batchID, "error", err)
 		// Best-effort: mark failed so the UI can explain why the download 5xxed.
@@ -287,13 +320,22 @@ func (h *Handler) CardBatchDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Rewind to the top and stream. If the Seek or Copy fails before any
+	// body has been written, we can still surface a 5xx — headers are only
+	// flushed implicitly on the first Write below.
+	if _, err := tmp.Seek(0, 0); err != nil {
+		slog.Error("card batch render: tmpfile seek failed", "batch_id", batchID, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
 	filename := fmt.Sprintf("routewerk-cards-%s.pdf", batch.ID)
 	w.Header().Set("Content-Type", "application/pdf")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 	// No Cache-Control: the PDF is route-state-dependent and we want setters
 	// to always pull a fresh copy after a re-print.
 	w.Header().Set("Cache-Control", "no-store")
-	if _, err := w.Write(buf.Bytes()); err != nil {
+	if _, err := io.Copy(w, tmp); err != nil {
 		slog.Error("card batch write failed", "batch_id", batchID, "error", err)
 	}
 }
@@ -392,6 +434,13 @@ func (h *Handler) CardBatchUpdate(w http.ResponseWriter, r *http.Request) {
 	routeIDs := r.Form["route_ids"]
 	if len(routeIDs) == 0 {
 		h.renderBatchEditError(w, r, batch, "Select at least one route.", routeIDs)
+		return
+	}
+	if len(routeIDs) > cardbatch.MaxBatchCards {
+		h.renderBatchEditError(w, r, batch, fmt.Sprintf(
+			"Too many routes selected (%d). Maximum is %d per batch — split into multiple batches.",
+			len(routeIDs), cardbatch.MaxBatchCards,
+		), routeIDs)
 		return
 	}
 

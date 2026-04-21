@@ -17,6 +17,22 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/service/cardsheet"
 )
 
+// MaxBatchCards caps the number of routes that can go into a single print
+// batch. Each card drives a QR render + a per-page content stream inside
+// gofpdf, and gofpdf buffers the whole PDF in memory before Output() — so
+// batch size is effectively a linear driver of peak RSS at render time.
+//
+// 200 cards = 25 letter sheets, which is already a full day's print job for
+// any gym we've talked to. On the 256MB Fly VM (see fly.toml) this leaves
+// comfortable headroom for Go runtime + concurrent requests; without the cap
+// a "print every active route at the gym" submission would OOM the instance
+// (previously triggered on routewerk-dev with ~800+ routes).
+//
+// Setters who hit the cap should split into multiple batches; that's also
+// how they'll want to cut them physically anyway (25 sheets is about the
+// stack the Silhouette can take without re-feeding).
+const MaxBatchCards = 200
+
 // Service composes route cards into a multi-card print-and-cut sheet PDF.
 // It owns the "resolve a route ID into full CardData" step so handlers don't
 // have to reimplement the wall / setter / QR-URL wiring that the single-card
@@ -74,6 +90,13 @@ func (s *Service) RenderBatch(
 ) (int, error) {
 	if len(routeIDs) == 0 {
 		return 0, fmt.Errorf("cardbatch: no routes")
+	}
+	if len(routeIDs) > MaxBatchCards {
+		// Hard cap — see MaxBatchCards comment. Returning an error here keeps
+		// the Render OOM from reaching the process; handlers surface this to
+		// the user as a "split into smaller batches" message.
+		return 0, fmt.Errorf("cardbatch: too many routes (%d, max %d) — split into multiple batches",
+			len(routeIDs), MaxBatchCards)
 	}
 
 	// Resolve the location once — name never changes mid-render.

@@ -16,10 +16,7 @@
 package cardsheet
 
 import (
-	"bytes"
 	"fmt"
-	"image"
-	"image/png"
 	"io"
 
 	"github.com/jung-kurt/gofpdf/v2"
@@ -236,27 +233,3 @@ func drawCutPath(pdf *gofpdf.Fpdf, x, y float64) {
 	pdf.RoundedRect(x, y, cardWMM, cardHMM, cardCornerRadiusMM, "1234", "D")
 }
 
-// rotatePNG90CCW decodes a PNG, rotates the pixel data 90° counter-clockwise,
-// and re-encodes. We rotate pixel data rather than use gofpdf's transform
-// stack because it keeps image placement math straightforward and avoids
-// any chance of the cut-path rectangle landing on rotated coordinates.
-func rotatePNG90CCW(pngBytes []byte) ([]byte, error) {
-	src, err := png.Decode(bytes.NewReader(pngBytes))
-	if err != nil {
-		return nil, fmt.Errorf("decode png: %w", err)
-	}
-	b := src.Bounds()
-	w, h := b.Dx(), b.Dy()
-	dst := image.NewRGBA(image.Rect(0, 0, h, w))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			// 90° CCW: source (x, y) → destination (y, w-1-x).
-			dst.Set(y, w-1-x, src.At(b.Min.X+x, b.Min.Y+y))
-		}
-	}
-	var out bytes.Buffer
-	if err := png.Encode(&out, dst); err != nil {
-		return nil, fmt.Errorf("encode rotated png: %w", err)
-	}
-	return out.Bytes(), nil
-}

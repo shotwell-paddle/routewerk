@@ -1,10 +1,11 @@
 package handler
 
 import (
-	"bytes"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
@@ -110,6 +111,15 @@ func (h *CardBatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "route_ids is required")
 		return
 	}
+	if len(req.RouteIDs) > cardbatch.MaxBatchCards {
+		// Mirror the web form cap. 413 tells API clients "your payload is
+		// too big"; the message tells humans what to do about it.
+		Error(w, http.StatusRequestEntityTooLarge, fmt.Sprintf(
+			"route_ids exceeds max batch size (%d, max %d) — split into multiple batches",
+			len(req.RouteIDs), cardbatch.MaxBatchCards,
+		))
+		return
+	}
 	if req.Theme == "" {
 		req.Theme = model.CardThemeTradingCard
 	}
@@ -197,11 +207,24 @@ func (h *CardBatchHandler) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var buf bytes.Buffer
+	// Render to a tmpfile instead of an in-memory buffer — see the
+	// equivalent block in internal/handler/web/route_card_batches.go for
+	// rationale. Same 256MB-VM-on-Fly concern applies to the JSON API path.
+	tmp, err := os.CreateTemp("", "routewerk-cardbatch-*.pdf")
+	if err != nil {
+		slog.Error("card batch download: tmpfile create failed", "batch_id", batchID, "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	defer func() {
+		tmp.Close()
+		os.Remove(tmp.Name())
+	}()
+
 	count, err := h.svc.RenderBatch(r.Context(), b.LocationID, b.RouteIDs, cardsheet.SheetConfig{
 		Cutter: cardsheet.CutterProfile(b.CutterProfile),
 		Theme:  b.Theme,
-	}, &buf)
+	}, tmp)
 	if err != nil {
 		slog.Error("card batch download: render failed", "batch_id", batchID, "error", err)
 		if mErr := h.batches.MarkFailed(r.Context(), batchID, err.Error()); mErr != nil {
@@ -215,11 +238,17 @@ func (h *CardBatchHandler) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, err := tmp.Seek(0, 0); err != nil {
+		slog.Error("card batch download: tmpfile seek failed", "batch_id", batchID, "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
 	filename := fmt.Sprintf("routewerk-cards-%s.pdf", b.ID)
 	w.Header().Set("Content-Type", "application/pdf")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 	w.Header().Set("Cache-Control", "no-store")
-	if _, err := w.Write(buf.Bytes()); err != nil {
+	if _, err := io.Copy(w, tmp); err != nil {
 		slog.Error("card batch download: write failed", "batch_id", batchID, "error", err)
 	}
 }

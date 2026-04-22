@@ -594,24 +594,44 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ── Photo upload UX ──────────────────────────────────────────
 // Give the user clear feedback during a photo upload:
-//   1. Client-side reject (too big / wrong type) before the request fires,
-//      so they don't watch a spinner for 3s only to get a server 400.
-//   2. Client-side HEIC → JPEG conversion via heic2any. Our server is
-//      pure Go (CGO_ENABLED=0), so it can't decode HEIC. iPhones still
-//      ship HEIC by default, though, so we convert in the browser before
-//      the upload ever happens. heic2any is ~1.3 MB of JS-with-inlined-WASM,
-//      self-hosted under /static/js/vendor/ and lazy-loaded only when the
-//      user actually picks a HEIC file. Self-hosted (vs cdnjs) so our CSP
-//      can stay `script-src 'self'` without an external allowance, and so
-//      climbing gyms on flaky wifi don't lose the ability to upload photos
-//      just because a third-party CDN is slow or blocked.
-//   3. Inline "Uploading photo…" / "Converting HEIC…" status right next
+//   1. Client-side reject (obviously-huge / wrong type) before the request
+//      fires, so they don't watch a spinner for 3s only to get a server 400.
+//   2. Client-side decode + downsample + JPEG re-encode via the browser's
+//      native image pipeline (createImageBitmap → canvas → toBlob). Benefits:
+//        - HEIC works natively on Safari/iOS (the only browsers the library
+//          used to target) without any WASM or Web Worker — which is what
+//          was hanging on Safari macOS, likely WASM+CSP interaction.
+//        - Oversized iPhone photos (12–48 MP, 6–15 MB each) get resized to
+//          a sensible long edge before upload. The server cap is 5 MB; we
+//          aim the output below that and skip the resize when the original
+//          already fits.
+//        - We no longer ship a 1.3 MB vendored JS+WASM blob for every user.
+//      Chrome/Firefox desktop can't natively decode HEIC; if someone tries
+//      to upload a HEIC there, we surface a clear message telling them to
+//      upload from the iPhone directly (or save as JPEG first).
+//   3. Inline "Preparing photo…" / "Uploading photo…" status right next
 //      to the form — toasts in the corner are easy to miss on mobile.
 //   4. Live percent progress via htmx's xhr.upload.progress bridge —
 //      matters for a 3–4 MB photo over a flaky gym wifi connection.
 //   5. Clear error message inline on server reject, anchored to the form.
 
-var UPLOAD_MAX_BYTES = 5 * 1024 * 1024; // must match server's maxInputBytes
+// Server-side cap (internal/service/imageproc.go: maxInputBytes). The post-
+// processing JPEG MUST fit under this; we guard on it after the resize.
+var UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
+
+// Pre-processing ceiling. We need a wider bar than UPLOAD_MAX_BYTES because
+// a raw iPhone ProRAW / 48 MP JPEG can easily exceed 15 MB before resize.
+// 30 MB keeps OOM risk on low-end phones sane while allowing basically any
+// consumer camera output through. Files bigger than this are vanishingly
+// rare and almost certainly not what the user meant to upload.
+var UPLOAD_INPUT_MAX_BYTES = 30 * 1024 * 1024;
+
+// Target for the long edge after resize. Route photos are viewed on phones
+// and occasionally 15" laptops — 2048 is comfortably sharp at both and lands
+// a JPEG at q=0.85 well under the 5 MB server cap.
+var IMAGE_MAX_DIMENSION = 2048;
+var IMAGE_JPEG_QUALITY = 0.85;
+
 var UPLOAD_ALLOWED_TYPES = /^image\/(jpeg|png|webp|heic|heif)$/i;
 // Some browsers (and especially iOS Safari on older iOS) report HEIC as
 // an empty string or application/octet-stream. Fall back to extension so
@@ -619,15 +639,6 @@ var UPLOAD_ALLOWED_TYPES = /^image\/(jpeg|png|webp|heic|heif)$/i;
 var UPLOAD_ALLOWED_EXT = /\.(jpe?g|png|webp|heic|heif)$/i;
 var UPLOAD_HEIC_EXT = /\.(heic|heif)$/i;
 var UPLOAD_HEIC_MIME = /^image\/(heic|heif)$/i;
-
-// Self-hosted path for heic2any — served from our binary's embedded
-// static assets, so this inherits the `immutable` cache headers set on
-// /static/* and doesn't require punching a hole in our CSP (which stays
-// `script-src 'self'`). Filename is version-pinned so upgrades get a new
-// URL and bypass the long-cached old file; cached clients of the prior
-// version keep working until they're upgraded to a binary that points
-// here.
-var HEIC2ANY_URL = '/static/js/vendor/heic2any-0.0.4.min.js';
 
 // A form opts into the upload UX by including a `.upload-status` element.
 // We key off that rather than a specific class name so the route-edit form
@@ -675,76 +686,117 @@ function isHEICFile(file) {
   return UPLOAD_HEIC_MIME.test(file.type || '') || UPLOAD_HEIC_EXT.test(file.name || '');
 }
 
-// Lazy-load heic2any the first time we need it. Subsequent calls reuse
-// the same promise — one network fetch, one WASM compile.
+// processPhotoForUpload decodes the picked file with the browser's native
+// image pipeline, optionally resizes it, and swaps the input's File with the
+// resulting JPEG — all before htmx submits the form.
 //
-// heic2any ships a UMD wrapper that picks where to attach based on the
-// execution context: CommonJS (`module.exports`), AMD (`define`), or a
-// plain global fallback `(r = r || self).heic2any = a()` where `r` is the
-// `this` bound when the wrapper runs. In a classic <script> tag that
-// global ends up on `self`/`window`/`globalThis` — same object in the
-// browser — but we read all three before giving up so this loader is
-// robust to any exotic execution context (e.g. a future move to a
-// module script, or a page served as an iframe with a funky `this`).
-var heic2anyPromise = null;
-function findHEIC2Any() {
-  if (typeof window !== 'undefined' && window.heic2any) return window.heic2any;
-  if (typeof self !== 'undefined' && self.heic2any) return self.heic2any;
-  if (typeof globalThis !== 'undefined' && globalThis.heic2any) return globalThis.heic2any;
-  return null;
-}
-function loadHEIC2Any() {
-  if (heic2anyPromise) return heic2anyPromise;
-  heic2anyPromise = new Promise(function(resolve, reject) {
-    var existing = findHEIC2Any();
-    if (existing) { resolve(existing); return; }
-
-    var s = document.createElement('script');
-    s.src = HEIC2ANY_URL;
-    s.async = true;
-    // Reset the cached promise on any failure so the next upload attempt
-    // re-fetches instead of re-serving a permanently broken promise.
-    s.onload = function() {
-      var lib = findHEIC2Any();
-      if (lib) { resolve(lib); return; }
-      heic2anyPromise = null;
-      reject(new Error('HEIC converter loaded but did not register — please reload the page'));
-    };
-    s.onerror = function() {
-      heic2anyPromise = null;
-      reject(new Error('Could not load HEIC converter — check your network'));
-    };
-    document.head.appendChild(s);
-  });
-  return heic2anyPromise;
-}
-
-// Swap a HEIC File in the input for its converted JPEG equivalent.
-// Resolves once the input's .files reflects the new JPEG, ready to upload.
-function convertHEICInInput(input) {
+// Why this shape:
+//   - createImageBitmap() natively decodes HEIC on Safari/iOS via the OS
+//     image stack — no WASM, no Web Worker, no CSP-in-Worker issues. Safari
+//     macOS was hanging on a 95 KB HEIC under the old heic2any+libheif-in-
+//     Worker path; most likely a CSP/WASM interaction that never bubbled
+//     back as a rejection. Native decode sidesteps the whole mess.
+//   - { imageOrientation: 'from-image' } applies EXIF orientation so iPhone
+//     portrait photos don't come back sideways. Supported in current Safari,
+//     Chrome, Firefox; falls through harmlessly on older browsers.
+//   - Chrome/Firefox desktop can't natively decode HEIC — createImageBitmap
+//     will reject. We catch that specifically and surface a helpful error.
+//   - Resize happens ONCE, in the same canvas step as the re-encode, when
+//     either (a) it's HEIC (we must re-encode anyway), (b) the long edge
+//     exceeds IMAGE_MAX_DIMENSION, or (c) the raw file already exceeds the
+//     server byte cap. Otherwise we keep the original File unchanged to
+//     avoid a lossy recompress of an already-small JPEG.
+//
+// Resolves to null when we decided to keep the original file, or to the
+// replacement File when we re-encoded. input.files is updated in-place
+// before resolution so the submit can run without further coordination.
+function processPhotoForUpload(input) {
   var file = input.files[0];
   var form = input.closest('form');
-  setUploadStatus(form, 'uploading', 'Converting HEIC to JPEG…');
-  return loadHEIC2Any().then(function(heic2any) {
-    return heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
-  }).then(function(result) {
-    // heic2any returns Blob OR Blob[] (for multi-image HEIC) — take the first.
-    var blob = Array.isArray(result) ? result[0] : result;
-    var name = (file.name || 'photo').replace(/\.(heic|heif)$/i, '.jpg');
-    var jpeg = new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() });
-    if (jpeg.size > UPLOAD_MAX_BYTES) {
-      throw new Error('Converted photo is still too large (' +
-        Math.round(jpeg.size / (1024 * 1024)) + ' MB). Try a smaller photo.');
+  var isHEIC = isHEICFile(file);
+
+  setUploadStatus(form, 'uploading', isHEIC ? 'Preparing photo…' : 'Resizing photo…');
+
+  // createImageBitmap is supported on every browser we target (Safari 14+,
+  // Chrome 50+, Firefox 42+). The imageOrientation option is newer but
+  // unknown keys are silently ignored, so it's safe to pass unconditionally.
+  var decode;
+  try {
+    decode = window.createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch (syncErr) {
+    // Older iOS Safari surfaces a synchronous TypeError if the option bag
+    // is unsupported. Retry without options — orientation will be off on
+    // those browsers but the upload still works.
+    try { decode = window.createImageBitmap(file); }
+    catch (e) { decode = Promise.reject(e); }
+  }
+
+  return decode.catch(function(err) {
+    if (isHEIC) {
+      // Chrome/Firefox desktop path: no native HEIC decode.
+      throw new Error("This browser can't decode HEIC. Upload directly from " +
+        "your iPhone, or save the photo as JPEG first.");
     }
-    // Modern browsers let us write to input.files via DataTransfer. This
-    // is supported in all evergreen browsers + iOS Safari 14.5+.
+    // Non-HEIC decode failure is unexpected — surface the underlying error
+    // wrapped so the UI message stays user-facing.
+    throw new Error('Could not read photo: ' + ((err && err.message) || 'decode failed'));
+  }).then(function(bitmap) {
+    var w = bitmap.width;
+    var h = bitmap.height;
+    var needsResize = w > IMAGE_MAX_DIMENSION || h > IMAGE_MAX_DIMENSION;
+    var needsReencode = isHEIC || needsResize || file.size > UPLOAD_MAX_BYTES;
+
+    if (!needsReencode) {
+      bitmap.close && bitmap.close();
+      setUploadStatus(form, null);
+      return null; // keep the original File as-is
+    }
+
+    var scale = Math.min(1, IMAGE_MAX_DIMENSION / Math.max(w, h));
+    var tw = Math.max(1, Math.round(w * scale));
+    var th = Math.max(1, Math.round(h * scale));
+
+    var canvas = document.createElement('canvas');
+    canvas.width = tw;
+    canvas.height = th;
+    var ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0, tw, th);
+    bitmap.close && bitmap.close();
+
+    return new Promise(function(resolve, reject) {
+      canvas.toBlob(function(blob) {
+        if (!blob) {
+          reject(new Error('Could not encode photo — please try a smaller image.'));
+          return;
+        }
+        resolve(blob);
+      }, 'image/jpeg', IMAGE_JPEG_QUALITY);
+    });
+  }).then(function(blob) {
+    if (!blob) { return null; } // short-circuited above
+
+    var origName = file.name || 'photo';
+    // Strip any source extension and force .jpg — we just re-encoded as JPEG.
+    var jpegName = origName.replace(/\.(heic|heif|png|webp|jpe?g)$/i, '') + '.jpg';
+    var jpeg = new File([blob], jpegName, { type: 'image/jpeg', lastModified: Date.now() });
+
+    // Belt-and-suspenders: even after resize, if we're still over the server
+    // cap something upstream is wrong (unusually noisy source photo, PNG that
+    // compressed badly, etc.). Fail here rather than shipping a doomed POST.
+    if (jpeg.size > UPLOAD_MAX_BYTES) {
+      throw new Error('Photo is still too large after resizing. Try a smaller or simpler image.');
+    }
+
+    // DataTransfer is the supported way to overwrite input.files on modern
+    // evergreen browsers + iOS Safari 14.5+.
     var dt = new DataTransfer();
     dt.items.add(jpeg);
     input.files = dt.files;
-    // Reflect the new filename in the UI (matches the non-HEIC path's
-    // inline onchange handler, which already fired with the original name).
+
+    // Update the visible filename chip to reflect the new name.
     var filenameEl = form.querySelector('.photo-filename');
-    if (filenameEl) filenameEl.textContent = name;
+    if (filenameEl) filenameEl.textContent = jpegName;
+
     setUploadStatus(form, null);
     return jpeg;
   });
@@ -754,8 +806,13 @@ function checkPhotoFile(input) {
   var file = input.files && input.files[0];
   var form = input.closest('form');
   if (!file || !form) return true;
-  if (file.size > UPLOAD_MAX_BYTES) {
-    setUploadStatus(form, 'error', 'File is too large (max 5 MB). Choose a smaller photo.');
+  // Pre-processing ceiling. We'll resize anything between UPLOAD_MAX_BYTES
+  // and UPLOAD_INPUT_MAX_BYTES; above that we refuse rather than risk OOM
+  // on a low-end phone.
+  if (file.size > UPLOAD_INPUT_MAX_BYTES) {
+    setUploadStatus(form, 'error',
+      'File is too large to process (max ' + Math.round(UPLOAD_INPUT_MAX_BYTES / (1024 * 1024)) +
+      ' MB). Choose a smaller photo.');
     input.value = '';
     return false;
   }
@@ -770,7 +827,7 @@ function checkPhotoFile(input) {
   return true;
 }
 
-// Track forms mid-HEIC-conversion. While a conversion is in-flight:
+// Track forms mid-photo-processing. While processing is in-flight:
 //   - the user may click Upload (beforeRequest handler cancels and waits)
 //   - the dropzone's auto-submit may fire (we cancel and re-trigger later)
 var convertingForms = new WeakMap();
@@ -802,23 +859,19 @@ document.addEventListener('change', function(e) {
     return;
   }
 
-  var file = input.files[0];
-  if (!isHEICFile(file)) {
-    // Non-HEIC path — ready to upload immediately.
-    afterPhotoReady(form, autoSubmit);
-    return;
-  }
-
-  // HEIC path — we need to convert first. Mark the form as converting
-  // so the submit handler knows to wait.
-  var pending = convertHEICInInput(input).then(function() {
+  // Always route through the processing pipeline. It short-circuits and
+  // returns null when the original file is already JPEG/PNG/WebP, sized
+  // within IMAGE_MAX_DIMENSION, and under UPLOAD_MAX_BYTES — in which case
+  // we keep the file as-is and move straight to upload. HEIC or oversized
+  // photos get decoded, resized, and re-encoded as JPEG in-place.
+  var pending = processPhotoForUpload(input).then(function() {
     convertingForms.delete(form);
     afterPhotoReady(form, autoSubmit);
   }).catch(function(err) {
     convertingForms.delete(form);
     input.value = '';
     setUploadStatus(form, 'error', (err && err.message) ||
-      'Could not convert HEIC — try a JPEG or toggle iPhone Settings → Camera → Formats → Most Compatible.');
+      'Could not prepare photo. Try a different photo or save it as JPEG first.');
   });
   convertingForms.set(form, pending);
 });

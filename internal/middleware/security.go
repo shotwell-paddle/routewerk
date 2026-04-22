@@ -41,11 +41,13 @@ func SecureHeaders(next http.Handler) http.Handler {
 // Only the scheme+host portion is used — any path/query on the endpoint is
 // ignored, matching how the browser matches CSP source expressions.
 //
-// `worker-src 'self' blob:` is required for heic2any: the library spawns a
-// libheif Web Worker from a Blob URL at script-load time. Without an explicit
-// worker-src, workers fall back through child-src → script-src → default-src;
-// since default-src is 'none', the Worker creation would throw synchronously
-// and prevent the library from ever registering `window.heic2any`.
+// Note on workers: no `worker-src` directive. An earlier version allowed
+// `worker-src 'self' blob:` to accommodate heic2any's libheif Web Worker,
+// but that library has been removed in favor of the browser's native image
+// pipeline (createImageBitmap + canvas). With nothing spawning workers on
+// this app, we let worker-src fall through to default-src 'none' so any
+// future accidental Worker spawn is blocked by the CSP instead of silently
+// working.
 func SecureHeadersWeb(storageEndpoint string) func(http.Handler) http.Handler {
 	imgSrc := "img-src 'self' data:"
 	if origin := originFromURL(storageEndpoint); origin != "" {
@@ -61,7 +63,6 @@ func SecureHeadersWeb(storageEndpoint string) func(http.Handler) http.Handler {
 	csp := strings.Join([]string{
 		"default-src 'none'",
 		"script-src 'self'",
-		"worker-src 'self' blob:",
 		"style-src 'self' 'unsafe-inline'",
 		"font-src 'self'",
 		imgSrc,

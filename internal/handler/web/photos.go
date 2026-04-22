@@ -16,11 +16,40 @@ import (
 
 const maxUploadSize = 5 << 20 // 5 MB
 
-// allowedImageTypes is the allow-list of MIME types for photo uploads.
+// allowedImageTypes is the allow-list of MIME types the server can actually
+// decode. HEIC is NOT on this list — decoding HEIC requires libde265 via CGO,
+// which would break our CGO_ENABLED=0 build. Instead, the browser converts
+// HEIC to JPEG before upload (see heic2any wiring in app.js), so by the time
+// bytes reach the server they're already one of these three formats.
 var allowedImageTypes = map[string]bool{
 	"image/jpeg": true,
 	"image/png":  true,
 	"image/webp": true,
+}
+
+// heifBrands is the set of ISOBMFF `ftyp` major brands that indicate a HEIC
+// or HEIF file. http.DetectContentType returns "application/octet-stream"
+// for HEIC, so we identify the format ourselves purely to produce a
+// *helpful error message* ("HEIC couldn't be converted in your browser")
+// rather than the generic "unsupported format". Reference: ISO/IEC
+// 14496-12 + 23008-12.
+var heifBrands = map[string]bool{
+	"heic": true, "heix": true, "heim": true, "heis": true,
+	"hevc": true, "hevx": true, "hevm": true, "hevs": true,
+	"mif1": true, "msf1": true,
+}
+
+// isHEIC reports whether a byte buffer looks like a HEIC/HEIF file based on
+// its ISOBMFF `ftyp` box brand. An ISOBMFF file starts with a 4-byte
+// big-endian box size, then the literal "ftyp", then a 4-byte major brand.
+func isHEIC(b []byte) bool {
+	if len(b) < 12 {
+		return false
+	}
+	if string(b[4:8]) != "ftyp" {
+		return false
+	}
+	return heifBrands[string(b[8:12])]
 }
 
 // PhotoUpload handles POST /routes/{routeID}/photos.
@@ -96,8 +125,27 @@ func (h *Handler) PhotoUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	contentType := http.DetectContentType(sniff)
+	// Detect HEIC specifically so we can return a useful message. The browser
+	// is supposed to have converted it via heic2any before upload; if we're
+	// seeing raw HEIC it means the conversion was skipped or failed.
+	if contentType == "application/octet-stream" && isHEIC(sniff) {
+		slog.Warn("photo upload: raw HEIC reached server (client conversion skipped?)",
+			"route_id", routeID,
+			"declared", header.Header.Get("Content-Type"),
+			"filename", header.Filename)
+		http.Error(w, "HEIC couldn't be converted in your browser. Try a different photo, or toggle iPhone Settings → Camera → Formats → Most Compatible.", http.StatusBadRequest)
+		return
+	}
 	if !allowedImageTypes[contentType] {
-		http.Error(w, "Only JPEG, PNG, and WebP images are allowed", http.StatusBadRequest)
+		// Log so the next unsupported format is visible in fly logs — the
+		// previous version silently 400'd and the response text was hidden
+		// behind a generic HTMX toast.
+		slog.Warn("photo upload: unsupported content type",
+			"route_id", routeID,
+			"sniffed", contentType,
+			"declared", header.Header.Get("Content-Type"),
+			"filename", header.Filename)
+		http.Error(w, "Unsupported image format — use JPEG, PNG, or WebP", http.StatusBadRequest)
 		return
 	}
 

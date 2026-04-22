@@ -212,7 +212,7 @@
                 <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
               </svg>
               Choose photo
-              <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" required
+              <input type="file" name="photo" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" required
                      style="display: none;" onchange="this.closest('form').querySelector('.photo-filename').textContent = this.files[0]?.name || ''">
             </label>
             <span class="photo-filename text-sm text-muted"></span>
@@ -221,6 +221,7 @@
             <input type="text" name="caption" class="form-input" placeholder="Caption (optional)" style="flex: 1;">
             <button type="submit" class="btn btn-secondary btn-sm">Upload</button>
           </div>
+          <div class="upload-status" role="status" aria-live="polite"></div>
         </form>
         {{end}}
       </div>

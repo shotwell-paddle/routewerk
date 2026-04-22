@@ -48,11 +48,16 @@ type ProcessedImage struct {
 // dimensions, and re-encodes as JPEG (for JPEG/WebP inputs) or PNG (for PNG
 // inputs with transparency). All outputs are optimized for web delivery.
 //
+// HEIC is deliberately NOT handled here — it needs libde265 via CGO, which
+// would break the pure-Go Dockerfile (CGO_ENABLED=0). Instead, the browser
+// converts HEIC to JPEG before upload (see app.js), so by the time bytes
+// reach this function they're always one of the three Go-native formats.
+//
 // The function defends against decompression-bomb DoS by:
 //   1. Buffering at most maxInputBytes+1 from src, rejecting anything larger.
-//   2. Peeking at the image header via image.DecodeConfig (no pixel allocation)
-//      and rejecting declarations larger than maxInputPixels.
-//   3. Only then calling the full decoder.
+//   2. Peeking at the image header via image.DecodeConfig (no pixel
+//      allocation) and rejecting declarations larger than maxInputPixels
+//      before calling the full decoder.
 func ProcessImage(src io.Reader, contentType string) (*ProcessedImage, error) {
 	raw, err := io.ReadAll(io.LimitReader(src, maxInputBytes+1))
 	if err != nil {
@@ -62,15 +67,14 @@ func ProcessImage(src io.Reader, contentType string) (*ProcessedImage, error) {
 		return nil, fmt.Errorf("image exceeds %d bytes", maxInputBytes)
 	}
 
-	// Peek at declared dimensions before allocating pixel buffers.
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
-	if err != nil {
-		return nil, fmt.Errorf("decode image config: %w", err)
+	// Peek at declared dimensions before allocating pixels.
+	cfg, _, cfgErr := image.DecodeConfig(bytes.NewReader(raw))
+	if cfgErr != nil {
+		return nil, fmt.Errorf("decode image config: %w", cfgErr)
 	}
 	if int64(cfg.Width)*int64(cfg.Height) > maxInputPixels {
 		return nil, fmt.Errorf("image dimensions %dx%d exceed maximum pixels", cfg.Width, cfg.Height)
 	}
-
 	img, _, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
 		return nil, fmt.Errorf("decode image: %w", err)

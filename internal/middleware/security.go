@@ -35,11 +35,17 @@ func SecureHeaders(next http.Handler) http.Handler {
 // SecureHeadersWeb returns middleware that sets security headers tuned for the
 // HTML frontend. The base CSP is `default-src 'none'` with per-directive
 // allowances for self-hosted assets. If storageEndpoint is non-empty, its
-// scheme+host is added to img-src so cross-origin blob URLs from S3-compatible
+// scheme+host is added to img-src so cross-origin URLs from S3-compatible
 // object storage (e.g. Tigris) can render avatars and route photos.
 //
 // Only the scheme+host portion is used — any path/query on the endpoint is
 // ignored, matching how the browser matches CSP source expressions.
+//
+// `worker-src 'self' blob:` is required for heic2any: the library spawns a
+// libheif Web Worker from a Blob URL at script-load time. Without an explicit
+// worker-src, workers fall back through child-src → script-src → default-src;
+// since default-src is 'none', the Worker creation would throw synchronously
+// and prevent the library from ever registering `window.heic2any`.
 func SecureHeadersWeb(storageEndpoint string) func(http.Handler) http.Handler {
 	imgSrc := "img-src 'self' data:"
 	if origin := originFromURL(storageEndpoint); origin != "" {
@@ -49,6 +55,7 @@ func SecureHeadersWeb(storageEndpoint string) func(http.Handler) http.Handler {
 	csp := strings.Join([]string{
 		"default-src 'none'",
 		"script-src 'self'",
+		"worker-src 'self' blob:",
 		"style-src 'self' 'unsafe-inline'",
 		"font-src 'self'",
 		imgSrc,

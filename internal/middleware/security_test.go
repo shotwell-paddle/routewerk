@@ -106,9 +106,13 @@ func TestSecureHeadersWeb(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	csp := rec.Header().Get("Content-Security-Policy")
-	// Web CSP should allow self-hosted scripts and fonts, and self+data URIs for images.
+	// Web CSP should allow self-hosted scripts and fonts, self+data URIs for
+	// images, and blob-URL Web Workers (required by heic2any's libheif worker
+	// — without worker-src it falls back through to default-src 'none' and the
+	// library throws at load time).
 	for _, fragment := range []string{
 		"script-src 'self'",
+		"worker-src 'self' blob:",
 		"style-src 'self' 'unsafe-inline'",
 		"font-src 'self'",
 		"img-src 'self' data:",

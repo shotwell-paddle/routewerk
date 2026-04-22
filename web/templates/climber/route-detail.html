@@ -169,7 +169,7 @@
           {{range .Photos}}
           <div class="photo-item">
             <img src="{{.PhotoURL}}" alt="{{if .Caption}}{{deref .Caption}}{{else}}Route photo{{end}}" loading="lazy"
-                 onclick="this.closest('.photo-item').classList.toggle('photo-expanded')">
+                 data-lightbox>
             <div class="photo-overlay">
               <div class="photo-meta">
                 <span class="photo-uploader">{{.UploaderName}}</span>

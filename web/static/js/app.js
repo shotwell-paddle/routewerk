@@ -941,3 +941,86 @@ document.addEventListener('htmx:afterRequest', function(e) {
   var form = e.detail.elt && e.detail.elt.closest ? e.detail.elt.closest('form') : null;
   if (form) uploadingForms.delete(form);
 });
+
+// ── Photo lightbox ───────────────────────────────────────────
+//
+// Any <img data-lightbox> opens a fullscreen overlay on click/tap.
+// The overlay dismisses on:
+//   - tap/click on the dim backdrop
+//   - tap/click on the close (×) button
+//   - Esc key
+//
+// Implementation notes:
+//   - Single delegated click listener on document, so HTMX swaps
+//     don't need rewiring — new data-lightbox imgs work instantly.
+//   - We key the open path off the img itself (not the surrounding
+//     .photo-item), so sibling UI like the delete button on route
+//     photos still gets its own clicks.
+//   - <body class="lightbox-open"> locks scroll while open so the
+//     page underneath doesn't scroll on iOS.
+(function setupLightbox() {
+  var overlay = null;
+
+  function openLightbox(src, alt) {
+    if (overlay) closeLightbox();
+
+    overlay = document.createElement('div');
+    overlay.className = 'lightbox-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', alt || 'Photo');
+
+    var img = document.createElement('img');
+    img.src = src;
+    img.alt = alt || '';
+    img.className = 'lightbox-image';
+    overlay.appendChild(img);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'lightbox-close';
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    overlay.appendChild(closeBtn);
+
+    document.body.appendChild(overlay);
+    document.body.classList.add('lightbox-open');
+
+    // Next frame so the opacity transition actually runs.
+    requestAnimationFrame(function() { overlay.classList.add('lightbox-visible'); });
+  }
+
+  function closeLightbox() {
+    if (!overlay) return;
+    overlay.remove();
+    overlay = null;
+    document.body.classList.remove('lightbox-open');
+  }
+
+  document.addEventListener('click', function(e) {
+    var target = e.target;
+    if (!target || !target.closest) return;
+
+    // Open path: click on any data-lightbox img.
+    var trigger = target.closest('img[data-lightbox]');
+    if (trigger) {
+      e.preventDefault();
+      openLightbox(trigger.currentSrc || trigger.src, trigger.alt);
+      return;
+    }
+
+    if (!overlay) return;
+
+    // Close path: × button, or the overlay backdrop itself. Clicks on the
+    // image inside the overlay fall through (target !== overlay), so the
+    // user can pan/inspect without the lightbox closing out from under them.
+    if (target.closest('.lightbox-close') || target === overlay) {
+      e.preventDefault();
+      closeLightbox();
+    }
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && overlay) closeLightbox();
+  });
+})();

@@ -599,8 +599,12 @@ document.addEventListener('DOMContentLoaded', function() {
 //   2. Client-side HEIC → JPEG conversion via heic2any. Our server is
 //      pure Go (CGO_ENABLED=0), so it can't decode HEIC. iPhones still
 //      ship HEIC by default, though, so we convert in the browser before
-//      the upload ever happens. heic2any is ~2 MB of WASM that we
-//      lazy-load from CDN only when the user actually picks a HEIC file.
+//      the upload ever happens. heic2any is ~1.3 MB of JS-with-inlined-WASM,
+//      self-hosted under /static/js/vendor/ and lazy-loaded only when the
+//      user actually picks a HEIC file. Self-hosted (vs cdnjs) so our CSP
+//      can stay `script-src 'self'` without an external allowance, and so
+//      climbing gyms on flaky wifi don't lose the ability to upload photos
+//      just because a third-party CDN is slow or blocked.
 //   3. Inline "Uploading photo…" / "Converting HEIC…" status right next
 //      to the form — toasts in the corner are easy to miss on mobile.
 //   4. Live percent progress via htmx's xhr.upload.progress bridge —
@@ -616,11 +620,14 @@ var UPLOAD_ALLOWED_EXT = /\.(jpe?g|png|webp|heic|heif)$/i;
 var UPLOAD_HEIC_EXT = /\.(heic|heif)$/i;
 var UPLOAD_HEIC_MIME = /^image\/(heic|heif)$/i;
 
-// CDN URL for heic2any. Pinned to a specific version so a CDN takeover
-// or breaking release can't silently change what runs in our users'
-// browsers. If this CDN goes down we lose HEIC-on-iPhone; the error
-// message tells the user how to work around it (toggle camera format).
-var HEIC2ANY_URL = 'https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js';
+// Self-hosted path for heic2any — served from our binary's embedded
+// static assets, so this inherits the `immutable` cache headers set on
+// /static/* and doesn't require punching a hole in our CSP (which stays
+// `script-src 'self'`). Filename is version-pinned so upgrades get a new
+// URL and bypass the long-cached old file; cached clients of the prior
+// version keep working until they're upgraded to a binary that points
+// here.
+var HEIC2ANY_URL = '/static/js/vendor/heic2any-0.0.4.min.js';
 
 // A form opts into the upload UX by including a `.upload-status` element.
 // We key off that rather than a specific class name so the route-edit form

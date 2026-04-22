@@ -106,13 +106,14 @@ func TestSecureHeadersWeb(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	csp := rec.Header().Get("Content-Security-Policy")
-	// Web CSP should allow self-hosted scripts and fonts, self+data URIs for
-	// images, and blob-URL Web Workers (required by heic2any's libheif worker
-	// — without worker-src it falls back through to default-src 'none' and the
-	// library throws at load time).
+	// Web CSP should allow self-hosted scripts, styles with inline
+	// attributes (for HTMX swap animations), self-hosted fonts, and
+	// self+data URIs for images. Workers are intentionally absent:
+	// nothing in the app spawns a Worker, so worker-src falls through
+	// to default-src 'none' and any future accidental Worker spawn is
+	// blocked loudly instead of silently working.
 	for _, fragment := range []string{
 		"script-src 'self'",
-		"worker-src 'self' blob:",
 		"style-src 'self' 'unsafe-inline'",
 		"font-src 'self'",
 		"img-src 'self' data:",
@@ -120,6 +121,11 @@ func TestSecureHeadersWeb(t *testing.T) {
 		if !strings.Contains(csp, fragment) {
 			t.Errorf("web CSP missing %q, got %q", fragment, csp)
 		}
+	}
+	// And assert worker-src is genuinely absent — if we ever accidentally
+	// re-add it, we want the test to flag the regression.
+	if strings.Contains(csp, "worker-src") {
+		t.Errorf("web CSP should not contain worker-src, got %q", csp)
 	}
 }
 

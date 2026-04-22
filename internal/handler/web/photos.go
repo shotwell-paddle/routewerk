@@ -18,9 +18,10 @@ const maxUploadSize = 5 << 20 // 5 MB
 
 // allowedImageTypes is the allow-list of MIME types the server can actually
 // decode. HEIC is NOT on this list — decoding HEIC requires libde265 via CGO,
-// which would break our CGO_ENABLED=0 build. Instead, the browser converts
-// HEIC to JPEG before upload (see heic2any wiring in app.js), so by the time
-// bytes reach the server they're already one of these three formats.
+// which would break our CGO_ENABLED=0 build. Instead, the browser decodes
+// HEIC via the native createImageBitmap pipeline in app.js and re-encodes
+// it as JPEG before upload, so by the time bytes reach the server they're
+// already one of these three formats.
 var allowedImageTypes = map[string]bool{
 	"image/jpeg": true,
 	"image/png":  true,
@@ -125,15 +126,17 @@ func (h *Handler) PhotoUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	contentType := http.DetectContentType(sniff)
-	// Detect HEIC specifically so we can return a useful message. The browser
-	// is supposed to have converted it via heic2any before upload; if we're
-	// seeing raw HEIC it means the conversion was skipped or failed.
+	// Detect HEIC specifically so we can return a useful message. The
+	// browser is supposed to decode HEIC via createImageBitmap and re-
+	// encode as JPEG before the upload fires; if raw HEIC is reaching the
+	// server, the client-side pipeline failed (most likely a desktop
+	// browser without native HEIC decode, e.g. Chrome/Firefox).
 	if contentType == "application/octet-stream" && isHEIC(sniff) {
-		slog.Warn("photo upload: raw HEIC reached server (client conversion skipped?)",
+		slog.Warn("photo upload: raw HEIC reached server (client decode skipped?)",
 			"route_id", routeID,
 			"declared", header.Header.Get("Content-Type"),
 			"filename", header.Filename)
-		http.Error(w, "HEIC couldn't be converted in your browser. Try a different photo, or toggle iPhone Settings → Camera → Formats → Most Compatible.", http.StatusBadRequest)
+		http.Error(w, "HEIC couldn't be decoded in your browser. Upload directly from your iPhone, or save the photo as JPEG first.", http.StatusBadRequest)
 		return
 	}
 	if !allowedImageTypes[contentType] {

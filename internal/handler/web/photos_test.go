@@ -96,11 +96,11 @@ func TestIsHEIC_NoFtypBox(t *testing.T) {
 
 func TestAllowedImageTypes(t *testing.T) {
 	// The allowlist deliberately excludes HEIC — the server has no pure-Go
-	// way to decode it, so client-side conversion (heic2any in app.js) is
-	// responsible for turning HEIC into JPEG before upload. This test guards
-	// against accidentally re-adding HEIC to the allowlist, which would
-	// waive the pre-decode check and let goheif-less ProcessImage fail with
-	// an unhelpful "decode image" error.
+	// way to decode it, so the browser's native image pipeline (createImage
+	// Bitmap + canvas in app.js) is responsible for turning HEIC into JPEG
+	// before upload. This test guards against accidentally re-adding HEIC
+	// to the allowlist, which would waive the pre-decode check and let
+	// goheif-less ProcessImage fail with an unhelpful "decode image" error.
 	required := []string{"image/jpeg", "image/png", "image/webp"}
 	for _, ct := range required {
 		if !allowedImageTypes[ct] {

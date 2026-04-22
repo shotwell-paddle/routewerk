@@ -49,7 +49,13 @@ func SecureHeaders(next http.Handler) http.Handler {
 func SecureHeadersWeb(storageEndpoint string) func(http.Handler) http.Handler {
 	imgSrc := "img-src 'self' data:"
 	if origin := originFromURL(storageEndpoint); origin != "" {
-		imgSrc = "img-src 'self' data: " + origin
+		// We emit both the apex (e.g. https://fly.storage.tigris.dev) and a
+		// wildcard subdomain (https://*.fly.storage.tigris.dev) because we
+		// serve images via virtual-hosted URLs (<bucket>.<host>/<key>) but
+		// legacy rows and any in-flight path-style URLs still hit the apex.
+		// CSP wildcards do NOT match the apex, so both are required during
+		// the migration window.
+		imgSrc = "img-src 'self' data: " + origin + " " + wildcardHostFromURL(storageEndpoint)
 	}
 
 	csp := strings.Join([]string{
@@ -87,6 +93,24 @@ func originFromURL(u string) string {
 		return ""
 	}
 	return parsed.Scheme + "://" + parsed.Host
+}
+
+// wildcardHostFromURL returns a CSP source expression matching any subdomain
+// of the URL's host, e.g. "https://*.fly.storage.tigris.dev". Returns "" on
+// an unusable input. This is paired with originFromURL when we need to match
+// both the apex (e.g. legacy path-style URLs) and virtual-hosted subdomain
+// URLs (e.g. https://<bucket>.fly.storage.tigris.dev/<key>) — CSP wildcards
+// match strictly one label at the leftmost position and do NOT match the
+// apex itself, so both expressions are needed to cover both URL shapes.
+func wildcardHostFromURL(u string) string {
+	if u == "" {
+		return ""
+	}
+	parsed, err := url.Parse(u)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	return parsed.Scheme + "://*." + parsed.Host
 }
 
 // SecureHeadersStatic adds headers for immutable embedded static assets.

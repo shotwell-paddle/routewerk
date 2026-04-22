@@ -129,31 +129,38 @@ func TestSecureHeadersWeb(t *testing.T) {
 // because CSP source expressions only match scheme+host+port.
 func TestSecureHeadersWeb_StorageEndpointInImgSrc(t *testing.T) {
 	cases := []struct {
-		name     string
-		endpoint string
-		want     string // fragment that must appear in img-src
-		notWant  string // fragment that must NOT appear (e.g. path noise)
+		name      string
+		endpoint  string
+		wantAll   []string // fragments that must all appear in the CSP
+		notWant   string   // fragment that must NOT appear (e.g. path noise)
 	}{
 		{
-			name:     "tigris https endpoint",
+			name:     "tigris https endpoint emits both apex and wildcard subdomain",
 			endpoint: "https://fly.storage.tigris.dev",
-			want:     "img-src 'self' data: https://fly.storage.tigris.dev",
+			// Apex matches legacy/path-style URLs; wildcard matches the
+			// virtual-hosted shape (<bucket>.fly.storage.tigris.dev/<key>)
+			// that Tigris requires for anonymous public reads.
+			wantAll: []string{
+				"img-src 'self' data: https://fly.storage.tigris.dev https://*.fly.storage.tigris.dev",
+			},
 		},
 		{
 			name:     "endpoint with trailing slash and path is trimmed to origin",
 			endpoint: "https://fly.storage.tigris.dev/some/path",
-			want:     "img-src 'self' data: https://fly.storage.tigris.dev",
-			notWant:  "/some/path",
+			wantAll: []string{
+				"img-src 'self' data: https://fly.storage.tigris.dev https://*.fly.storage.tigris.dev",
+			},
+			notWant: "/some/path",
 		},
 		{
 			name:     "empty endpoint leaves img-src at the safe default",
 			endpoint: "",
-			want:     "img-src 'self' data:;",
+			wantAll:  []string{"img-src 'self' data:;"},
 		},
 		{
 			name:     "malformed endpoint is ignored rather than breaking CSP",
 			endpoint: "not-a-url",
-			want:     "img-src 'self' data:;",
+			wantAll:  []string{"img-src 'self' data:;"},
 		},
 	}
 
@@ -167,8 +174,10 @@ func TestSecureHeadersWeb_StorageEndpointInImgSrc(t *testing.T) {
 			handler.ServeHTTP(rec, req)
 
 			csp := rec.Header().Get("Content-Security-Policy")
-			if !strings.Contains(csp, tc.want) {
-				t.Errorf("CSP missing %q, got %q", tc.want, csp)
+			for _, want := range tc.wantAll {
+				if !strings.Contains(csp, want) {
+					t.Errorf("CSP missing %q, got %q", want, csp)
+				}
 			}
 			if tc.notWant != "" && strings.Contains(csp, tc.notWant) {
 				t.Errorf("CSP should not contain %q, got %q", tc.notWant, csp)

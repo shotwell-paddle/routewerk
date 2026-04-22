@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/shotwell-paddle/routewerk/internal/config"
 )
 
@@ -62,11 +63,16 @@ func (s *StorageService) Upload(ctx context.Context, routeID, filename, contentT
 
 	key = fmt.Sprintf("photos/%s/%d%s", routeID, time.Now().UnixMilli(), ext)
 
+	// ACL=public-read so the rendered URL works for anonymous <img> requests
+	// without presigning. Bucket default ACL varies between prod and dev
+	// (Tigris buckets are private by default unless a bucket policy is set),
+	// so setting it per-object makes the upload path self-sufficient.
 	_, err = s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(s.bucket),
 		Key:         aws.String(key),
 		Body:        body,
 		ContentType: aws.String(contentType),
+		ACL:         s3types.ObjectCannedACLPublicRead,
 	})
 	if err != nil {
 		return "", "", fmt.Errorf("upload to s3: %w", err)

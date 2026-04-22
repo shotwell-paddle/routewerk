@@ -1,0 +1,8 @@
+-- Intentionally a no-op.
+--
+-- This is a repair migration that backfills objects missing on prod. Rolling
+-- back to version 29 should NOT drop user_route_tags or users.settings_json —
+-- those belong to migrations 13 and 14, whose down migrations are the proper
+-- place to drop them. A destructive down here would wipe real data (tag rows
+-- and settings JSON) on any environment where migration 13/14 had applied
+-- correctly.

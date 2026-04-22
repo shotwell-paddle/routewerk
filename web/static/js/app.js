@@ -677,21 +677,40 @@ function isHEICFile(file) {
 
 // Lazy-load heic2any the first time we need it. Subsequent calls reuse
 // the same promise — one network fetch, one WASM compile.
+//
+// heic2any ships a UMD wrapper that picks where to attach based on the
+// execution context: CommonJS (`module.exports`), AMD (`define`), or a
+// plain global fallback `(r = r || self).heic2any = a()` where `r` is the
+// `this` bound when the wrapper runs. In a classic <script> tag that
+// global ends up on `self`/`window`/`globalThis` — same object in the
+// browser — but we read all three before giving up so this loader is
+// robust to any exotic execution context (e.g. a future move to a
+// module script, or a page served as an iframe with a funky `this`).
 var heic2anyPromise = null;
+function findHEIC2Any() {
+  if (typeof window !== 'undefined' && window.heic2any) return window.heic2any;
+  if (typeof self !== 'undefined' && self.heic2any) return self.heic2any;
+  if (typeof globalThis !== 'undefined' && globalThis.heic2any) return globalThis.heic2any;
+  return null;
+}
 function loadHEIC2Any() {
   if (heic2anyPromise) return heic2anyPromise;
   heic2anyPromise = new Promise(function(resolve, reject) {
-    if (window.heic2any) { resolve(window.heic2any); return; }
+    var existing = findHEIC2Any();
+    if (existing) { resolve(existing); return; }
+
     var s = document.createElement('script');
     s.src = HEIC2ANY_URL;
     s.async = true;
+    // Reset the cached promise on any failure so the next upload attempt
+    // re-fetches instead of re-serving a permanently broken promise.
     s.onload = function() {
-      if (window.heic2any) resolve(window.heic2any);
-      else reject(new Error('heic2any loaded but not available on window'));
+      var lib = findHEIC2Any();
+      if (lib) { resolve(lib); return; }
+      heic2anyPromise = null;
+      reject(new Error('HEIC converter loaded but did not register — please reload the page'));
     };
     s.onerror = function() {
-      // Reset so a retry can try again — e.g. user got online and picks
-      // another HEIC after the first network-dropped load attempt.
       heic2anyPromise = null;
       reject(new Error('Could not load HEIC converter — check your network'));
     };

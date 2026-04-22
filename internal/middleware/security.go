@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,27 +32,54 @@ func SecureHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// SecureHeadersWeb adds security headers tuned for the HTML frontend.
-// CSP allows self-hosted assets plus Google Fonts for the Inter typeface.
-func SecureHeadersWeb(next http.Handler) http.Handler {
+// SecureHeadersWeb returns middleware that sets security headers tuned for the
+// HTML frontend. The base CSP is `default-src 'none'` with per-directive
+// allowances for self-hosted assets. If storageEndpoint is non-empty, its
+// scheme+host is added to img-src so cross-origin blob URLs from S3-compatible
+// object storage (e.g. Tigris) can render avatars and route photos.
+//
+// Only the scheme+host portion is used — any path/query on the endpoint is
+// ignored, matching how the browser matches CSP source expressions.
+func SecureHeadersWeb(storageEndpoint string) func(http.Handler) http.Handler {
+	imgSrc := "img-src 'self' data:"
+	if origin := originFromURL(storageEndpoint); origin != "" {
+		imgSrc = "img-src 'self' data: " + origin
+	}
+
 	csp := strings.Join([]string{
 		"default-src 'none'",
 		"script-src 'self'",
 		"style-src 'self' 'unsafe-inline'",
 		"font-src 'self'",
-		"img-src 'self' data:",
+		imgSrc,
 		"connect-src 'self'",
 		"frame-ancestors 'none'",
 		"base-uri 'self'",
 		"form-action 'self'",
 	}, "; ")
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		commonSecurityHeaders(w)
-		w.Header().Set("Content-Security-Policy", csp)
-		w.Header().Set("Cache-Control", "no-store")
-		next.ServeHTTP(w, r)
-	})
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			commonSecurityHeaders(w)
+			w.Header().Set("Content-Security-Policy", csp)
+			w.Header().Set("Cache-Control", "no-store")
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// originFromURL extracts scheme://host from a URL. Returns "" if the input is
+// empty or not a usable absolute URL. Used to derive CSP source expressions
+// from configured service endpoints without leaking path/query fragments.
+func originFromURL(u string) string {
+	if u == "" {
+		return ""
+	}
+	parsed, err := url.Parse(u)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	return parsed.Scheme + "://" + parsed.Host
 }
 
 // SecureHeadersStatic adds headers for immutable embedded static assets.

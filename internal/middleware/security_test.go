@@ -97,7 +97,7 @@ func TestSecureHeaders_API(t *testing.T) {
 }
 
 func TestSecureHeadersWeb(t *testing.T) {
-	handler := SecureHeadersWeb(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := SecureHeadersWeb("")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -106,11 +106,70 @@ func TestSecureHeadersWeb(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	csp := rec.Header().Get("Content-Security-Policy")
-	// Web CSP should allow self-hosted scripts and fonts
-	for _, fragment := range []string{"script-src 'self'", "style-src 'self' 'unsafe-inline'", "font-src 'self'"} {
+	// Web CSP should allow self-hosted scripts and fonts, and self+data URIs for images.
+	for _, fragment := range []string{
+		"script-src 'self'",
+		"style-src 'self' 'unsafe-inline'",
+		"font-src 'self'",
+		"img-src 'self' data:",
+	} {
 		if !strings.Contains(csp, fragment) {
 			t.Errorf("web CSP missing %q, got %q", fragment, csp)
 		}
+	}
+}
+
+// When a storage endpoint is configured, the CSP's img-src must include its
+// scheme+host so cross-origin photos/avatars served from S3-compatible object
+// storage (Tigris, R2, etc.) can render. We strip path/query from the endpoint
+// because CSP source expressions only match scheme+host+port.
+func TestSecureHeadersWeb_StorageEndpointInImgSrc(t *testing.T) {
+	cases := []struct {
+		name     string
+		endpoint string
+		want     string // fragment that must appear in img-src
+		notWant  string // fragment that must NOT appear (e.g. path noise)
+	}{
+		{
+			name:     "tigris https endpoint",
+			endpoint: "https://fly.storage.tigris.dev",
+			want:     "img-src 'self' data: https://fly.storage.tigris.dev",
+		},
+		{
+			name:     "endpoint with trailing slash and path is trimmed to origin",
+			endpoint: "https://fly.storage.tigris.dev/some/path",
+			want:     "img-src 'self' data: https://fly.storage.tigris.dev",
+			notWant:  "/some/path",
+		},
+		{
+			name:     "empty endpoint leaves img-src at the safe default",
+			endpoint: "",
+			want:     "img-src 'self' data:;",
+		},
+		{
+			name:     "malformed endpoint is ignored rather than breaking CSP",
+			endpoint: "not-a-url",
+			want:     "img-src 'self' data:;",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := SecureHeadersWeb(tc.endpoint)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+			req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			csp := rec.Header().Get("Content-Security-Policy")
+			if !strings.Contains(csp, tc.want) {
+				t.Errorf("CSP missing %q, got %q", tc.want, csp)
+			}
+			if tc.notWant != "" && strings.Contains(csp, tc.notWant) {
+				t.Errorf("CSP should not contain %q, got %q", tc.notWant, csp)
+			}
+		})
 	}
 }
 

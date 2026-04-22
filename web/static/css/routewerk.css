@@ -2312,16 +2312,10 @@ tr:hover td { background: rgba(0,0,0,0.015); }
 
 .photo-item:hover img { transform: scale(1.03); }
 
-.photo-item.photo-expanded {
-  grid-column: 1 / -1;
-  aspect-ratio: auto;
-  max-height: 500px;
-}
-
-.photo-item.photo-expanded img {
-  object-fit: contain;
-  max-height: 500px;
-}
+/* Photos in galleries are clickable — they open in the lightbox.
+   Cursor cue reinforces that without needing hover text. */
+.photo-item img[data-lightbox],
+.session-photo-preview img[data-lightbox] { cursor: zoom-in; }
 
 .photo-overlay {
   position: absolute;
@@ -5333,4 +5327,64 @@ details.review-route-card > summary::marker { display: none; content: ''; }
   .route-picker-actions .btn {
     flex: 1;
   }
+}
+
+/* ── Photo lightbox ──────────────────────────────────────────
+   Fullscreen overlay for expanded route/session photos.
+   Added via JS (see app.js setupLightbox). Overlay and image
+   are both added/removed by the script; the CSS here only
+   handles layout and the fade-in transition. */
+body.lightbox-open { overflow: hidden; }
+
+.lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+  cursor: zoom-out;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.lightbox-overlay.lightbox-visible { opacity: 1; }
+
+.lightbox-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  cursor: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  border-radius: var(--radius-sm);
+  /* Block the overlay's background click from firing when the
+     user taps the image itself — only backdrop taps should close. */
+  pointer-events: auto;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--rw-white);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--duration-fast) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.lightbox-close:hover,
+.lightbox-close:focus-visible {
+  background: rgba(0, 0, 0, 0.85);
+  outline: none;
 }

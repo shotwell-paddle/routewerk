@@ -181,7 +181,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 
 	// Web pages — web-specific CSP, CSRF, rate limiting, gzip, query timeout
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.SecureHeadersWeb)
+		r.Use(middleware.SecureHeadersWeb(cfg.StorageEndpoint))
 		r.Use(middleware.Gzip)
 		r.Use(webLimiter.Limit)
 		r.Use(middleware.RequestTimeout(cfg.QueryTimeout))

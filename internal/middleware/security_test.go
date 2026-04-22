@@ -97,7 +97,7 @@ func TestSecureHeaders_API(t *testing.T) {
 }
 
 func TestSecureHeadersWeb(t *testing.T) {
-	handler := SecureHeadersWeb(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := SecureHeadersWeb("")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -106,11 +106,89 @@ func TestSecureHeadersWeb(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	csp := rec.Header().Get("Content-Security-Policy")
-	// Web CSP should allow self-hosted scripts and fonts
-	for _, fragment := range []string{"script-src 'self'", "style-src 'self' 'unsafe-inline'", "font-src 'self'"} {
+	// Web CSP should allow self-hosted scripts, styles with inline
+	// attributes (for HTMX swap animations), self-hosted fonts, and
+	// self+data URIs for images. Workers are intentionally absent:
+	// nothing in the app spawns a Worker, so worker-src falls through
+	// to default-src 'none' and any future accidental Worker spawn is
+	// blocked loudly instead of silently working.
+	for _, fragment := range []string{
+		"script-src 'self'",
+		"style-src 'self' 'unsafe-inline'",
+		"font-src 'self'",
+		"img-src 'self' data:",
+	} {
 		if !strings.Contains(csp, fragment) {
 			t.Errorf("web CSP missing %q, got %q", fragment, csp)
 		}
+	}
+	// And assert worker-src is genuinely absent — if we ever accidentally
+	// re-add it, we want the test to flag the regression.
+	if strings.Contains(csp, "worker-src") {
+		t.Errorf("web CSP should not contain worker-src, got %q", csp)
+	}
+}
+
+// When a storage endpoint is configured, the CSP's img-src must include its
+// scheme+host so cross-origin photos/avatars served from S3-compatible object
+// storage (Tigris, R2, etc.) can render. We strip path/query from the endpoint
+// because CSP source expressions only match scheme+host+port.
+func TestSecureHeadersWeb_StorageEndpointInImgSrc(t *testing.T) {
+	cases := []struct {
+		name      string
+		endpoint  string
+		wantAll   []string // fragments that must all appear in the CSP
+		notWant   string   // fragment that must NOT appear (e.g. path noise)
+	}{
+		{
+			name:     "tigris https endpoint emits both apex and wildcard subdomain",
+			endpoint: "https://fly.storage.tigris.dev",
+			// Apex matches legacy/path-style URLs; wildcard matches the
+			// virtual-hosted shape (<bucket>.fly.storage.tigris.dev/<key>)
+			// that Tigris requires for anonymous public reads.
+			wantAll: []string{
+				"img-src 'self' data: https://fly.storage.tigris.dev https://*.fly.storage.tigris.dev",
+			},
+		},
+		{
+			name:     "endpoint with trailing slash and path is trimmed to origin",
+			endpoint: "https://fly.storage.tigris.dev/some/path",
+			wantAll: []string{
+				"img-src 'self' data: https://fly.storage.tigris.dev https://*.fly.storage.tigris.dev",
+			},
+			notWant: "/some/path",
+		},
+		{
+			name:     "empty endpoint leaves img-src at the safe default",
+			endpoint: "",
+			wantAll:  []string{"img-src 'self' data:;"},
+		},
+		{
+			name:     "malformed endpoint is ignored rather than breaking CSP",
+			endpoint: "not-a-url",
+			wantAll:  []string{"img-src 'self' data:;"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := SecureHeadersWeb(tc.endpoint)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+			req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			csp := rec.Header().Get("Content-Security-Policy")
+			for _, want := range tc.wantAll {
+				if !strings.Contains(csp, want) {
+					t.Errorf("CSP missing %q, got %q", want, csp)
+				}
+			}
+			if tc.notWant != "" && strings.Contains(csp, tc.notWant) {
+				t.Errorf("CSP should not contain %q, got %q", tc.notWant, csp)
+			}
+		})
 	}
 }
 

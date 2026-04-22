@@ -68,10 +68,10 @@
               <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
             </svg>
             <span>Tap to add photo</span>
-            <input type="file" name="photo" accept="image/jpeg,image/png,image/webp"
-                   style="display: none;"
-                   onchange="if(this.files.length) { this.closest('form').requestSubmit(); }">
+            <input type="file" name="photo" accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                   style="display: none;" data-auto-submit>
           </label>
+          <div class="upload-status" role="status" aria-live="polite"></div>
         </form>
         {{else}}
         <div class="session-photo-disabled">

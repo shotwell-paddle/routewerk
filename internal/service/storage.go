@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -53,7 +54,7 @@ func NewStorageService(cfg *config.Config) *StorageService {
 // keys).
 //
 // The key is built from: photos/{routeID}/{timestamp}{ext}
-func (s *StorageService) Upload(ctx context.Context, routeID, filename, contentType string, body io.Reader) (key, url string, err error) {
+func (s *StorageService) Upload(ctx context.Context, routeID, filename, contentType string, body io.Reader) (key, publicURL string, err error) {
 	// Sanitize the filename — keep only the extension
 	ext := path.Ext(filename)
 	if ext == "" {
@@ -78,9 +79,34 @@ func (s *StorageService) Upload(ctx context.Context, routeID, filename, contentT
 		return "", "", fmt.Errorf("upload to s3: %w", err)
 	}
 
-	// Construct the public URL from the key + current endpoint.
-	url = fmt.Sprintf("%s/%s/%s", strings.TrimRight(s.endpoint, "/"), s.bucket, key)
-	return key, url, nil
+	publicURL, err = s.publicURL(key)
+	if err != nil {
+		return "", "", err
+	}
+	return key, publicURL, nil
+}
+
+// publicURL builds the virtual-hosted-style public URL for a key:
+//
+//	https://<bucket>.<endpoint-host>/<key>
+//
+// We deliberately do NOT reuse the configured endpoint's host verbatim in
+// path-style (https://<endpoint-host>/<bucket>/<key>) because Tigris only
+// serves anonymous <img> GETs on virtual-hosted hostnames — path-style
+// requests to the same object return 403 AccessDenied even for buckets
+// configured as public. Virtual-hosted style works on both Tigris and
+// AWS S3, so this is the portable choice.
+//
+// If the configured endpoint is unparseable (e.g. an IP with no host, or
+// a bare string), we return an error rather than fabricating a URL — the
+// caller's PutObject has already succeeded by this point, so surfacing
+// the config problem loudly is better than persisting a broken URL.
+func (s *StorageService) publicURL(key string) (string, error) {
+	ep, err := url.Parse(strings.TrimRight(s.endpoint, "/"))
+	if err != nil || ep.Scheme == "" || ep.Host == "" {
+		return "", fmt.Errorf("storage endpoint %q is not a usable URL", s.endpoint)
+	}
+	return fmt.Sprintf("%s://%s.%s/%s", ep.Scheme, s.bucket, ep.Host, key), nil
 }
 
 // Delete removes an object from the bucket by its storage key.
@@ -109,10 +135,28 @@ func (s *StorageService) Delete(ctx context.Context, key string) error {
 // This is a transitional helper for legacy route_photos rows inserted before
 // migration 28 (which added the storage_key column). Once those rows have
 // aged out / been backfilled, this helper and its callers can go.
+//
+// Recognizes both URL shapes:
+//   - virtual-hosted (current):  https://<bucket>.<host>/<key>
+//   - path-style    (pre-31):    https://<host>/<bucket>/<key>
+//
+// Migration 31 rewrote all persisted path-style URLs to virtual-hosted, but
+// we keep the path-style branch so a rollback (or a straggler written before
+// the migration ran) still deletes correctly.
 func (s *StorageService) KeyFromURL(photoURL string) string {
-	prefix := fmt.Sprintf("%s/%s/", strings.TrimRight(s.endpoint, "/"), s.bucket)
-	if strings.HasPrefix(photoURL, prefix) {
-		return strings.TrimPrefix(photoURL, prefix)
+	// Path-style: "<endpoint>/<bucket>/<key>"
+	pathPrefix := fmt.Sprintf("%s/%s/", strings.TrimRight(s.endpoint, "/"), s.bucket)
+	if strings.HasPrefix(photoURL, pathPrefix) {
+		return strings.TrimPrefix(photoURL, pathPrefix)
+	}
+
+	// Virtual-hosted: "<scheme>://<bucket>.<host>/<key>"
+	ep, err := url.Parse(strings.TrimRight(s.endpoint, "/"))
+	if err == nil && ep.Scheme != "" && ep.Host != "" {
+		vhPrefix := fmt.Sprintf("%s://%s.%s/", ep.Scheme, s.bucket, ep.Host)
+		if strings.HasPrefix(photoURL, vhPrefix) {
+			return strings.TrimPrefix(photoURL, vhPrefix)
+		}
 	}
 	return ""
 }

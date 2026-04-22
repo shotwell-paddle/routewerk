@@ -202,7 +202,9 @@
 
         {{if .CanUploadPhoto}}
         <form method="POST" action="/routes/{{.Route.ID}}/photos" enctype="multipart/form-data"
-              class="photo-upload-form mt-4">
+              class="photo-upload-form mt-4"
+              hx-post="/routes/{{.Route.ID}}/photos" hx-target="#main-content"
+              hx-encoding="multipart/form-data">
           <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
           <div class="photo-upload-row">
             <label class="photo-upload-btn">

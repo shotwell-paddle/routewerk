@@ -1,6 +1,7 @@
 package webhandler
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -55,8 +56,18 @@ func (h *Handler) PhotoUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse multipart form
+	// Parse multipart form. ErrNotMultipart gets its own message because
+	// "File too large" was actively misleading the last time an upload form
+	// shipped without hx-encoding="multipart/form-data" and hx-boost silently
+	// URL-encoded the body — the request landed here looking like a form
+	// POST with no file at all.
 	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		if errors.Is(err, http.ErrNotMultipart) {
+			slog.Warn("photo upload: request was not multipart",
+				"route_id", routeID, "content_type", r.Header.Get("Content-Type"))
+			http.Error(w, "Upload must be multipart/form-data", http.StatusBadRequest)
+			return
+		}
 		http.Error(w, "File too large (max 5 MB)", http.StatusBadRequest)
 		return
 	}

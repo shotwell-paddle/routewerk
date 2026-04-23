@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/shotwell-paddle/routewerk/internal/jobs"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
@@ -81,19 +82,29 @@ func (s *AuditService) Record(r *http.Request, action, resource, resourceID, org
 		if err != nil {
 			// Marshal failure is non-recoverable for the queue path — log
 			// and fall through to the sync insert so we don't silently
-			// drop the entry.
+			// drop the entry. Use a fresh background context with a short
+			// timeout so the fallback doesn't inherit a cancelled request
+			// context (client disconnect is a common trigger for this
+			// branch; reusing the request context would double-fail).
 			slog.Error("audit: marshal failed, falling back to sync",
 				"error", err, "action", action)
-			s.repo.Log(r.Context(), entry)
+			fallbackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			s.repo.Log(fallbackCtx, entry)
 			return
 		}
 		if _, err := s.queue.Enqueue(r.Context(), jobs.EnqueueParams{
 			JobType: auditJobType,
 			Payload: payload,
 		}); err != nil {
+			// Same rationale as above: the usual reason Enqueue fails is
+			// the request context being cancelled/expired, so the sync
+			// retry needs its own context.
 			slog.Error("audit: enqueue failed, falling back to sync",
 				"error", err, "action", action)
-			s.repo.Log(r.Context(), entry)
+			fallbackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			s.repo.Log(fallbackCtx, entry)
 		}
 		return
 	}

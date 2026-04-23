@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -153,7 +154,11 @@ func main() {
 }
 
 // cleanupExpiredSessions runs every hour to delete expired web sessions.
+// Jittered start avoids every replica firing the cleanup at the exact same
+// wall-clock offset, which matters when multiple instances share a DB pool.
+// See perf audit 2026-04-22 #12.
 func cleanupExpiredSessions(db *pgxpool.Pool) {
+	time.Sleep(time.Duration(rand.Int63n(int64(5 * time.Minute))))
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 	for range ticker.C {
@@ -182,6 +187,9 @@ const cardBatchRetention = 30 * 24 * time.Hour
 // sensitive, and a delayed first run also avoids restart loops racing with
 // a long DELETE on a cold connection pool.
 func cleanupOldCardBatches(db *pgxpool.Pool) {
+	// Jitter the start so replicas don't hit the DB in lockstep. See perf
+	// audit 2026-04-22 #12.
+	time.Sleep(time.Duration(rand.Int63n(int64(30 * time.Minute))))
 	ticker := time.NewTicker(24 * time.Hour)
 	defer ticker.Stop()
 	for range ticker.C {

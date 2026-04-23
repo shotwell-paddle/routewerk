@@ -60,10 +60,35 @@ func StaticPath(path string) string {
 }
 
 // StaticHandler returns an http.Handler for /static/ files.
+//
+// Wraps http.FileServer on the embedded FS with ETag + If-None-Match
+// handling so cache revalidations return 304 instead of re-sending the
+// body. embed.FS has a zero modtime (FileServer emits no Last-Modified),
+// so any shared proxy or private-mode reload currently full-downloads
+// every asset. The hash lookup below reuses the content hashes already
+// computed by initAssetHashes — constant-time per request, no extra I/O.
+// See perf audit 2026-04-22 #6.
 func StaticHandler() http.Handler {
 	sub, err := fs.Sub(web.StaticFS, "static")
 	if err != nil {
 		panic("cannot access static FS: " + err.Error())
 	}
-	return http.StripPrefix("/static/", http.FileServer(http.FS(sub)))
+	initAssetHashes()
+	fileServer := http.StripPrefix("/static/", http.FileServer(http.FS(sub)))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Path lookup key: "/static/css/routewerk.css" → "css/routewerk.css".
+		key := strings.TrimPrefix(r.URL.Path, "/static/")
+		if hash, ok := assetHashes[key]; ok {
+			etag := `"` + hash + `"`
+			w.Header().Set("ETag", etag)
+			// RFC 7232 §3.2: If-None-Match wins over If-Modified-Since.
+			// The incoming value can be a comma-separated list; our hashes
+			// don't contain commas, so simple substring match is enough.
+			if match := r.Header.Get("If-None-Match"); match != "" && strings.Contains(match, etag) {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+		}
+		fileServer.ServeHTTP(w, r)
+	})
 }

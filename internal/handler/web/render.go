@@ -14,6 +14,11 @@ import (
 func (h *Handler) loadTemplates() {
 	h.templates = make(map[string]*template.Template)
 
+	// Warm the asset-hash map now so the first /static/* request and the
+	// first templated `{{staticPath ...}}` call don't pay the one-time FS
+	// walk cost. See perf audit 2026-04-22 #10.
+	initAssetHashes()
+
 	tFS, err := fs.Sub(web.TemplateFS, "templates")
 	if err != nil {
 		panic("cannot access template FS: " + err.Error())

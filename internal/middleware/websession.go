@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -111,6 +112,10 @@ func (sm *SessionManager) ClearSessionCookie(w http.ResponseWriter) {
 
 // RequireSession is middleware that redirects unauthenticated users to /login.
 // On success it populates the context with the session, user, and membership info.
+//
+// Uses the single-query WebSessionRepo.GetAuthContextByTokenHash path — one
+// pool acquire instead of the three it previously chained (session, user,
+// memberships). See perf audit 2026-04-22 finding #1.
 func (sm *SessionManager) RequireSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie(SessionCookieName)
@@ -121,18 +126,31 @@ func (sm *SessionManager) RequireSession(next http.Handler) http.Handler {
 
 		tokenHash := HashSessionToken(cookie.Value)
 
-		session, err := sm.sessions.GetByTokenHash(r.Context(), tokenHash)
+		auth, err := sm.sessions.GetAuthContextByTokenHash(r.Context(), tokenHash)
 		if err != nil {
+			// On pool-exhaustion / query-deadline (S4), surface 503 so the
+			// LB can back off instead of bouncing the user through the
+			// login loop where they'll just retry at full speed.
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+				slog.Error("session lookup timeout", "error", err)
+				http.Error(w, "Service temporarily unavailable", http.StatusServiceUnavailable)
+				return
+			}
 			slog.Error("session lookup failed", "error", err)
 			sm.redirectToLogin(w, r)
 			return
 		}
-		if session == nil {
-			// Invalid or expired session — clear the stale cookie
+		if auth == nil {
+			// Invalid, expired, revoked, or user soft-deleted — clear the
+			// stale cookie so the client doesn't keep re-presenting it.
 			sm.ClearSessionCookie(w)
 			sm.redirectToLogin(w, r)
 			return
 		}
+
+		session := auth.Session
+		user := auth.User
+		memberships := auth.Memberships
 
 		// Touch last_seen_at periodically (not on every request)
 		if time.Since(session.LastSeenAt) > touchInterval {
@@ -143,21 +161,6 @@ func (sm *SessionManager) RequireSession(next http.Handler) http.Handler {
 					slog.Error("failed to touch session", "session_id", id, "error", err)
 				}
 			}(session.ID)
-		}
-
-		// Load the user
-		user, err := sm.users.GetByID(r.Context(), session.UserID)
-		if err != nil || user == nil {
-			slog.Error("session user not found", "user_id", session.UserID, "error", err)
-			sm.ClearSessionCookie(w)
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
-			return
-		}
-
-		// Load the user's highest role for the session's location (or any membership)
-		memberships, err := sm.users.GetMemberships(r.Context(), user.ID)
-		if err != nil {
-			slog.Error("failed to load memberships", "user_id", user.ID, "error", err)
 		}
 
 		role := bestRole(memberships, session.LocationID)
@@ -195,6 +198,9 @@ func (sm *SessionManager) redirectToLogin(w http.ResponseWriter, r *http.Request
 // OptionalSession is like RequireSession but does not redirect — it just
 // populates context if a valid session exists. Useful for public pages that
 // show different content for logged-in vs anonymous users.
+//
+// Uses the same single-query auth-context path as RequireSession so public
+// pages with a logged-in user don't re-incur the serial-queries penalty.
 func (sm *SessionManager) OptionalSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie(SessionCookieName)
@@ -204,20 +210,15 @@ func (sm *SessionManager) OptionalSession(next http.Handler) http.Handler {
 		}
 
 		tokenHash := HashSessionToken(cookie.Value)
-		session, err := sm.sessions.GetByTokenHash(r.Context(), tokenHash)
-		if err != nil || session == nil {
+		auth, err := sm.sessions.GetAuthContextByTokenHash(r.Context(), tokenHash)
+		if err != nil || auth == nil {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		user, err := sm.users.GetByID(r.Context(), session.UserID)
-		if err != nil || user == nil {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		memberships, _ := sm.users.GetMemberships(r.Context(), user.ID)
-		role := bestRole(memberships, session.LocationID)
+		session := auth.Session
+		user := auth.User
+		role := bestRole(auth.Memberships, session.LocationID)
 		effectiveRole := applyViewAsOverride(r, role)
 
 		ctx := r.Context()

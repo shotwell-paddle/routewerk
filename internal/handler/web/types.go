@@ -31,8 +31,8 @@ type TemplateData struct {
 	UserLocations        []repository.UserLocationItem
 	HasMultipleLocations bool
 
-	// Notifications
-	UnreadNotifCount int64
+	// Notifications — count is loaded asynchronously via
+	// /notifications/badge, not rendered inline on the server.
 
 	// View-as-role switcher (for admins/managers/head setters)
 	RealRole      string // the user's actual role before any override

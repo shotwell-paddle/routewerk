@@ -341,16 +341,11 @@ func (r *UserRepo) SearchMembersByLocation(ctx context.Context, locationID strin
 		argIdx++
 	}
 
-	// Count query
-	countQuery := baseCTE + " SELECT COUNT(*) FROM ranked WHERE 1=1" + where
-	var total int
-	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
-		return MemberSearchResult{}, fmt.Errorf("count members: %w", err)
-	}
-
-	// Data query
+	// Single query: rows + window count. Replaces the prior separate
+	// COUNT + SELECT over the same CTE. See perf audit 2026-04-22 #2.
 	dataQuery := baseCTE + fmt.Sprintf(
-		" SELECT membership_id, user_id, display_name, email, role FROM ranked WHERE 1=1%s ORDER BY role_rank, display_name LIMIT $%d OFFSET $%d",
+		" SELECT membership_id, user_id, display_name, email, role, COUNT(*) OVER () AS total_count"+
+			" FROM ranked WHERE 1=1%s ORDER BY role_rank, display_name LIMIT $%d OFFSET $%d",
 		where, argIdx, argIdx+1,
 	)
 	args = append(args, p.Limit, p.Offset)
@@ -361,10 +356,13 @@ func (r *UserRepo) SearchMembersByLocation(ctx context.Context, locationID strin
 	}
 	defer rows.Close()
 
-	var members []LocationMember
+	var (
+		members []LocationMember
+		total   int
+	)
 	for rows.Next() {
 		var m LocationMember
-		if err := rows.Scan(&m.MembershipID, &m.UserID, &m.DisplayName, &m.Email, &m.Role); err != nil {
+		if err := rows.Scan(&m.MembershipID, &m.UserID, &m.DisplayName, &m.Email, &m.Role, &total); err != nil {
 			return MemberSearchResult{}, fmt.Errorf("scan member: %w", err)
 		}
 		members = append(members, m)
@@ -416,14 +414,10 @@ func (r *UserRepo) SearchMembersByOrg(ctx context.Context, orgID string, p Membe
 		argIdx++
 	}
 
-	countQuery := baseCTE + " SELECT COUNT(*) FROM ranked WHERE 1=1" + where
-	var total int
-	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
-		return MemberSearchResult{}, fmt.Errorf("count org members: %w", err)
-	}
-
+	// Single query: rows + window count. See perf audit 2026-04-22 #2.
 	dataQuery := baseCTE + fmt.Sprintf(
-		" SELECT membership_id, user_id, display_name, email, role FROM ranked WHERE 1=1%s ORDER BY role_rank, display_name LIMIT $%d OFFSET $%d",
+		" SELECT membership_id, user_id, display_name, email, role, COUNT(*) OVER () AS total_count"+
+			" FROM ranked WHERE 1=1%s ORDER BY role_rank, display_name LIMIT $%d OFFSET $%d",
 		where, argIdx, argIdx+1,
 	)
 	args = append(args, p.Limit, p.Offset)
@@ -434,10 +428,13 @@ func (r *UserRepo) SearchMembersByOrg(ctx context.Context, orgID string, p Membe
 	}
 	defer rows.Close()
 
-	var members []LocationMember
+	var (
+		members []LocationMember
+		total   int
+	)
 	for rows.Next() {
 		var m LocationMember
-		if err := rows.Scan(&m.MembershipID, &m.UserID, &m.DisplayName, &m.Email, &m.Role); err != nil {
+		if err := rows.Scan(&m.MembershipID, &m.UserID, &m.DisplayName, &m.Email, &m.Role, &total); err != nil {
 			return MemberSearchResult{}, fmt.Errorf("scan org member: %w", err)
 		}
 		members = append(members, m)

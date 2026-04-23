@@ -53,6 +53,103 @@ func (r *WebSessionRepo) GetByTokenHash(ctx context.Context, tokenHash string) (
 	return s, nil
 }
 
+// AuthContext bundles the session + user + memberships loaded in one
+// round-trip by GetAuthContextByTokenHash. It's the hot-path struct for
+// RequireSession middleware: three dependent table reads collapsed into a
+// single pool acquire.
+type AuthContext struct {
+	Session     *model.WebSession
+	User        *model.User
+	Memberships []model.UserMembership
+}
+
+// GetAuthContextByTokenHash resolves the full web-auth context (session,
+// user, and all non-deleted memberships) in a single query.
+//
+// Before this method existed, the middleware fired three serial queries
+// against a pool of 5 connections on Fly shared PG — see the 2026-04-22
+// perf audit, finding #1. The row-expansion on memberships is 1-to-N per
+// session, but sessions are short-lived and users rarely belong to more
+// than a handful of locations, so the expansion is bounded.
+//
+// Returns (nil, nil) when the session is missing, expired, revoked, or
+// the user has been soft-deleted. Callers should treat that as a signed-out
+// state.
+func (r *WebSessionRepo) GetAuthContextByTokenHash(ctx context.Context, tokenHash string) (*AuthContext, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT
+			s.id, s.user_id, s.location_id, s.token_hash, s.ip_address::text, s.user_agent,
+			s.created_at, s.expires_at, s.last_seen_at,
+			u.email, u.password_hash, u.display_name, u.avatar_url, u.bio, u.is_app_admin,
+			u.created_at, u.updated_at,
+			m.id, m.org_id, m.location_id, m.role, m.specialties, m.created_at, m.updated_at
+		FROM web_sessions s
+		JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
+		LEFT JOIN user_memberships m
+			ON m.user_id = u.id AND m.deleted_at IS NULL
+		WHERE s.token_hash = $1 AND s.expires_at > NOW() AND s.revoked_at IS NULL
+		ORDER BY m.created_at NULLS FIRST`,
+		tokenHash,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var auth *AuthContext
+	for rows.Next() {
+		var (
+			s             model.WebSession
+			u             model.User
+			mID           *string
+			mOrgID        *string
+			mLocationID   *string
+			mRole         *string
+			mSpecialties  []string
+			mCreatedAt    *time.Time
+			mUpdatedAt    *time.Time
+		)
+
+		if err := rows.Scan(
+			&s.ID, &s.UserID, &s.LocationID, &s.TokenHash, &s.IPAddress, &s.UserAgent,
+			&s.CreatedAt, &s.ExpiresAt, &s.LastSeenAt,
+			&u.Email, &u.PasswordHash, &u.DisplayName, &u.AvatarURL, &u.Bio, &u.IsAppAdmin,
+			&u.CreatedAt, &u.UpdatedAt,
+			&mID, &mOrgID, &mLocationID, &mRole, &mSpecialties, &mCreatedAt, &mUpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+
+		if auth == nil {
+			// First row — materialise the session + user. Subsequent rows
+			// will only contribute membership rows (the LEFT JOIN fans out).
+			u.ID = s.UserID
+			sessCopy := s
+			userCopy := u
+			auth = &AuthContext{Session: &sessCopy, User: &userCopy}
+		}
+
+		// LEFT JOIN may yield a single row with NULL membership columns when
+		// the user has no memberships yet. Skip those.
+		if mID != nil && mOrgID != nil && mRole != nil && mCreatedAt != nil && mUpdatedAt != nil {
+			auth.Memberships = append(auth.Memberships, model.UserMembership{
+				ID:          *mID,
+				UserID:      s.UserID,
+				OrgID:       *mOrgID,
+				LocationID:  mLocationID,
+				Role:        *mRole,
+				Specialties: mSpecialties,
+				CreatedAt:   *mCreatedAt,
+				UpdatedAt:   *mUpdatedAt,
+			})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return auth, nil
+}
+
 // TouchLastSeen bumps the last_seen_at timestamp so we can track active sessions.
 func (r *WebSessionRepo) TouchLastSeen(ctx context.Context, sessionID string) error {
 	_, err := r.db.Exec(ctx,

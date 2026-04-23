@@ -89,9 +89,12 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	analyticsRepo := repository.NewAnalyticsRepo(db)
 	webSessionRepo := repository.NewWebSessionRepo(db)
 
-	// Audit
+	// Audit — queue-backed so state-changing requests don't wait on the
+	// audit_logs insert. Queue is the same Postgres DB, so enqueue + commit
+	// gives the same durability guarantee as an inline insert. See S6 in
+	// the 2026-04-22 perf audit.
 	auditRepo := repository.NewAuditRepo(db)
-	auditService := service.NewAuditService(auditRepo)
+	auditService := service.NewAuditService(auditRepo, deps.JobQueue)
 
 	// Services
 	authService := service.NewAuthService(userRepo, loginAttemptRepo, cfg)
@@ -179,12 +182,17 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 		r.Handle("/static/*", webhandler.StaticHandler())
 	})
 
-	// Web pages — web-specific CSP, CSRF, rate limiting, gzip, query timeout
+	// Web pages — web-specific CSP, CSRF, rate limiting, gzip, query timeout.
+	// 10 MB body cap is generous enough for our two multipart upload paths
+	// (avatar + route photos — 5 MB file + form overhead) while still
+	// preventing a slow-streaming caller from pinning a goroutine with
+	// megabytes of form keys. See S3 in the 2026-04-22 perf audit.
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.SecureHeadersWeb(cfg.StorageEndpoint))
 		r.Use(middleware.Gzip)
 		r.Use(webLimiter.Limit)
 		r.Use(middleware.RequestTimeout(cfg.QueryTimeout))
+		r.Use(middleware.LimitBody(10 << 20)) // 10 MB
 		r.Use(csrf.Protect)
 
 		// Public auth routes (no session required, stricter rate limit)
@@ -246,6 +254,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 
 			// Notifications
 			r.Get("/notifications", webHandler.Notifications)
+			r.Get("/notifications/badge", webHandler.NotificationBadge)
 			r.Post("/notifications/read-all", webHandler.NotificationMarkAllRead)
 			r.Post("/notifications/{notifID}/read", webHandler.NotificationMarkRead)
 
@@ -385,10 +394,15 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 		})
 	})
 
-	// API v1 — JSON API with restrictive CSP and query timeout
+	// API v1 — JSON API with restrictive CSP and query timeout.
+	// 1 MB body cap: the API only accepts JSON payloads and never needs
+	// multipart. Any future upload endpoint should mount under /web or
+	// override this limit in its own handler. See S3 in the 2026-04-22
+	// perf audit.
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(middleware.SecureHeaders)
 		r.Use(middleware.RequestTimeout(cfg.QueryTimeout))
+		r.Use(middleware.LimitBody(1 << 20)) // 1 MB
 		// Public — rate-limited auth endpoints
 		r.Group(func(r chi.Router) {
 			r.Use(authLimiter.Limit)

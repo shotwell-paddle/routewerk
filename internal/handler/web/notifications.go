@@ -1,6 +1,7 @@
 package webhandler
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -8,6 +9,41 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 )
+
+// NotificationBadge returns just the sidebar unread-count badge.
+// GET /notifications/badge
+//
+// Polled by HTMX off the sidebar so the unread count doesn't sit on the
+// authenticated page-load critical path — see perf audit 2026-04-22
+// finding #1. Fast indexed lookup against
+// idx_notifications_user_unread; returns an empty body when the count
+// is zero so HTMX just clears the badge element.
+func (h *Handler) NotificationBadge(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	user := middleware.GetWebUser(ctx)
+	if user == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	count, err := h.notifRepo.UnreadCount(ctx, user.ID)
+	if err != nil {
+		slog.Error("notification badge: unread count failed", "user_id", user.ID, "error", err)
+		// Soft-fail: returning no content is better than a broken nav.
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Short client cache so rapid navigation doesn't re-hit; HTMX poll
+	// still refreshes every ~60s via hx-trigger.
+	w.Header().Set("Cache-Control", "private, max-age=10")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if count > 0 {
+		if _, err := fmt.Fprintf(w, `<span class="notif-badge">%d</span>`, count); err != nil {
+			slog.Error("notification badge write failed", "error", err)
+		}
+	}
+}
 
 // Notifications renders the notification list page.
 // GET /notifications

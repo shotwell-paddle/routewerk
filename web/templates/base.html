@@ -6,7 +6,10 @@
   <title>{{block "title" .}}Routewerk{{end}}</title>
   <link rel="preload" href="/static/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{{staticPath "css/routewerk.css"}}">
-  <script src="{{staticPath "js/htmx.min.js"}}"></script>
+  {{/* defer: HTMX reads hx-* attributes after DOMContentLoaded, so deferring
+       the script lets the parser finish the document before executing it.
+       Keeps htmx.min.js off the critical render path. See perf audit 2026-04-22 #9. */}}
+  <script defer src="{{staticPath "js/htmx.min.js"}}"></script>
 </head>
 <body hx-boost="true" hx-target="#main-content">
   <div class="rw-loading-bar" id="rw-loading-bar"></div>
@@ -26,6 +29,6 @@
       {{block "content" .}}{{end}}
     </main>
   </div>
-  <script src="{{staticPath "js/app.js"}}"></script>
+  <script defer src="{{staticPath "js/app.js"}}"></script>
 </body>
 </html>

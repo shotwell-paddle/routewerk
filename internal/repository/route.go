@@ -124,9 +124,17 @@ func (r *RouteRepo) CreateWithTags(ctx context.Context, rt *model.Route, tagIDs 
 		return fmt.Errorf("create route: %w", err)
 	}
 
-	for _, tagID := range tagIDs {
-		if _, err := tx.Exec(ctx, "INSERT INTO route_tags (route_id, tag_id) VALUES ($1, $2)", rt.ID, tagID); err != nil {
-			return fmt.Errorf("insert route tag: %w", err)
+	// Bulk-insert tags in a single round-trip via UNNEST instead of a
+	// per-tag tx.Exec loop. See perf audit 2026-04-22 #3. Safe under
+	// ON CONFLICT DO NOTHING in case the caller passed duplicates.
+	if len(tagIDs) > 0 {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO route_tags (route_id, tag_id)
+			 SELECT $1, UNNEST($2::uuid[])
+			 ON CONFLICT DO NOTHING`,
+			rt.ID, tagIDs,
+		); err != nil {
+			return fmt.Errorf("insert route tags: %w", err)
 		}
 	}
 
@@ -226,14 +234,9 @@ func (f RouteFilter) buildWhere() *whereBuilder {
 func (r *RouteRepo) List(ctx context.Context, f RouteFilter) ([]model.Route, int, error) {
 	wb := f.buildWhere()
 
-	// Count total
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM routes r WHERE %s", wb.clause())
-	var total int
-	if err := r.db.QueryRow(ctx, countQuery, wb.args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count routes: %w", err)
-	}
-
-	// Fetch routes
+	// Single query: rows + total (via window COUNT). Replaces the prior
+	// COUNT + SELECT split, halving round-trips on the listing hot path.
+	// See perf audit 2026-04-22 #2.
 	limit := f.Limit
 	if limit <= 0 {
 		limit = 50
@@ -249,7 +252,8 @@ func (r *RouteRepo) List(ctx context.Context, f RouteFilter) ([]model.Route, int
 			r.grading_system, r.grade, r.grade_low, r.grade_high, r.circuit_color,
 			r.name, r.color, r.description, r.photo_url,
 			r.date_set, r.projected_strip_date, r.date_stripped,
-			r.avg_rating, r.rating_count, r.ascent_count, r.attempt_count, r.created_at, r.updated_at
+			r.avg_rating, r.rating_count, r.ascent_count, r.attempt_count, r.created_at, r.updated_at,
+			COUNT(*) OVER () AS total_count
 		FROM routes r
 		WHERE %s
 		ORDER BY r.date_set DESC, r.created_at DESC
@@ -264,7 +268,10 @@ func (r *RouteRepo) List(ctx context.Context, f RouteFilter) ([]model.Route, int
 	}
 	defer rows.Close()
 
-	var routes []model.Route
+	var (
+		routes []model.Route
+		total  int
+	)
 	for rows.Next() {
 		var rt model.Route
 		if err := rows.Scan(
@@ -273,11 +280,14 @@ func (r *RouteRepo) List(ctx context.Context, f RouteFilter) ([]model.Route, int
 			&rt.Name, &rt.Color, &rt.Description, &rt.PhotoURL,
 			&rt.DateSet, &rt.ProjectedStripDate, &rt.DateStripped,
 			&rt.AvgRating, &rt.RatingCount, &rt.AscentCount, &rt.AttemptCount, &rt.CreatedAt, &rt.UpdatedAt,
+			&total,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan route: %w", err)
 		}
 		routes = append(routes, rt)
 	}
+	// Empty page with filter matching nothing — we still need the total,
+	// which is 0 when the window-count row-set is empty.
 	return routes, total, rows.Err()
 }
 
@@ -290,15 +300,15 @@ type RouteWithDetails struct {
 
 // ListWithDetails returns routes joined with wall and setter info.
 // Used by the web frontend which needs display names alongside route data.
+//
+// Uses COUNT(*) OVER () to fold the total count into the same scan —
+// one round-trip for the listing hot path instead of two. Note: when a
+// page lands past the end of the filtered set (OFFSET > total) the query
+// returns zero rows and total=0; callers that need the true count to draw
+// pagination past the end should detect offset>0 && len(rows)==0 and
+// re-query. In practice our UIs don't expose that case.
 func (r *RouteRepo) ListWithDetails(ctx context.Context, f RouteFilter) ([]RouteWithDetails, int, error) {
 	wb := f.buildWhere()
-
-	// Count total
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM routes r WHERE %s", wb.clause())
-	var total int
-	if err := r.db.QueryRow(ctx, countQuery, wb.args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count routes: %w", err)
-	}
 
 	limit := f.Limit
 	if limit <= 0 {
@@ -317,7 +327,8 @@ func (r *RouteRepo) ListWithDetails(ctx context.Context, f RouteFilter) ([]Route
 			r.date_set, r.projected_strip_date, r.date_stripped,
 			r.avg_rating, r.rating_count, r.ascent_count, r.attempt_count, r.created_at, r.updated_at,
 			COALESCE(w.name, '') as wall_name,
-			COALESCE(u.display_name, 'Unknown') as setter_name
+			COALESCE(u.display_name, 'Unknown') as setter_name,
+			COUNT(*) OVER () AS total_count
 		FROM routes r
 		LEFT JOIN walls w ON w.id = r.wall_id
 		LEFT JOIN users u ON u.id = r.setter_id
@@ -334,7 +345,10 @@ func (r *RouteRepo) ListWithDetails(ctx context.Context, f RouteFilter) ([]Route
 	}
 	defer rows.Close()
 
-	var routes []RouteWithDetails
+	var (
+		routes []RouteWithDetails
+		total  int
+	)
 	for rows.Next() {
 		var rd RouteWithDetails
 		if err := rows.Scan(
@@ -344,6 +358,7 @@ func (r *RouteRepo) ListWithDetails(ctx context.Context, f RouteFilter) ([]Route
 			&rd.DateSet, &rd.ProjectedStripDate, &rd.DateStripped,
 			&rd.AvgRating, &rd.RatingCount, &rd.AscentCount, &rd.AttemptCount, &rd.CreatedAt, &rd.UpdatedAt,
 			&rd.WallName, &rd.SetterName,
+			&total,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan route detail: %w", err)
 		}
@@ -492,10 +507,17 @@ func (r *RouteRepo) SetTags(ctx context.Context, routeID string, tagIDs []string
 		return fmt.Errorf("clear route tags: %w", err)
 	}
 
-	// Insert new tags
-	for _, tagID := range tagIDs {
-		if _, err := tx.Exec(ctx, "INSERT INTO route_tags (route_id, tag_id) VALUES ($1, $2)", routeID, tagID); err != nil {
-			return fmt.Errorf("insert route tag: %w", err)
+	// Bulk-insert the new tag set in one round-trip via UNNEST — replaces
+	// the per-tag tx.Exec loop that could easily turn a 5-tag save into 5
+	// wait-on-network queries while holding a tx. See perf audit #3.
+	if len(tagIDs) > 0 {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO route_tags (route_id, tag_id)
+			 SELECT $1, UNNEST($2::uuid[])
+			 ON CONFLICT DO NOTHING`,
+			routeID, tagIDs,
+		); err != nil {
+			return fmt.Errorf("insert route tags: %w", err)
 		}
 	}
 

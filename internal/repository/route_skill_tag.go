@@ -33,12 +33,17 @@ func (r *RouteSkillTagRepo) SetTags(ctx context.Context, routeID string, tags []
 		return fmt.Errorf("clear skill tags: %w", err)
 	}
 
-	for _, tag := range tags {
+	// Bulk-insert via UNNEST, one round-trip for the whole set. See perf
+	// audit 2026-04-22 #3. No ON CONFLICT needed here — we just cleared
+	// the row set above and skill tags have no unique constraint beyond
+	// (route_id, tag) which we respect by construction.
+	if len(tags) > 0 {
 		if _, err := tx.Exec(ctx,
-			`INSERT INTO route_skill_tags (route_id, tag) VALUES ($1, $2)`,
-			routeID, tag,
+			`INSERT INTO route_skill_tags (route_id, tag)
+			 SELECT $1, UNNEST($2::text[])`,
+			routeID, tags,
 		); err != nil {
-			return fmt.Errorf("insert skill tag %q: %w", tag, err)
+			return fmt.Errorf("insert skill tags: %w", err)
 		}
 	}
 

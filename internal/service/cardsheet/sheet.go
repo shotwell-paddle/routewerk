@@ -52,23 +52,40 @@ const (
 
 // Card grid. Cards are placed landscape-on-page; a 2×4 grid of 88.9×50.8mm
 // cards fits inside the Cameo's cut window with room for reg marks.
+//
+// cardGutterMM is the sheet space between any two adjacent cards. It exists
+// so each card has room on every inner edge to paint its full bleed without
+// spilling into the neighbour's design area. Sized at 2 × defaultBleedMM so
+// both neighbours can bleed their maximum default into opposite halves of
+// the gutter. If you ever raise defaultBleedMM, raise this too — otherwise
+// adjacent bleeds overlap and overwrite each other at the boundary.
+// cfg.Bleed is clamped to cardGutterMM / 2 at render time for the same
+// reason.
 const (
-	cardWMM      = 88.9 // 3.5" long axis — on the sheet this is horizontal
-	cardHMM      = 50.8 // 2.0" short axis
-	gridCols     = 2
-	gridRows     = 4
-	cardsPerPage = gridCols * gridRows
-	gridXMM      = 19.05 // leaves ~9mm clear zone right of the top-left L
-	gridYMM      = 45.6  // leaves ~9mm clear zone below the top-left L
+	cardWMM       = 88.9 // 3.5" long axis — on the sheet this is horizontal
+	cardHMM       = 50.8 // 2.0" short axis
+	cardGutterMM  = 4.0  // space between adjacent cards, = 2 × defaultBleedMM
+	gridCols      = 2
+	gridRows      = 4
+	cardsPerPage  = gridCols * gridRows
+	gridXMM       = 19.05 // leaves ~9mm clear zone right of the top-left L
+	gridYMM       = 45.6  // leaves ~9mm clear zone below the top-left L
+	cardPitchXMM  = cardWMM + cardGutterMM
+	cardPitchYMM  = cardHMM + cardGutterMM
 )
 
-// Cut-path stroke. Must be pure RGB red (255,0,0) — Silhouette Studio's
-// "Cut by Color" matches exactly on that value. The stroke is a hairline so
-// it doesn't show on the printed card.
+// Cut-path stroke. Must be pure RGB magenta (255,0,255) — Silhouette
+// Studio's "Cut by Color" matches exactly on that value. We used to ship
+// pure red (255,0,0) but that collides with red route colors: Studio's
+// color-match lassoes the filled red card face along with the hairline
+// and tries to cut its outline too. Magenta is the industry print-and-
+// cut convention for cut paths precisely because no real design asset
+// uses pure 255,0,255 as a fill. The stroke is a hairline so it doesn't
+// show on the printed card regardless of color choice.
 const (
 	cutR        = 255
 	cutG        = 0
-	cutB        = 0
+	cutB        = 255
 	cutStrokePT = 0.1
 
 	// cardCornerRadiusMM rounds the four corners of every card's cut path.
@@ -83,7 +100,16 @@ const (
 	cardCornerRadiusMM = 4.0
 )
 
-const defaultBleedMM = 0.5
+// defaultBleedMM is the distance (mm) the card's colored zone extends past
+// every outer edge of the card (in portrait: top/left/right — the portrait
+// bottom is the internal colour/info split, not a cut line). 2mm
+// comfortably covers typical Silhouette Cameo registration drift (~1mm)
+// with margin, so a slightly-off cut still trims coloured paper instead
+// of exposing white. The sheet places a cardGutterMM gap between adjacent
+// cards so each card owns its bleed zone and doesn't spill into the
+// neighbour's design — cfg.Bleed is clamped to cardGutterMM / 2 for the
+// same reason.
+const defaultBleedMM = 2.0
 
 // SheetConfig controls sheet rendering. All fields are optional and the zero
 // value is a valid Silhouette Type 2 sheet with default bleed.
@@ -134,6 +160,13 @@ func (c *Composer) Render(w io.Writer, data []service.CardData, cfg SheetConfig)
 	if cfg.Bleed == 0 {
 		cfg.Bleed = defaultBleedMM
 	}
+	// Clamp bleed to half the gutter so two adjacent cards can paint their
+	// full bleed into opposite halves of the gap without overlapping. A
+	// bleed larger than cardGutterMM/2 would spill into the neighbour's
+	// design area and overwrite it.
+	if maxBleed := cardGutterMM / 2; cfg.Bleed > maxBleed {
+		cfg.Bleed = maxBleed
+	}
 
 	pdf := gofpdf.NewCustom(&gofpdf.InitType{
 		UnitStr: "mm",
@@ -162,13 +195,17 @@ func (c *Composer) Render(w io.Writer, data []service.CardData, cfg SheetConfig)
 			slot := i - start
 			row := slot / gridCols
 			col := slot % gridCols
-			x := gridXMM + float64(col)*cardWMM
-			y := gridYMM + float64(row)*cardHMM
+			x := gridXMM + float64(col)*cardPitchXMM
+			y := gridYMM + float64(row)*cardPitchYMM
 
 			// Native vector draw — no PNG rasterization. Text stays sharp at
 			// whatever DPI the target printer runs at. uniqueKey must be unique
 			// within the whole PDF since it names the per-card QR image.
-			drawCardVector(pdf, data[i], x, y, cardWMM, cardHMM, fmt.Sprintf("c%d", i))
+			// Bleed extends the colored zone past the card edge so an imperfect
+			// cut still trims coloured paper. The cut path (drawn next) still
+			// runs along the intended card edge — the bleed is invisible to
+			// the cutter.
+			drawCardVector(pdf, data[i], x, y, cardWMM, cardHMM, cfg.Bleed, fmt.Sprintf("c%d", i))
 			drawCutPath(pdf, x, y)
 		}
 	}

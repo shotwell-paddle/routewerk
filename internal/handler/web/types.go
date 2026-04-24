@@ -168,6 +168,7 @@ type PageData struct {
 	GymForm         GymFormValues
 	IsManager       bool
 	SettingsSuccess bool
+	PalettePresets  []model.PalettePreset // available palette presets for the gym settings UI
 
 	// Progressions — admin
 	QuestDomains     []model.QuestDomain

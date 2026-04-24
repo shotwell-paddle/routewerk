@@ -37,7 +37,14 @@ const (
 	sheetCardW = 600  // px — 2" @ 300 DPI
 	sheetCardH = 1050 // px — 3.5" @ 300 DPI
 
-	sheetCardSplitFrac = 0.55 // top color zone occupies 55% of height
+	// Pixel-accurate mirrors of the PDF path's mm-based constants so the
+	// PNG sheet face stays visually identical to what the production PDF
+	// renderer draws. 1 mm = 1050/88.9 ≈ 11.811 px at 300 DPI.
+	// Must stay in sync with colorZoneH / bottomStripeH / identifierZoneH
+	// in internal/service/cardsheet/card_draw.go.
+	sheetCardColorBarPx   = 260 // 22mm top colour bar
+	sheetCardStripePx     = 35  // 3mm bottom colour stripe
+	sheetCardIdentifierPx = 236 // 20mm identifier band inside the white zone
 
 	// sheetCardDPI is the output density we render for. Must match the
 	// physical print resolution to keep hinting aligned to the pixel grid;
@@ -58,60 +65,52 @@ func (g *CardGenerator) GenerateSheetCardPNG(data CardData) ([]byte, error) {
 	dc.Clear()
 
 	routeColor := parseHexColor(data.Route.Color)
-	onColor := contrastColor(routeColor)
 	isCircuit := data.IsCircuit()
 
-	splitY := float64(sheetCardH) * sheetCardSplitFrac
+	// Flipped layout — matches the PDF path. Colour sits at the bottom
+	// of the card so it's always visible when the tag is tucked under
+	// a start hold. Top of the card is plain white (tuck zone).
 
-	// ---- Top color zone ----
+	// ---- Bottom colour bar ----
 	dc.SetColor(routeColor)
-	dc.DrawRectangle(0, 0, float64(sheetCardW), splitY)
+	dc.DrawRectangle(0, float64(sheetCardH-sheetCardColorBarPx),
+		float64(sheetCardW), float64(sheetCardColorBarPx))
 	dc.Fill()
 
-	// Primary identifier: "V5" / "5.11+" for graded routes,
-	// or the color name for circuit routes. Sized in points so the
-	// physical grade is roughly 3/4" tall regardless of the string length.
-	identifier := data.Route.Grade
-	startPt := 56.0
+	// ---- Primary identifier INSIDE the colour bar ----
+	// Graded routes show the grade ("V5", "5.11+"). Circuits show the
+	// colour name ("RED", "YELLOW"). Either way, pure black or pure
+	// white based on background luminance — hard contrast on every
+	// palette swatch (canary yellow, off-white, red, black).
+	var label string
+	var startPt float64
 	if isCircuit {
-		identifier = strings.ToUpper(data.ColorLabel())
-		// "PURPLE" is wider than "V5" — start smaller so fitPrintFont has
-		// somewhere to go instead of immediately capping at startPt.
-		startPt = 42.0
+		label = strings.ToUpper(data.ColorLabel())
+		startPt = 56.0
+	} else {
+		label = data.Route.Grade
+		startPt = 72.0
 	}
-	dc.SetColor(onColor)
-	fitPrintFont(dc, identifier, fontBold, float64(sheetCardW)-80, startPt, 18)
-	iw, ih := dc.MeasureString(identifier)
-	dc.DrawString(identifier, (float64(sheetCardW)-iw)/2, (splitY+ih)/2)
-
-	// Secondary tape-color subtitle — only when it adds information
-	// (i.e. not for circuit routes, where the identifier IS the color).
-	if !isCircuit {
-		label := strings.ToUpper(data.ColorLabel())
-		dc.SetColor(withAlpha(onColor, 230))
-		setPrintFont(dc, fontBold, 10)
-		lw, _ := dc.MeasureString(label)
-		dc.DrawString(label, (float64(sheetCardW)-lw)/2, splitY-44)
+	rr, gg, bb, _ := routeColor.RGBA()
+	lum := 0.299*float64(rr>>8) + 0.587*float64(gg>>8) + 0.114*float64(bb>>8)
+	if lum > 128 {
+		dc.SetColor(color.RGBA{0, 0, 0, 255})
+	} else {
+		dc.SetColor(color.RGBA{255, 255, 255, 255})
 	}
+	fitPrintFont(dc, label, fontBold, float64(sheetCardW)-80, startPt, 18)
+	lw, lh := dc.MeasureString(label)
+	barTop := float64(sheetCardH - sheetCardColorBarPx)
+	barMid := barTop + float64(sheetCardColorBarPx)/2
+	dc.DrawString(label, (float64(sheetCardW)-lw)/2, barMid+lh/2)
 
-	// ---- Bottom info zone (white) ----
-	//
-	// Layout uses pixel coordinates (gg is pixel-based) but font sizes are in
-	// points at 300 DPI. Conversion: 1pt = 300/72 px ≈ 4.17 px.
-	//
-	// Vertical budget (bottom zone ≈ 472 px):
-	//   name block (up to 2 × 68 + 18 gap)  ~154
-	//   row 1 label (9pt, 26 px after gap)    26
-	//   row 1 value (13pt, 54 px after gap)   54
-	//   gap                                   34
-	//   row 2 label                           26
-	//   row 2 value                           54
-	//   branding footer + slack               ~124 (QR lives here)
-
-	// Route name — bold, wraps to 2 lines max. Left-aligned, 18pt reads
-	// cleanly on a 3.5" card held at arm's length.
+	// ---- Info flow (route name, metadata) ----
+	// Clusters tight against the top of the colour bar. Mirrors the
+	// PDF path's anchor: infoTopY (37mm) + infoPadTop (5mm) = 42mm
+	// ≈ 496 px at 300 DPI. Everything above this is intentional
+	// whitespace — the tuck zone.
 	nameLineHeight := 68.0
-	y := splitY + 52 // first baseline: ascent-padded below the color split
+	y := 496.0
 	if data.Route.Name != nil && *data.Route.Name != "" {
 		dc.SetColor(color.RGBA{25, 25, 25, 255})
 		setPrintFont(dc, fontBold, 18)
@@ -161,19 +160,17 @@ func (g *CardGenerator) GenerateSheetCardPNG(data CardData) ([]byte, error) {
 	setPrintFont(dc, fontRegular, 13)
 	dc.DrawString(data.Route.DateSet.Format("Jan 2, 2006"), col1X, y)
 
-	// QR — bottom right. 160 px = ~13.5 mm on the printed card; medium error
-	// correction + that size scans reliably from 18" with a phone camera.
-	// Positioned so the SETTER value row (ends ~y=829) clears the QR top
-	// (y=840) with ~10 px of daylight.
+	// QR — right-aligned, vertically positioned so its bottom sits
+	// ~24 px (2mm) above the colour bar. Lives in the right strip
+	// that the 2-column metadata grid deliberately keeps clear.
 	qrPx := 160
 	if qrImg, err := generateQRImage(data.QRTargetURL, qrPx); err == nil {
-		dc.DrawImage(qrImg, sheetCardW-qrPx-30, sheetCardH-qrPx-50)
+		qrY := sheetCardH - sheetCardColorBarPx - qrPx - 24
+		dc.DrawImage(qrImg, sheetCardW-qrPx-30, qrY)
 	}
 
-	// Branding
-	dc.SetColor(color.RGBA{170, 170, 170, 255})
-	setPrintFont(dc, fontBold, 9)
-	dc.DrawString("ROUTEWERK", 30, float64(sheetCardH)-22)
+	// Branding dropped in the 2026-04 flip — the info cluster is tight
+	// against the colour bar with no vertical slack for a footer.
 
 	return encodePNG(dc)
 }

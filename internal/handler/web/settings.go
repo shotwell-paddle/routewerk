@@ -55,6 +55,7 @@ func (h *Handler) GymSettingsPage(w http.ResponseWriter, r *http.Request) {
 		OrgPermissions:  &orgPerms,
 		IsManager:       isManager,
 		SettingsSuccess: r.URL.Query().Get("saved") == "1",
+		PalettePresets:  model.PalettePresets,
 	}
 	h.render(w, r, "setter/settings.html", data)
 }
@@ -408,5 +409,59 @@ func (h *Handler) GymSettingsRemoveHoldColor(w http.ResponseWriter, r *http.Requ
 	}
 
 	w.Header().Set("HX-Redirect", "/settings?saved=1")
+	w.WriteHeader(http.StatusOK)
+}
+
+// ── Palette Presets ──────────────────────────────────────────
+
+// GymSettingsApplyPalettePreset rewrites the gym's Circuits + HoldColors
+// to match a named preset (POST /settings/palette-preset).
+//
+// Same auth model as the individual circuit/hold-color endpoints —
+// head_setter or above can apply presets. This is a destructive
+// operation on the palette (it replaces the entire list rather than
+// merging), which is intentional: presets are meant for "I just got a
+// new printer, flip everything at once" moments, not for per-colour
+// tuning.
+func (h *Handler) GymSettingsApplyPalettePreset(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	locationID := middleware.GetWebLocationID(ctx)
+	if locationID == "" {
+		http.Error(w, "No location", http.StatusBadRequest)
+		return
+	}
+
+	// Head setter or above. Match the hold-color permission exactly.
+	realRole := middleware.GetWebRole(ctx)
+	if middleware.RoleRankValue(realRole) < middleware.RoleRankValue("head_setter") {
+		http.Error(w, "Not authorized", http.StatusForbidden)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+
+	presetName := strings.TrimSpace(r.FormValue("preset"))
+	preset := model.LookupPalettePreset(presetName)
+	if preset == nil {
+		http.Error(w, "Unknown preset", http.StatusBadRequest)
+		return
+	}
+
+	settings, _ := h.settingsRepo.GetLocationSettings(ctx, locationID)
+	// Clone the preset's slices so a later preset-swap on another gym
+	// doesn't accidentally share backing storage with this one.
+	settings.Circuits.Colors = append([]model.CircuitColor(nil), preset.Circuits...)
+	settings.HoldColors.Colors = append([]model.HoldColor(nil), preset.HoldColors...)
+
+	if err := h.settingsRepo.UpdateLocationSettings(ctx, locationID, settings); err != nil {
+		slog.Error("apply palette preset failed", "error", err, "preset", presetName)
+		http.Error(w, "Save failed", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("HX-Redirect", "/settings?saved=1#circuits")
 	w.WriteHeader(http.StatusOK)
 }

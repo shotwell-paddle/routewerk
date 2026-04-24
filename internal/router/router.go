@@ -329,6 +329,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 				r.Get("/card-batches/{batchID}/edit", webHandler.CardBatchEditForm)
 				r.Post("/card-batches/{batchID}/edit", webHandler.CardBatchUpdate)
 				r.Get("/card-batches/{batchID}/download.pdf", webHandler.CardBatchDownload)
+				r.Get("/card-batches/{batchID}/cutlines.dxf", webHandler.CardBatchCutlines)
 				r.Get("/card-batches/{batchID}/preview.png", webHandler.CardBatchPreview)
 				r.With(batchCreateLimitByUser).Post("/card-batches/{batchID}/retry", webHandler.CardBatchRetry)
 				r.Post("/card-batches/{batchID}/delete", webHandler.CardBatchDelete)
@@ -340,6 +341,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 				r.Post("/settings/circuits/{colorName}/delete", webHandler.GymSettingsRemoveCircuit)
 				r.Post("/settings/hold-colors/add", webHandler.GymSettingsAddHoldColor)
 				r.Post("/settings/hold-colors/{colorName}/delete", webHandler.GymSettingsRemoveHoldColor)
+				r.Post("/settings/palette-preset", webHandler.GymSettingsApplyPalettePreset)
 				r.Get("/settings/team", webHandler.TeamPage)
 				r.Post("/settings/team/{membershipID}/role", webHandler.TeamUpdateRole)
 

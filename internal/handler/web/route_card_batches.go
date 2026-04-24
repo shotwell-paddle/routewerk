@@ -340,6 +340,54 @@ func (h *Handler) CardBatchDownload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// CardBatchCutlines streams a DXF file containing the 8-up sheet's cut
+// geometry (GET /card-batches/{id}/cutlines.dxf).
+//
+// Intended as a fallback for Silhouette Studio's "Cut by Color" feature —
+// if Studio mis-assigns the magenta hairlines in the print-and-cut PDF
+// (red route-colour fills are a known trigger), the user imports this DXF
+// and cuts from clean vector geometry. The DXF is identical for every
+// batch — it only encodes the sheet layout, not the route content — but
+// we keep the endpoint batch-scoped so the existing location-ownership
+// check applies.
+func (h *Handler) CardBatchCutlines(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	batchID := chi.URLParam(r, "batchID")
+
+	batch, err := h.cardBatchRepo.GetByID(ctx, batchID)
+	if err != nil {
+		slog.Error("card batch cutlines lookup failed", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if batch == nil {
+		http.Error(w, "batch not found", http.StatusNotFound)
+		return
+	}
+	if !h.checkLocationOwnership(w, r, batch.LocationID) {
+		return
+	}
+
+	// Render into a bytes.Buffer — the DXF is a few KB at most, nothing
+	// like the PDF's peak RSS. Buffering lets us set Content-Length and
+	// surface encode errors as 500 instead of a truncated 200.
+	var buf bytes.Buffer
+	if err := cardsheet.RenderCutlinesDXF(&buf); err != nil {
+		slog.Error("card batch cutlines render failed", "batch_id", batchID, "error", err)
+		http.Error(w, "render failed", http.StatusInternalServerError)
+		return
+	}
+
+	filename := fmt.Sprintf("routewerk-cutlines-%s.dxf", batch.ID)
+	w.Header().Set("Content-Type", "application/vnd.dxf")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", buf.Len()))
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		slog.Error("card batch cutlines write failed", "batch_id", batchID, "error", err)
+	}
+}
+
 // CardBatchEditForm renders the edit form for a batch (GET /card-batches/{id}/edit).
 // Pre-selects the current route_ids and shows the full candidate pool —
 // including already-carded routes — so setters can add or remove routes

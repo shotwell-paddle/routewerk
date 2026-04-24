@@ -106,15 +106,18 @@ var surfaceTypes = []string{
 	"Textured plywood", "Smooth plywood", "Concrete", "Brick", "Natural rock",
 }
 
-// Standard hold colors used across climbing gyms (fallback).
+// Standard hold colors used across climbing gyms (fallback when a location
+// hasn't customized its palette). Saturated hues are tinted to fuse
+// cleanly on Terra Slate / polymer laser stocks. Must stay in sync with
+// model.DefaultLocationSettings — the test suite asserts matching lengths.
 var defaultHoldColors = []HoldColor{
-	{"Red", "#e53935"},
-	{"Orange", "#fc5200"},
-	{"Yellow", "#f9a825"},
-	{"Green", "#2e7d32"},
-	{"Blue", "#1565c0"},
-	{"Purple", "#7b1fa2"},
-	{"Pink", "#e91e8a"},
+	{"Red", "#e8666e"},
+	{"Orange", "#f9a825"},
+	{"Yellow", "#fce205"},
+	{"Green", "#78be85"},
+	{"Blue", "#6ca3db"},
+	{"Purple", "#bc75d0"},
+	{"Pink", "#ff7fb8"},
 	{"Black", "#0a0a0a"},
 	{"White", "#e0e0e0"},
 	{"Teal", "#00897b"},

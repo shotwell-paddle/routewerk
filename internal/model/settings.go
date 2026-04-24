@@ -72,7 +72,109 @@ type SessionSettings struct {
 	RequireRoutePhoto      bool `json:"require_route_photo"`
 }
 
+// PalettePreset groups a Circuits + HoldColors pair tuned for a specific
+// print workflow. Gym admins can switch between presets from the Gym
+// Settings page; a preset swap rewrites both palettes in one click
+// (rather than editing ~18 individual hex inputs).
+type PalettePreset struct {
+	Name        string // stable ID used in the settings UI and API
+	DisplayName string // human-readable, shown in the UI
+	Description string // one-line hint explaining when to pick it
+	Circuits    []CircuitColor
+	HoldColors  []HoldColor
+}
+
+// PalettePresetLaserTinted is the default for new locations — tinted
+// saturated hues so CMYK coverage per pixel lands at ~75-95% instead of
+// the 150-200% of pure saturation. Designed for laser printing onto
+// Terra Slate / other polymer synthetic stocks where heavy toner pools
+// and fuses blotchy. All tinted values land at luminance > 140 so the
+// black-on-colour identifier text reads cleanly on every swatch.
+var PalettePresetLaserTinted = PalettePreset{
+	Name:        "laser",
+	DisplayName: "Laser / Terra Slate (tinted)",
+	Description: "Softer colors that fuse cleanly on polymer paper with a color laser.",
+	Circuits: []CircuitColor{
+		{Name: "red", Hex: "#e8666e", SortOrder: 0},
+		{Name: "orange", Hex: "#f9a825", SortOrder: 1},
+		{Name: "yellow", Hex: "#fce205", SortOrder: 2},
+		{Name: "green", Hex: "#78be85", SortOrder: 3},
+		{Name: "blue", Hex: "#6ca3db", SortOrder: 4},
+		{Name: "purple", Hex: "#bc75d0", SortOrder: 5},
+		{Name: "pink", Hex: "#ff7fb8", SortOrder: 6},
+		{Name: "white", Hex: "#e0e0e0", SortOrder: 7},
+		{Name: "black", Hex: "#0a0a0a", SortOrder: 8},
+	},
+	HoldColors: []HoldColor{
+		{Name: "Red", Hex: "#e8666e"},
+		{Name: "Orange", Hex: "#f9a825"},
+		{Name: "Yellow", Hex: "#fce205"},
+		{Name: "Green", Hex: "#78be85"},
+		{Name: "Blue", Hex: "#6ca3db"},
+		{Name: "Purple", Hex: "#bc75d0"},
+		{Name: "Pink", Hex: "#ff7fb8"},
+		{Name: "Black", Hex: "#0a0a0a"},
+		{Name: "White", Hex: "#e0e0e0"},
+		{Name: "Teal", Hex: "#00897b"},
+	},
+}
+
+// PalettePresetInkjetSaturated is the fully saturated palette for gyms
+// printing cards on an inkjet. Inkjet ink absorbs into Terra Slate's
+// microporous receiver coat, so 150%+ CMYK coverage prints cleanly —
+// saturated gym-tape-matching colors are the expected workload.
+var PalettePresetInkjetSaturated = PalettePreset{
+	Name:        "inkjet",
+	DisplayName: "Inkjet / Terra Slate (saturated)",
+	Description: "Tape-matching saturated colors that require inkjet printing onto polymer paper.",
+	Circuits: []CircuitColor{
+		{Name: "red", Hex: "#d32027", SortOrder: 0},
+		{Name: "orange", Hex: "#f9a825", SortOrder: 1},
+		{Name: "yellow", Hex: "#fce205", SortOrder: 2},
+		{Name: "green", Hex: "#2e7d32", SortOrder: 3},
+		{Name: "blue", Hex: "#1565c0", SortOrder: 4},
+		{Name: "purple", Hex: "#7b1fa2", SortOrder: 5},
+		{Name: "pink", Hex: "#ff4fa3", SortOrder: 6},
+		{Name: "white", Hex: "#e0e0e0", SortOrder: 7},
+		{Name: "black", Hex: "#0a0a0a", SortOrder: 8},
+	},
+	HoldColors: []HoldColor{
+		{Name: "Red", Hex: "#d32027"},
+		{Name: "Orange", Hex: "#f9a825"},
+		{Name: "Yellow", Hex: "#fce205"},
+		{Name: "Green", Hex: "#2e7d32"},
+		{Name: "Blue", Hex: "#1565c0"},
+		{Name: "Purple", Hex: "#7b1fa2"},
+		{Name: "Pink", Hex: "#ff4fa3"},
+		{Name: "Black", Hex: "#0a0a0a"},
+		{Name: "White", Hex: "#e0e0e0"},
+		{Name: "Teal", Hex: "#00897b"},
+	},
+}
+
+// PalettePresets is the ordered list of presets shown in the gym
+// settings UI. Keep the ordering intentional — the laser preset comes
+// first because it's the default for new locations.
+var PalettePresets = []PalettePreset{
+	PalettePresetLaserTinted,
+	PalettePresetInkjetSaturated,
+}
+
+// LookupPalettePreset returns the preset with the given Name, or nil if
+// no match. Caller should fall back to a default (probably the laser
+// preset) on nil.
+func LookupPalettePreset(name string) *PalettePreset {
+	for i := range PalettePresets {
+		if PalettePresets[i].Name == name {
+			return &PalettePresets[i]
+		}
+	}
+	return nil
+}
+
 // DefaultLocationSettings returns sensible defaults for a new location.
+// The palette defaults to PalettePresetLaserTinted; gyms can switch to
+// another preset (or hand-edit individual colors) from the settings UI.
 func DefaultLocationSettings() LocationSettings {
 	return LocationSettings{
 		Grading: GradingSettings{
@@ -81,31 +183,10 @@ func DefaultLocationSettings() LocationSettings {
 			ShowGradesOnCircuit: false,
 		},
 		Circuits: CircuitSettings{
-			Colors: []CircuitColor{
-				{Name: "red", Hex: "#e53935", SortOrder: 0},
-				{Name: "orange", Hex: "#fc5200", SortOrder: 1},
-				{Name: "yellow", Hex: "#f9a825", SortOrder: 2},
-				{Name: "green", Hex: "#2e7d32", SortOrder: 3},
-				{Name: "blue", Hex: "#1565c0", SortOrder: 4},
-				{Name: "purple", Hex: "#7b1fa2", SortOrder: 5},
-				{Name: "pink", Hex: "#e91e8a", SortOrder: 6},
-				{Name: "white", Hex: "#e0e0e0", SortOrder: 7},
-				{Name: "black", Hex: "#0a0a0a", SortOrder: 8},
-			},
+			Colors: append([]CircuitColor(nil), PalettePresetLaserTinted.Circuits...),
 		},
 		HoldColors: HoldColorSettings{
-			Colors: []HoldColor{
-				{Name: "Red", Hex: "#e53935"},
-				{Name: "Orange", Hex: "#fc5200"},
-				{Name: "Yellow", Hex: "#f9a825"},
-				{Name: "Green", Hex: "#2e7d32"},
-				{Name: "Blue", Hex: "#1565c0"},
-				{Name: "Purple", Hex: "#7b1fa2"},
-				{Name: "Pink", Hex: "#e91e8a"},
-				{Name: "Black", Hex: "#0a0a0a"},
-				{Name: "White", Hex: "#e0e0e0"},
-				{Name: "Teal", Hex: "#00897b"},
-			},
+			Colors: append([]HoldColor(nil), PalettePresetLaserTinted.HoldColors...),
 		},
 		Display: DisplaySettings{
 			ShowSetterName:          true,

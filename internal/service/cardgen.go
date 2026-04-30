@@ -113,8 +113,16 @@ func NewCardGenerator(frontendURL string) *CardGenerator {
 	return &CardGenerator{frontendURL: strings.TrimRight(frontendURL, "/")}
 }
 
+// RouteURL returns the public web URL for a route's detail page. The web
+// route lives at `/routes/{routeID}` directly — the `/locations/{id}/
+// routes/{id}` path only exists under the JSON API (`/api/v1/…`), so
+// older QR codes that encoded a location-scoped URL pointed at a 404.
+// locationID is kept in the signature so callers don't have to change,
+// but is currently ignored. Reinstate scoping here if the web route
+// ever gets namespaced under location.
 func (g *CardGenerator) RouteURL(locationID, routeID string) string {
-	return fmt.Sprintf("%s/locations/%s/routes/%s", g.frontendURL, locationID, routeID)
+	_ = locationID
+	return fmt.Sprintf("%s/routes/%s", g.frontendURL, routeID)
 }
 
 // ============================================================
@@ -165,7 +173,12 @@ func (g *CardGenerator) generateGradedPrintPNG(data CardData) ([]byte, error) {
 	dc.DrawString(gradeText, 20+(blockW-gw)/2, 20+90+(gh/2))
 
 	// -- Color name below grade in block --
-	dc.SetColor(withAlpha(contrastColor(routeColor), 180))
+	// Used to be 180-alpha so the subtitle read as secondary; with the
+	// 2026-04 palette we keep it fully opaque and matching the primary
+	// ink to avoid translucent-white blending toward a lighter tint of
+	// the background colour. contrastColor handles the white-swatch case
+	// (inks near-black on off-white backgrounds).
+	dc.SetColor(contrastColor(routeColor))
 	setFont(dc, fontBold, 10)
 	colorLabel := strings.ToUpper(data.ColorLabel())
 	clw, _ := dc.MeasureString(colorLabel)
@@ -414,11 +427,13 @@ func (g *CardGenerator) generateDigitalPNG(data CardData) ([]byte, error) {
 	dc.DrawString(primary, (float64(heroW)-pw)/2, primaryBaseline)
 
 	// Secondary label sits below the primary baseline, letter-spaced so it
-	// reads as a small-caps subtitle.
+	// reads as a small-caps subtitle. Used to be 200-alpha for visual
+	// hierarchy; kept fully opaque white under the 2026-04 palette so it
+	// doesn't tint toward the hero color.
 	setFont(dc, fontBold, 40)
 	spaced := letterSpace(secondary, 2)
 	sw, _ := dc.MeasureString(spaced)
-	dc.SetColor(withAlpha(onHero, 200))
+	dc.SetColor(onHero)
 	dc.DrawString(spaced, (float64(heroW)-sw)/2, primaryBaseline+96)
 
 	// ---- Info panel content ----
@@ -798,11 +813,20 @@ func parseHexColor(hex string) color.Color {
 	return color.RGBA{r, g, b, 255}
 }
 
+// contrastColor picks the ink colour for text drawn on a card's colour
+// zone. Relative luminance (ITU-R BT.601) > 200 flips to pure black;
+// everything else inks pure white. Threshold 200 catches the off-white
+// swatch (#e0e0e0, L ≈ 224) and canary yellow (#fce205, L ≈ 209) — the
+// two light-background cases that would be illegible under pure white
+// text — and leaves every other palette colour on white. Must stay in
+// sync with cardTextRGB in internal/service/cardsheet/card_draw.go.
 func contrastColor(c color.Color) color.Color {
 	r, g, b, _ := c.RGBA()
+	// color.RGBA exposes 16-bit channels; shift back to 8-bit to match
+	// the PDF path's thresholds.
 	lum := 0.299*float64(r>>8) + 0.587*float64(g>>8) + 0.114*float64(b>>8)
-	if lum > 140 {
-		return color.RGBA{30, 30, 30, 255}
+	if lum > 200 {
+		return color.RGBA{0, 0, 0, 255}
 	}
 	return color.RGBA{255, 255, 255, 255}
 }
@@ -817,24 +841,54 @@ func withAlpha(c color.Color, a uint8) color.Color {
 func hexToName(hex string) string {
 	hex = strings.ToLower(strings.TrimPrefix(hex, "#"))
 
-	// Exact matches for common gym hold colors
+	// Exact matches for common gym hold colors.
+	//
+	// The entries marked "2026-04 palette" are the current defaults for new
+	// locations — tuned to separate cleanly under CMYK laser toner where
+	// the old Material palette collapsed red/pink/orange into near-
+	// indistinguishable hues. Old values stay in the map so existing routes
+	// still render with the right name. See docs/card-colors-2026-04.md.
 	known := map[string]string{
-		"e53935": "Red", "f44336": "Red", "d32f2f": "Red", "ff0000": "Red",
+		// Red — 2026-04 tinted palette uses #e8666e (lighter, laser-safe).
+		// Saturated variants kept for back-compat with existing DB entries.
+		"e8666e": "Red", // 2026-04 laser-safe tint
+		"d32027": "Red", "e53935": "Red", "f44336": "Red", "d32f2f": "Red", "ff0000": "Red",
 		"c62828": "Dark Red", "b71c1c": "Dark Red",
+		// Orange — kept saturated (already laser-safe, yellow-leaning hue).
+		"f9a825": "Orange",
 		"ff9800": "Orange", "fb8c00": "Orange", "ef6c00": "Orange", "ff6d00": "Orange",
-		"ffeb3b": "Yellow", "fdd835": "Yellow", "f9a825": "Yellow", "ffff00": "Yellow",
+		"ff7a1a": "Orange", "fc5200": "Orange",
+		// Yellow — canary, kept saturated.
+		"fce205": "Yellow",
+		"ffeb3b": "Yellow", "fdd835": "Yellow", "ffff00": "Yellow",
+		// Green — tinted to #78be85 for laser safety.
+		"78be85": "Green", // 2026-04 laser-safe tint
 		"4caf50": "Green", "43a047": "Green", "2e7d32": "Green", "00ff00": "Green",
 		"66bb6a": "Green", "388e3c": "Green",
+		// Blue — tinted to #6ca3db.
+		"6ca3db": "Blue", // 2026-04 laser-safe tint
 		"2196f3": "Blue", "1e88e5": "Blue", "1565c0": "Blue", "0000ff": "Blue",
 		"42a5f5": "Blue", "1976d2": "Blue",
+		// Purple — tinted to #bc75d0.
+		"bc75d0": "Purple", // 2026-04 laser-safe tint
 		"9c27b0": "Purple", "8e24aa": "Purple", "7b1fa2": "Purple",
+		// Pink — tinted to #ff7fb8.
+		"ff7fb8": "Pink", // 2026-04 laser-safe tint
+		"ff4fa3": "Pink",
 		"e91e63": "Pink", "d81b60": "Pink", "ec407a": "Pink", "ff69b4": "Pink",
-		"000000": "Black", "212121": "Black", "333333": "Black",
-		"ffffff": "White", "fafafa": "White", "f5f5f5": "White",
+		"e91e8a": "Pink",
+		// Neutrals
+		"000000": "Black", "212121": "Black", "333333": "Black", "0a0a0a": "Black",
+		"ffffff": "White", "fafafa": "White", "f5f5f5": "White", "e0e0e0": "White",
 		"9e9e9e": "Gray", "757575": "Gray", "bdbdbd": "Gray",
+		// Brown
 		"795548": "Brown", "6d4c41": "Brown", "5d4037": "Brown",
-		"00bcd4": "Teal", "0097a7": "Teal", "00838f": "Teal",
-		"ff5722": "Burnt Orange", "e64a19": "Burnt Orange",
+		// Teal
+		"00bcd4": "Teal", "0097a7": "Teal", "00838f": "Teal", "00897b": "Teal",
+		// Burnt Orange — kept for back-compat with old location palettes.
+		// Not shown in new-location defaults any more.
+		"ff5722": "Burnt Orange", "e64a19": "Burnt Orange", "c0461a": "Burnt Orange",
+		// Lime
 		"cddc39": "Lime", "c0ca33": "Lime",
 	}
 

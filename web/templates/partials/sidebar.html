@@ -173,7 +173,20 @@
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
         </svg>
         Notifications
-        {{if .UnreadNotifCount}}<span class="notif-badge">{{.UnreadNotifCount}}</span>{{end}}
+        {{/* Badge is loaded async by HTMX so it stays off the page-load critical path.
+             Polls every 60s; replaced on load + interval.
+             hx-target/hx-push-url are explicit because body has
+             hx-boost="true" hx-target="#main-content" which would otherwise
+             swap the badge response into the main content area and push
+             /notifications/badge into the URL bar. See perf audit
+             2026-04-22 #1. */}}
+        <span id="notif-badge-slot"
+              hx-get="/notifications/badge"
+              hx-trigger="load, every 60s"
+              hx-target="this"
+              hx-swap="innerHTML"
+              hx-push-url="false"
+              hx-boost="false"></span>
       </a>
     </div>
   </nav>

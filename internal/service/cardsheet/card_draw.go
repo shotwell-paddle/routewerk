@@ -48,23 +48,55 @@ const cardFontFamily = "routewerk"
 
 // Portrait card layout constants — all in mm.
 //
-// The card is designed as a trading-card "split" layout: a color zone
-// occupies the top ~55% of the card, the info zone occupies the remaining
-// ~45%. Coordinates inside drawCardPortrait are expressed relative to the
-// portrait top-left (ox, oy); drawCardVector rotates this whole drawing to
-// land inside the landscape sheet slot.
+// Layout is INVERTED relative to a trading card — colour at the BOTTOM,
+// not the top. Route tags get taped next to the start hold and the top
+// of the tag slides partially under the hold, hiding anything drawn
+// there. The primary identifier (grade for graded routes, colour name
+// for circuits) prints INSIDE the bottom colour bar, in pure black or
+// white depending on background contrast. Everything else clusters
+// tight against the top of the bar in the lower ~30mm of the card,
+// leaving the upper half as intentional whitespace — the "tuck zone"
+// where content gets harmlessly hidden when the tag rides under a
+// hold.
+//
+// Vertical stack, top → bottom (mm):
+//
+//	0    ─ tuck zone (blank white — anything here can be hidden)
+//	~37  ─ info cluster: route name, wall, setter, date, QR.
+//	       Laid out so the last row (date) sits ~3mm above the
+//	       bottom colour bar.
+//	66.9 ─ bottom colour bar (22mm): route colour + the primary
+//	       identifier text (grade or colour name) centred in it.
+//	88.9 ─ card bottom
+//
+// Total ink coverage ~25% (22mm bottom bar, full width) + text ink;
+// well under Terra Slate's ~50% polymer-toner ceiling so the printer
+// lays down a clean fuse without per-job density tuning.
+//
+// Coordinates inside drawCardPortrait are expressed relative to the
+// portrait top-left (ox, oy); drawCardVector rotates this whole drawing
+// to land inside the landscape sheet slot.
 const (
 	portraitW = 50.8 // 2.0" — card short axis
 	portraitH = 88.9 // 3.5" — card long axis
 
-	colorZoneH      = 49.0 // top color zone height (≈ 55% of 88.9)
-	infoPadX        = 3.0  // left padding inside info zone
-	infoPadTop      = 5.0  // gap between color split and first name baseline
-	infoBottomPad   = 1.8  // distance from card bottom to the ROUTEWERK footer baseline
+	bottomBarH = 22.0 // main colour bar at the bottom
+	infoPadX   = 3.0  // left padding inside the info zone
 
-	qrSizeMM       = 14.0
-	qrMarginRight  = 2.5
-	qrMarginBottom = 3.0
+	qrSizeMM      = 14.0
+	qrMarginRight = 2.5
+
+	// Derived anchors.
+	bottomBarY = portraitH - bottomBarH // 66.9
+
+	// Info cluster starts 37mm below the card top so the stack of
+	// {route name + 2 metadata rows + SET + date} lands with the date
+	// baseline ~3mm above the colour bar. Above y=infoTopY the card
+	// is intentional whitespace — the tuck zone.
+	infoTopY = 37.0
+	// Gap between infoTopY and the first name baseline. Matches the
+	// legacy infoPadTop value.
+	infoPadTop = 5.0
 )
 
 // drawCardVector places the portrait card design into a landscape slot at
@@ -73,6 +105,10 @@ const (
 // 90° CCW rotation (via gofpdf's transform stack) so the color zone — which
 // sits on TOP of the portrait design — ends up on the LEFT of the landscape
 // slot, matching the visual orientation the old raster path produced.
+//
+// bleedMM is the distance (in mm) the coloured zone extends past the
+// portrait's top/left/right edges so registration drift doesn't expose
+// white paper along the cut. 0 disables bleed.
 //
 // uniqueKey must be unique within the whole PDF — it names the per-card QR
 // image registration.
@@ -91,11 +127,11 @@ const (
 // translate to the slot's bottom-left (x, y+h) produces the mapping above:
 // the transforms compose such that user-space points are first rotated and
 // then translated.
-func drawCardVector(pdf *gofpdf.Fpdf, data service.CardData, x, y, w, h float64, uniqueKey string) {
+func drawCardVector(pdf *gofpdf.Fpdf, data service.CardData, x, y, w, h, bleedMM float64, uniqueKey string) {
 	pdf.TransformBegin()
 	pdf.TransformTranslate(x, y+h)
 	pdf.TransformRotate(90, 0, 0)
-	drawCardPortrait(pdf, data, 0, 0, uniqueKey)
+	drawCardPortrait(pdf, data, 0, 0, bleedMM, uniqueKey)
 	pdf.TransformEnd()
 }
 
@@ -103,65 +139,80 @@ func drawCardVector(pdf *gofpdf.Fpdf, data service.CardData, x, y, w, h float64,
 // inside the current (possibly transformed) drawing space. Dimensions are
 // fixed at portraitW × portraitH — caller-supplied (ox, oy) only translate
 // the drawing, they don't resize it.
-func drawCardPortrait(pdf *gofpdf.Fpdf, data service.CardData, ox, oy float64, uniqueKey string) {
+//
+// bleedMM extends the bottom colour bar past its cut line (bottom, left,
+// right). The top of the card is plain white so no top bleed is needed.
+//
+// The primary identifier (grade for graded routes, colour name for
+// circuit routes) prints INSIDE the colour bar, in pure black or white
+// chosen for contrast. Route name + metadata + QR cluster tight against
+// the top of the bar; everything above that is intentional whitespace.
+func drawCardPortrait(pdf *gofpdf.Fpdf, data service.CardData, ox, oy, bleedMM float64, uniqueKey string) {
 	routeR, routeG, routeB := hexToRGB(data.Route.Color)
-	onR, onG, onB := contrastRGB(routeR, routeG, routeB)
 
-	// ---- Color zone (top) ----
+	// ---- Bottom colour bar ----
+	// The main colour ID. Bleed expands down, left, and right.
 	pdf.SetFillColor(routeR, routeG, routeB)
-	pdf.Rect(ox, oy, portraitW, colorZoneH, "F")
+	pdf.Rect(ox-bleedMM, oy+bottomBarY, portraitW+2*bleedMM, bottomBarH+bleedMM, "F")
 
-	// Primary identifier: grade for graded routes, color name for circuits.
-	// Auto-shrink until it fits the card width with a small gutter.
-	identifier := data.Route.Grade
-	startPt := 34.0
+	// ---- Primary identifier inside the colour bar ----
+	// Graded routes: show the grade ("V5", "5.11+"). Circuits: show
+	// the colour name ("RED", "YELLOW"). Either way, pure black or
+	// pure white depending on luminance — hard contrast reads clean
+	// from across the gym on every swatch including canary yellow
+	// and off-white.
+	var label string
+	var startPt float64
 	if data.IsCircuit() {
-		identifier = strings.ToUpper(data.ColorLabel())
-		// Color names run wider than V-grades; start smaller so the fit
-		// loop has somewhere to go.
-		startPt = 24.0
+		label = strings.ToUpper(data.ColorLabel())
+		startPt = 24.0 // colour names run wider than V-grades
+	} else {
+		label = data.Route.Grade
+		startPt = 34.0
 	}
-	pdf.SetTextColor(onR, onG, onB)
-	ptSize := fitFontSize(pdf, identifier, portraitW-6, startPt, 10)
+	ptSize := fitFontSize(pdf, label, portraitW-8, startPt, 10)
 	pdf.SetFont(cardFontFamily, "B", ptSize)
-	idW := pdf.GetStringWidth(identifier)
-	// Vertical center within color zone. pt→mm ≈ 0.3528; cap height ≈ 0.72×em.
-	idCapMM := ptSize * 25.4 / 72.0 * 0.72
-	idBaseline := oy + colorZoneH*0.52 + idCapMM/2
-	pdf.Text(ox+(portraitW-idW)/2, idBaseline, identifier)
+	textR, textG, textB := onColorInkRGB(routeR, routeG, routeB)
+	pdf.SetTextColor(textR, textG, textB)
+	lw := pdf.GetStringWidth(label)
+	capMM := ptSize * 25.4 / 72.0 * 0.72
+	barBaseline := oy + bottomBarY + bottomBarH*0.5 + capMM/2
+	pdf.Text(ox+(portraitW-lw)/2, barBaseline, label)
 
-	// Color subtitle — only for graded routes, where the color name adds
-	// information beyond the grade number.
-	if !data.IsCircuit() {
-		label := strings.ToUpper(data.ColorLabel())
-		pdf.SetFont(cardFontFamily, "B", 8)
-		// Slightly dim the on-color ink so the subtitle recedes behind the
-		// grade visually.
-		pdf.SetTextColor(dim(onR, 210), dim(onG, 210), dim(onB, 210))
-		lw := pdf.GetStringWidth(label)
-		pdf.Text(ox+(portraitW-lw)/2, idBaseline+8, label)
-	}
-
-	// ---- Info zone (bottom) ----
-	infoTop := oy + colorZoneH
+	// ---- Info flow (route name, metadata, QR) ----
+	// Clusters tight against the top of the colour bar — the LAST row
+	// (date) sits ~3mm above the bar. Everything above infoTopY is
+	// blank white, the tuck zone where a hold can hide content
+	// harmlessly.
+	infoTop := oy + infoTopY
 	infoX := ox + infoPadX
-	infoW := portraitW - 2*infoPadX
+	// textColW is the route-name column width. Narrower than infoW so
+	// the name doesn't flow under the right-aligned QR.
+	textColW := portraitW - 2*infoPadX - qrSizeMM - 2.0
 
-	// Route name — bold, wrapped to 2 lines max.
+	// uniqueKey is retained in the signature so callers don't have to
+	// change; we no longer need it now that there's no per-card image
+	// registration.
+	_ = uniqueKey
+
+	// Route name — bold, wrapped to 2 lines max. Columns are narrow so
+	// the name doesn't flow into the QR's vertical strip on the right.
 	namePt := 11.0
 	nameLine := 4.4
 	pdf.SetFont(cardFontFamily, "B", namePt)
-	pdf.SetTextColor(25, 25, 25)
+	pdf.SetTextColor(0, 0, 0)
 	currentY := infoTop + infoPadTop
 	if data.Route.Name != nil && *data.Route.Name != "" {
-		lines := wrapTextPDF(pdf, *data.Route.Name, infoW, 2)
+		lines := wrapTextPDF(pdf, *data.Route.Name, textColW, 2)
 		for _, line := range lines {
 			pdf.Text(infoX, currentY, line)
 			currentY += nameLine
 		}
 	}
-	// Pin the metadata grid to a consistent Y regardless of name line count,
-	// so one-liner names don't cause the whole block to float up.
+	// Pin the metadata grid to a consistent Y regardless of name line
+	// count, so one-liner names (or missing names, as on circuit cards)
+	// don't cause the whole block to float up. The metadata rows always
+	// sit at the same height relative to the colour bar.
 	minMetaY := infoTop + infoPadTop + 2*nameLine + 1.2
 	if currentY < minMetaY {
 		currentY = minMetaY
@@ -169,38 +220,27 @@ func drawCardPortrait(pdf *gofpdf.Fpdf, data service.CardData, ox, oy float64, u
 		currentY += 1.0
 	}
 
-	// Metadata grid — 2 columns. Left column gets wall + date, right column
-	// gets setter. Wall names are more variable in length than setter names
-	// (gyms often use long descriptors like "Competition Wall South" while
-	// setters go by first name), so we give WALL the larger slot. A 1.5mm
-	// gutter prevents "fully-truncated" wall values from colliding with the
-	// SETTER column — that was the overlap that "broke the design" on long
-	// wall names.
-	//
-	//   |── col1W ──|·gutter·|── col2W ──|
-	//   col1X                 col2X
-	//
-	// QR occupies the bottom-right ~14mm so the right column must not extend
-	// below ~oy + portraitH - qrSizeMM.
+	// Metadata grid — two columns, constrained so column 2 ends before
+	// the right-aligned QR. col1X=3mm, col2X ≈ 21.5mm, col2 ends ≈
+	// 32.8mm — leaves ~1.5mm clearance before the QR left edge at
+	// ox + portraitW - qrSizeMM - qrMarginRight = 34.3.
 	const (
 		colGutter = 1.5
+		col1W     = 17.0 // room for "The Cave" at 9pt, or longer at 7pt
+		col2W     = 11.5 // room for "Chris" at 9pt
 	)
 	col1X := infoX
-	col1W := portraitW*0.48 - infoPadX // ≈ 21.4mm, enough for "Competition Wall" at 9pt
-	col2X := col1X + col1W + colGutter // ≈ 25.9mm
-	col2W := portraitW - infoPadX - (col2X - ox)
+	col2X := col1X + col1W + colGutter
 
-	// Row 1: labels
+	// Row 1: WALL / SETTER labels
 	pdf.SetFont(cardFontFamily, "B", 5.5)
-	pdf.SetTextColor(150, 150, 150)
+	pdf.SetTextColor(0, 0, 0)
 	pdf.Text(col1X, currentY, "WALL")
 	pdf.Text(col2X, currentY, "SETTER")
 	currentY += 3.6
 
-	// Row 1: values. Auto-shrink the font before giving up and truncating —
-	// a wall name like "Main Overhang Boulder" reads better at 7.5pt than at
-	// 9pt+ellipsis. Floor at 7pt; truncate only if even 7pt still overflows.
-	pdf.SetTextColor(40, 40, 40)
+	// Row 1: values. Auto-shrink before truncating.
+	pdf.SetTextColor(0, 0, 0)
 	wallPt := fitFontSizeStyle(pdf, data.WallName, col1W, 9.0, 7.0, "")
 	pdf.SetFont(cardFontFamily, "", wallPt)
 	pdf.Text(col1X, currentY, truncatePDF(pdf, data.WallName, col1W))
@@ -209,46 +249,32 @@ func drawCardPortrait(pdf *gofpdf.Fpdf, data service.CardData, ox, oy float64, u
 		pdf.SetFont(cardFontFamily, "", setterPt)
 		pdf.Text(col2X, currentY, truncatePDF(pdf, data.SetterName, col2W))
 	}
-	currentY += 4.8
+	currentY += 4.4
 
-	// Row 2: date only. The QR sits below-right and the setter row above-right
-	// already uses col2X, so we leave col2 empty here for breathing room.
+	// Row 2: SET / date.
 	pdf.SetFont(cardFontFamily, "B", 5.5)
-	pdf.SetTextColor(150, 150, 150)
+	pdf.SetTextColor(0, 0, 0)
 	pdf.Text(col1X, currentY, "SET")
 	currentY += 3.6
 
 	pdf.SetFont(cardFontFamily, "", 9)
-	pdf.SetTextColor(40, 40, 40)
+	pdf.SetTextColor(0, 0, 0)
 	pdf.Text(col1X, currentY, data.Route.DateSet.Format("Jan 2, 2006"))
 
-	// QR — bottom right of the info zone, drawn as native PDF vector rects
-	// (one filled rect per dark module). The previous approach encoded a
-	// 300×300 PNG per card and fed it to pdf.RegisterImageOptionsReader,
-	// which retains the decoded pixel data for every card in a single
-	// *Fpdf until Output() — for a large batch that's tens of MB held
-	// across the entire render and was the primary OOM contributor when
-	// routewerk-dev crashed (256MB VM). Vector rendering keeps the QR at
-	// effectively infinite DPI, shrinks the resulting PDF, and frees the
-	// per-card QR memory with the page's content stream instead of
-	// accumulating it globally.
+	// QR — right-aligned, vertically positioned so its bottom sits 2mm
+	// above the colour bar. Lives in the strip of the info zone that
+	// the 2-column metadata grid deliberately leaves clear.
 	if data.QRTargetURL != "" {
-		drawQRVector(
-			pdf,
-			data.QRTargetURL,
-			ox+portraitW-qrSizeMM-qrMarginRight,
-			oy+portraitH-qrSizeMM-qrMarginBottom,
-			qrSizeMM,
-		)
+		qrX := ox + portraitW - qrSizeMM - qrMarginRight
+		qrY := oy + bottomBarY - qrSizeMM - 2.0
+		drawQRVector(pdf, data.QRTargetURL, qrX, qrY, qrSizeMM)
 	}
-	// uniqueKey is retained in the signature so callers don't have to change;
-	// we no longer need it now that there's no per-card image registration.
-	_ = uniqueKey
 
-	// ROUTEWERK footer — bottom-left of the info zone.
-	pdf.SetFont(cardFontFamily, "B", 5)
-	pdf.SetTextColor(170, 170, 170)
-	pdf.Text(infoX, oy+portraitH-infoBottomPad, "ROUTEWERK")
+	// ROUTEWERK footer — dropped in the 2026-04 redesign. The info
+	// cluster now sits tight against the colour bar with no vertical
+	// slack for a footer, and the brand mark is the lowest-priority
+	// piece of ink on the card. If branding needs to come back, the
+	// natural home is top-of-card inside the tuck zone at ~y=5.
 }
 
 // registerCardFonts embeds the Routewerk body font into pdf under the
@@ -388,19 +414,33 @@ func hexToRGB(hex string) (int, int, int) {
 	return r, g, b
 }
 
-// contrastRGB returns a near-black or near-white depending on the relative
-// luminance of the background. Threshold matches the PNG renderer so the
-// two paths agree on ink selection.
-func contrastRGB(r, g, b int) (int, int, int) {
+// subtitleInkRGB picks the ink colour for the colour-name subtitle drawn
+// under the primary identifier on graded routes. The subtitle lives in
+// the white zone, so the default is the route colour itself — that ties
+// the subtitle visually to the bottom colour bar. For low-contrast route
+// colours (the off-white "white hold" swatch, canary yellow, anything
+// else with luminance > 200 that would disappear on white) we fall
+// back to a medium-dark grey that reads cleanly on white.
+func subtitleInkRGB(r, g, b int) (int, int, int) {
 	lum := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
-	if lum > 140 {
-		return 30, 30, 30
+	if lum > 200 {
+		return 85, 85, 85 // medium-dark grey
 	}
-	return 255, 255, 255
+	return r, g, b
 }
 
-// dim scales an RGB channel toward black by the given alpha (0–255), used to
-// knock back the color subtitle so it reads as secondary to the grade.
-func dim(channel, alpha int) int {
-	return channel * alpha / 255
+// onColorInkRGB picks pure black or pure white for text drawn ON the
+// route-colour background of the bottom colour bar. Used for the
+// circuit-card colour-name label. ITU-R BT.601 luminance > 128 flips
+// to black so "brighter" backgrounds (yellow, pale blue, white) read
+// with dark text and darker backgrounds (red, blue, purple, black,
+// etc.) read with white text. No grey fallback — the gym prefers
+// hard black-or-white contrast on the bar for unambiguous legibility
+// at distance.
+func onColorInkRGB(r, g, b int) (int, int, int) {
+	lum := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
+	if lum > 128 {
+		return 0, 0, 0
+	}
+	return 255, 255, 255
 }

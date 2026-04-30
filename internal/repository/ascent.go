@@ -120,15 +120,6 @@ func (r *AscentRepo) ListByUserFiltered(ctx context.Context, userID string, f Ti
 
 	whereClause := strings.Join(where, " AND ")
 
-	countQuery := fmt.Sprintf(
-		`SELECT COUNT(*) FROM ascents a JOIN routes r ON r.id = a.route_id WHERE %s`,
-		whereClause,
-	)
-	var total int
-	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count ascents: %w", err)
-	}
-
 	// Determine sort order
 	orderBy := "a.climbed_at DESC"
 	if f.Sort == "grade" {
@@ -136,9 +127,13 @@ func (r *AscentRepo) ListByUserFiltered(ctx context.Context, userID string, f Ti
 		orderBy = "r.grade DESC, a.climbed_at DESC"
 	}
 
+	// Single query: rows + total (via window COUNT). See perf audit
+	// 2026-04-22 #2. Same caveat as route.ListWithDetails — if OFFSET
+	// lands past the filtered set, total comes back as 0.
 	query := fmt.Sprintf(`
 		SELECT a.id, a.user_id, a.route_id, a.ascent_type, a.attempts, a.notes, a.climbed_at, a.created_at,
-			r.grade, r.grading_system, r.route_type, r.color, r.name, r.wall_id
+			r.grade, r.grading_system, r.route_type, r.color, r.name, r.wall_id,
+			COUNT(*) OVER () AS total_count
 		FROM ascents a
 		JOIN routes r ON r.id = a.route_id
 		WHERE %s
@@ -154,12 +149,16 @@ func (r *AscentRepo) ListByUserFiltered(ctx context.Context, userID string, f Ti
 	}
 	defer rows.Close()
 
-	var ascents []AscentWithRoute
+	var (
+		ascents []AscentWithRoute
+		total   int
+	)
 	for rows.Next() {
 		var a AscentWithRoute
 		if err := rows.Scan(
 			&a.ID, &a.UserID, &a.RouteID, &a.AscentType, &a.Attempts, &a.Notes, &a.ClimbedAt, &a.CreatedAt,
 			&a.RouteGrade, &a.RouteGradingSystem, &a.RouteType, &a.RouteColor, &a.RouteName, &a.WallID,
+			&total,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan ascent: %w", err)
 		}

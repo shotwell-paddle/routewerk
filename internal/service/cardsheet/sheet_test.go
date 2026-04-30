@@ -85,7 +85,7 @@ func TestPageCount(t *testing.T) {
 // stream for the exact color operator gofpdf emits for SetDrawColor(255,0,0).
 // ────────────────────────────────────────────────────────────
 
-func TestDrawCutPathIsPureRed(t *testing.T) {
+func TestDrawCutPathIsPureMagenta(t *testing.T) {
 	pdf := gofpdf.NewCustom(&gofpdf.InitType{
 		UnitStr: "mm",
 		Size:    gofpdf.SizeType{Wd: pageWMM, Ht: pageHMM},
@@ -100,9 +100,11 @@ func TestDrawCutPathIsPureRed(t *testing.T) {
 		t.Fatalf("pdf output: %v", err)
 	}
 
-	// gofpdf emits stroke color as "R G B RG" with three decimal places for
-	// each channel. Pure red → "1.000 0.000 0.000 RG".
-	want := "1.000 0.000 0.000 RG"
+	// Cut color switched from red to magenta (255,0,255) because pure red
+	// collided with red route-colour fills in Silhouette Studio's Cut-by-
+	// Color feature. gofpdf emits stroke color as "R G B RG" with three
+	// decimal places per channel — pure magenta → "1.000 0.000 1.000 RG".
+	want := "1.000 0.000 1.000 RG"
 	if !bytes.Contains(out.Bytes(), []byte(want)) {
 		t.Errorf("cut path color operator %q not found in PDF", want)
 	}

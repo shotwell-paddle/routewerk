@@ -4069,6 +4069,51 @@ details.session-route-pill > summary::marker { display: none; content: ''; }
   margin-left: auto;
 }
 
+/* Palette presets — one-click palette swap in Gym Settings. */
+.settings-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3, 0.75rem);
+  margin-top: var(--sp-2, 0.5rem);
+}
+
+.settings-preset-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1, 0.25rem);
+  padding: var(--sp-3, 0.75rem) var(--sp-4, 1rem);
+  min-width: 240px;
+  text-align: left;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.settings-preset-name {
+  font-weight: 600;
+  font-size: var(--font-size-sm, 0.875rem);
+}
+
+.settings-preset-desc {
+  font-weight: 400;
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--rw-text-muted, #6b6b6b);
+}
+
+.settings-preset-swatches {
+  display: flex;
+  gap: 2px;
+  margin-top: var(--sp-1, 0.25rem);
+}
+
+.settings-preset-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
 /* Inline add form */
 .settings-inline-form {
   padding-top: var(--sp-3, 0.75rem);

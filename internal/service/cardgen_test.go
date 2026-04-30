@@ -116,7 +116,11 @@ func TestGenerateDigitalPDF(t *testing.T) {
 func TestRouteURL(t *testing.T) {
 	gen := NewCardGenerator("https://app.routewerk.com/")
 	url := gen.RouteURL("loc-123", "route-abc")
-	expected := "https://app.routewerk.com/locations/loc-123/routes/route-abc"
+	// RouteURL emits /routes/{id} — the /locations/{id}/routes/{id}
+	// path only exists under the JSON API, so QR codes that encoded
+	// the location-scoped URL were landing on a 404. locationID is
+	// accepted for API stability but not used in the path.
+	expected := "https://app.routewerk.com/routes/route-abc"
 	if url != expected {
 		t.Errorf("RouteURL = %q, want %q", url, expected)
 	}

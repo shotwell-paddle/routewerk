@@ -106,15 +106,9 @@ func (h *Handler) enrichTemplateData(r *http.Request, td *TemplateData) {
 		td.HasMultipleLocations = len(locations) > 1
 	}
 
-	// Load unread notification count
-	if h.notifRepo != nil {
-		count, err := h.notifRepo.UnreadCount(ctx, user.ID)
-		if err != nil {
-			slog.Error("failed to load notification count", "user_id", user.ID, "error", err)
-		} else {
-			td.UnreadNotifCount = count
-		}
-	}
+	// Unread notification count is loaded asynchronously by the sidebar
+	// via HTMX polling against /notifications/badge — keeping it off the
+	// page-load critical path. See perf audit 2026-04-22 finding #1.
 
 	// Build view-as options if user has a role higher than setter
 	realRank := middleware.RoleRankValue(td.RealRole)

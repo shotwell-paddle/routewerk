@@ -44,6 +44,13 @@ var validRouteTypes = map[string]bool{
 // validUUID matches UUID v4 or similar slug IDs used in the app.
 var validRouteID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
+// safeCSSRe accepts either a bare hex color (#RGB / #RRGGBB) or a single
+// CSS declaration of the form `<prop>: #RGB;` — nothing else. This is the
+// allow-list backing the safeCSS template function; see S2 in the
+// 2026-04-22 perf audit. Keeping this tight prevents a future caller from
+// accidentally shipping attacker-controlled text into a style attribute.
+var safeCSSRe = regexp.MustCompile(`^(?:[a-zA-Z-]+:\s*)?#(?:[0-9a-fA-F]{3}){1,2}\s*;?\s*$`)
+
 // sanitizeColor returns the color if it's a valid hex color, or a safe default.
 func sanitizeColor(color string) string {
 	if validHexColor.MatchString(color) {
@@ -175,6 +182,14 @@ var funcMap = template.FuncMap{
 	"printf":     fmt.Sprintf,
 	"staticPath": StaticPath,
 	"safeCSS": func(s string) template.CSS {
+		// Reject anything that isn't a hex color or a single `prop: #hex;`
+		// declaration. Callers today already pass values that went through
+		// sanitizeColor, but nothing in the type system enforces that —
+		// this validator is the belt to that suspenders. See S2 in the
+		// 2026-04-22 audit.
+		if !safeCSSRe.MatchString(s) {
+			return ""
+		}
 		return template.CSS(s)
 	},
 	"roleName": roleDisplayName,

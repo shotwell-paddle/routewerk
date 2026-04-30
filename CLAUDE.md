@@ -120,17 +120,14 @@ The canonical remote is **`shotwell-paddle/routewerk`**. My local git config has
 
 ### Branch model
 
-- `main` — production. Only updated via squash-merged PRs.
+- `main` — production. Only updated via PRs (never direct push).
 - `dev` — staging / integration. Feature branches merge here first.
 - Feature branches (`fix/...`, `feat/...`, `hotfix/...`) — branch off `dev` (or `main` for hotfixes).
-- **Always squash-merge PRs.** Older PRs used "Create a merge commit" and it caused dev/main to diverge badly (orphan merge commits on main, add/add conflicts on the next release). Stay on squash.
-- **After a `dev → main` release PR merges, resync dev to main** so the two don't drift:
-  ```
-  git checkout dev
-  git fetch origin
-  git reset --hard origin/main
-  git push --force-with-lease origin dev
-  ```
+- **Squash-merge feature PRs into `dev`.** "Create a merge commit" caused divergence (orphan merge commits on main, add/add conflicts on the next release) — stay on squash.
+- **For `dev → main` release PRs, use "Rebase and merge" — NOT squash.** This fast-forwards main to dev's tip, so the two branches stay aligned automatically. No resync needed.
+  - If main hasn't moved since the last release (the normal case), Rebase-and-merge preserves dev's commit SHAs on main — true fast-forward.
+  - If a hotfix landed directly on main between releases, sync dev first (`git checkout dev && git merge --ff-only origin/main && git push`, or rebase dev's unmerged work onto main) before opening the release PR. This keeps the rebase a no-op.
+- Why not squash dev → main? Squashing makes main's release commit content-equal but SHA-different from dev's tip, which forces a `--force-with-lease` resync on dev after every release. Rebase-and-merge avoids that entire dance.
 
 ### Standard flow: feature → dev → main → deploy
 
@@ -153,13 +150,12 @@ gh pr merge <N> --repo shotwell-paddle/routewerk --squash --delete-branch
 # release to prod: open dev → main PR
 gh pr create --repo shotwell-paddle/routewerk --base main --head dev \
   --title 'Release: ...' --body-file /tmp/body.md
-gh pr merge <N> --repo shotwell-paddle/routewerk --squash
 
-# deploy
-git checkout main && git pull --ff-only
-make deploy
+# after CI green, REBASE-merge (not squash) — fast-forwards main to dev
+gh pr merge <N> --repo shotwell-paddle/routewerk --rebase
 
-# then resync dev to main (see above)
+# deploy is automatic via deploy-prod.yml on push to main.
+# dev and main are now at the same SHA — no resync needed.
 ```
 
 ### gh merge gotchas

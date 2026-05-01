@@ -124,10 +124,13 @@ The canonical remote is **`shotwell-paddle/routewerk`**. My local git config has
 - `dev` — staging / integration. Feature branches merge here first.
 - Feature branches (`fix/...`, `feat/...`, `hotfix/...`) — branch off `dev` (or `main` for hotfixes).
 - **Squash-merge feature PRs into `dev`.** "Create a merge commit" caused divergence (orphan merge commits on main, add/add conflicts on the next release) — stay on squash.
-- **For `dev → main` release PRs, use "Rebase and merge" — NOT squash.** This fast-forwards main to dev's tip, so the two branches stay aligned automatically. No resync needed.
-  - If main hasn't moved since the last release (the normal case), Rebase-and-merge preserves dev's commit SHAs on main — true fast-forward.
-  - If a hotfix landed directly on main between releases, sync dev first (`git checkout dev && git merge --ff-only origin/main && git push`, or rebase dev's unmerged work onto main) before opening the release PR. This keeps the rebase a no-op.
-- Why not squash dev → main? Squashing makes main's release commit content-equal but SHA-different from dev's tip, which forces a `--force-with-lease` resync on dev after every release. Rebase-and-merge avoids that entire dance.
+- **For `dev → main` release PRs, use "Rebase and merge" — NOT squash.** This brings dev's individual feature commits onto main (instead of one squashed "Release:" commit), so main's history stays bisectable per feature.
+- **After the release PR merges, force-push dev to match main** so the two stay aligned:
+  ```
+  git checkout dev && git fetch origin && git reset --hard origin/main && git push --force-with-lease origin dev
+  ```
+  Why this is needed: GitHub's "Rebase and merge" rewrites committer dates and produces new SHAs even when a true fast-forward was possible (verified 2026-04-30 after #27). The only mechanism that would skip the resync is `git push origin origin/dev:main` from local, but main's branch protection requires PR-merging, so direct pushes are blocked. Squash-merge has the same drift; merge-commits cause add/add conflicts on the next release. Resync is the cheapest of the three.
+- If a hotfix landed directly on main between releases, sync dev first (`git checkout dev && git merge --ff-only origin/main && git push`) before opening the next release PR.
 
 ### Standard flow: feature → dev → main → deploy
 
@@ -151,11 +154,13 @@ gh pr merge <N> --repo shotwell-paddle/routewerk --squash --delete-branch
 gh pr create --repo shotwell-paddle/routewerk --base main --head dev \
   --title 'Release: ...' --body-file /tmp/body.md
 
-# after CI green, REBASE-merge (not squash) — fast-forwards main to dev
+# after CI green, rebase-merge (not squash) — brings dev's commits onto main
 gh pr merge <N> --repo shotwell-paddle/routewerk --rebase
 
 # deploy is automatic via deploy-prod.yml on push to main.
-# dev and main are now at the same SHA — no resync needed.
+
+# resync dev to main (rebase-merge re-stamped SHAs, so they drift content-equal)
+git checkout dev && git fetch origin && git reset --hard origin/main && git push --force-with-lease origin dev
 ```
 
 ### gh merge gotchas

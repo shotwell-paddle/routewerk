@@ -344,9 +344,131 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  # Phase 1f remaining (waves 3-5):
-  # Registrations, the unified action endpoint, verification, leaderboard
-  # read, and SSE leaderboard stream — added with their handlers.
+  # ── Registrations ──────────────────────────────────────────────
+
+  /competitions/{id}/registrations:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    get:
+      tags: [competitions]
+      operationId: listRegistrations
+      summary: List registrations for a competition
+      description: |
+        Any authenticated user can list. The leaderboard-visibility
+        filter (wave 4) governs how much detail unaffiliated users see.
+      responses:
+        '200':
+          description: Registrations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CompetitionRegistration'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [competitions]
+      operationId: createRegistration
+      summary: Register self (or another climber, if staff) for a competition
+      description: |
+        With no `user_id` field, registers the calling user. Staff
+        (`gym_manager+` at the comp's location) may pass a `user_id`
+        to register someone else.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationCreate'
+      responses:
+        '201':
+          description: Registration created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetitionRegistration'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Climber already registered for this competition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /registrations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/RegistrationId'
+    delete:
+      tags: [competitions]
+      operationId: withdrawRegistration
+      summary: Withdraw a registration (mark withdrawn)
+      description: |
+        Caller must be the registration's user OR `gym_manager+` at the
+        comp's location. Soft delete — the row stays for audit, the bib
+        number is freed for reuse.
+      responses:
+        '204':
+          description: Withdrawn.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ── Action endpoint (the league-night centerpiece) ─────────────
+
+  /competitions/{id}/actions:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    post:
+      tags: [competitions]
+      operationId: submitActions
+      summary: Submit one or more attempt actions
+      description: |
+        Unified write endpoint for the climber's scorecard. Each action
+        is independent and idempotent — accidental retries from a
+        flaky-network phone replay safely. Actions are processed in
+        order; failures don't abort the batch.
+
+        Action types:
+        - `increment` — add an attempt (you tried again)
+        - `zone` — mark zone reached at the current attempt count
+        - `top` — mark sent (implicitly marks zone if not already)
+        - `undo` — revert to the state before the most recent log entry
+        - `reset` — zero everything for this problem (climber within
+          grace window, or staff)
+
+        Idempotency: send a UUID `idempotency_key` per action. Server
+        dedupes against `competition_attempt_log`; replay returns the
+        cached result.
+
+        Authorization: caller must own the registration. Server rejects
+        actions whose problem belongs to an event whose `ends_at` has
+        passed (rejected with reason `event_closed`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionsRequest'
+      responses:
+        '200':
+          description: |
+            Per-action results plus the resulting attempt state for every
+            problem touched by this batch.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionsResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # Phase 1f remaining (waves 4-5):
+  # Verification + leaderboard read + SSE stream.
 
 components:
 
@@ -380,6 +502,14 @@ components:
       in: path
       required: true
       description: Competition problem UUID.
+      schema:
+        type: string
+        format: uuid
+    RegistrationId:
+      name: id
+      in: path
+      required: true
+      description: Competition registration UUID.
       schema:
         type: string
         format: uuid
@@ -776,6 +906,127 @@ components:
         grade: { type: string, nullable: true }
         color: { type: string, nullable: true }
         sort_order: { type: integer }
+
+    # ── Registration ─────────────────────────────────────────────
+
+    CompetitionRegistration:
+      type: object
+      required: [id, competition_id, category_id, user_id, display_name, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        competition_id: { type: string, format: uuid }
+        category_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        display_name:
+          type: string
+          description: Snapshot at registration time.
+        bib_number: { type: integer, nullable: true }
+        waiver_signed_at: { type: string, format: date-time, nullable: true }
+        paid_at: { type: string, format: date-time, nullable: true }
+        withdrawn_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    RegistrationCreate:
+      type: object
+      required: [category_id]
+      properties:
+        category_id: { type: string, format: uuid }
+        user_id:
+          type: string
+          format: uuid
+          description: |
+            Optional. Defaults to the calling user. Setting a different
+            user_id requires `gym_manager+` role at the comp's location.
+        display_name:
+          type: string
+          description: Optional. Defaults to the user's display_name.
+        bib_number:
+          type: integer
+          nullable: true
+          description: Staff-assigned bib. Climbers self-registering should leave null.
+
+    # ── Action endpoint ─────────────────────────────────────────
+
+    ActionType:
+      type: string
+      enum: [increment, zone, top, undo, reset]
+
+    ActionItem:
+      type: object
+      required: [type, problem_id]
+      properties:
+        idempotency_key:
+          type: string
+          format: uuid
+          description: |
+            Strongly recommended; UUIDv4 generated client-side. Server
+            dedupes accidental retries (action queue + flaky network).
+        type: { $ref: '#/components/schemas/ActionType' }
+        problem_id: { type: string, format: uuid }
+        client_timestamp:
+          type: string
+          format: date-time
+          description: Optional; recorded but not used for ordering.
+
+    ActionsRequest:
+      type: object
+      required: [actions]
+      properties:
+        actions:
+          type: array
+          items: { $ref: '#/components/schemas/ActionItem' }
+          maxItems: 50
+
+    AttemptState:
+      type: object
+      required: [problem_id, attempts, zone_reached, top_reached]
+      properties:
+        problem_id: { type: string, format: uuid }
+        attempts: { type: integer }
+        zone_attempts: { type: integer, nullable: true }
+        zone_reached: { type: boolean }
+        top_reached: { type: boolean }
+
+    ActionApplied:
+      type: object
+      required: [problem_id, state]
+      properties:
+        idempotency_key: { type: string, format: uuid }
+        problem_id: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/AttemptState' }
+        replayed:
+          type: boolean
+          description: True if this action's idempotency key matched a prior request.
+
+    ActionRejected:
+      type: object
+      required: [problem_id, reason]
+      properties:
+        idempotency_key: { type: string, format: uuid }
+        problem_id: { type: string, format: uuid }
+        reason:
+          type: string
+          enum:
+            - unknown_problem
+            - wrong_competition
+            - event_closed
+            - no_history       # undo with no prior log entry
+            - server_error
+
+    ActionsResponse:
+      type: object
+      required: [applied, rejected, state]
+      properties:
+        applied:
+          type: array
+          items: { $ref: '#/components/schemas/ActionApplied' }
+        rejected:
+          type: array
+          items: { $ref: '#/components/schemas/ActionRejected' }
+        state:
+          type: array
+          items: { $ref: '#/components/schemas/AttemptState' }
+          description: Current state for every problem touched by this batch.
 
   securitySchemes:
     bearerAuth:

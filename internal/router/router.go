@@ -107,10 +107,12 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	magicLinkRepo := repository.NewMagicLinkRepo(db)
 	magicLinkSvc := service.NewMagicLinkService(magicLinkRepo, userRepo, deps.JobQueue, cfg.FrontendURL)
 
-	// Competitions module (Phase 1f.1: CRUD only; subsequent waves add
-	// events, problems, registrations, action endpoint, leaderboard, SSE).
+	// Competitions module (Phase 1f waves 1–3 wired here; waves 4–5 add
+	// verification, leaderboard read, and the SSE leaderboard stream).
 	compRepo := repository.NewCompetitionRepo(db)
-	compHandler := handler.NewCompHandler(compRepo, authz)
+	compRegRepo := repository.NewCompetitionRegistrationRepo(db)
+	compAttemptRepo := repository.NewCompetitionAttemptRepo(db)
+	compHandler := handler.NewCompHandler(compRepo, compRegRepo, compAttemptRepo, userRepo, authz)
 
 	// Web session manager (cookie-based auth for HTMX frontend)
 	sessionMgr := middleware.NewSessionManager(webSessionRepo, userRepo, cfg.IsDev())
@@ -710,6 +712,11 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 				r.Post("/events", compHandler.CreateEvent)
 				r.Get("/categories", compHandler.ListCategories)
 				r.Post("/categories", compHandler.CreateCategory)
+
+				// Phase 1f wave 3: registrations + the unified action endpoint.
+				r.Get("/registrations", compHandler.ListRegistrations)
+				r.Post("/registrations", compHandler.CreateRegistration)
+				r.Post("/actions", compHandler.SubmitActions)
 			})
 			r.Route("/events/{id}", func(r chi.Router) {
 				r.Patch("/", compHandler.UpdateEvent)
@@ -717,6 +724,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 				r.Post("/problems", compHandler.CreateProblem)
 			})
 			r.Patch("/problems/{id}", compHandler.UpdateProblem)
+			r.Delete("/registrations/{id}", compHandler.WithdrawRegistration)
 
 			// ── Social (no org context) ─────────────────────────────
 			r.Route("/users/{userID}", func(r chi.Router) {

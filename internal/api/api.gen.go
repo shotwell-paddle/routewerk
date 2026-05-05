@@ -27,6 +27,60 @@ const (
 	CookieAuthScopes cookieAuthContextKey = "cookieAuth.Scopes"
 )
 
+// Defines values for ActionRejectedReason.
+const (
+	EventClosed      ActionRejectedReason = "event_closed"
+	NoHistory        ActionRejectedReason = "no_history"
+	ServerError      ActionRejectedReason = "server_error"
+	UnknownProblem   ActionRejectedReason = "unknown_problem"
+	WrongCompetition ActionRejectedReason = "wrong_competition"
+)
+
+// Valid indicates whether the value is a known member of the ActionRejectedReason enum.
+func (e ActionRejectedReason) Valid() bool {
+	switch e {
+	case EventClosed:
+		return true
+	case NoHistory:
+		return true
+	case ServerError:
+		return true
+	case UnknownProblem:
+		return true
+	case WrongCompetition:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActionType.
+const (
+	Increment ActionType = "increment"
+	Reset     ActionType = "reset"
+	Top       ActionType = "top"
+	Undo      ActionType = "undo"
+	Zone      ActionType = "zone"
+)
+
+// Valid indicates whether the value is a known member of the ActionType enum.
+func (e ActionType) Valid() bool {
+	switch e {
+	case Increment:
+		return true
+	case Reset:
+		return true
+	case Top:
+		return true
+	case Undo:
+		return true
+	case Zone:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AggregationMethod.
 const (
 	BestN          AggregationMethod = "best_n"
@@ -122,6 +176,55 @@ type Accepted struct {
 	Ok bool `json:"ok"`
 }
 
+// ActionApplied defines model for ActionApplied.
+type ActionApplied struct {
+	IdempotencyKey *openapi_types.UUID `json:"idempotency_key,omitempty"`
+	ProblemId      openapi_types.UUID  `json:"problem_id"`
+
+	// Replayed True if this action's idempotency key matched a prior request.
+	Replayed *bool        `json:"replayed,omitempty"`
+	State    AttemptState `json:"state"`
+}
+
+// ActionItem defines model for ActionItem.
+type ActionItem struct {
+	// ClientTimestamp Optional; recorded but not used for ordering.
+	ClientTimestamp *time.Time `json:"client_timestamp,omitempty"`
+
+	// IdempotencyKey Strongly recommended; UUIDv4 generated client-side. Server
+	// dedupes accidental retries (action queue + flaky network).
+	IdempotencyKey *openapi_types.UUID `json:"idempotency_key,omitempty"`
+	ProblemId      openapi_types.UUID  `json:"problem_id"`
+	Type           ActionType          `json:"type"`
+}
+
+// ActionRejected defines model for ActionRejected.
+type ActionRejected struct {
+	IdempotencyKey *openapi_types.UUID  `json:"idempotency_key,omitempty"`
+	ProblemId      openapi_types.UUID   `json:"problem_id"`
+	Reason         ActionRejectedReason `json:"reason"`
+}
+
+// ActionRejectedReason defines model for ActionRejected.Reason.
+type ActionRejectedReason string
+
+// ActionType defines model for ActionType.
+type ActionType string
+
+// ActionsRequest defines model for ActionsRequest.
+type ActionsRequest struct {
+	Actions []ActionItem `json:"actions"`
+}
+
+// ActionsResponse defines model for ActionsResponse.
+type ActionsResponse struct {
+	Applied  []ActionApplied  `json:"applied"`
+	Rejected []ActionRejected `json:"rejected"`
+
+	// State Current state for every problem touched by this batch.
+	State []AttemptState `json:"state"`
+}
+
 // Aggregation How per-event scores combine into a comp-level standing. Stored
 // as freeform jsonb in the DB; this is the canonical decoded form.
 // Method-specific fields (`drop`, `weights`, `finals_event_id`,
@@ -143,6 +246,15 @@ type Aggregation struct {
 
 // AggregationMethod defines model for Aggregation.Method.
 type AggregationMethod string
+
+// AttemptState defines model for AttemptState.
+type AttemptState struct {
+	Attempts     int                `json:"attempts"`
+	ProblemId    openapi_types.UUID `json:"problem_id"`
+	TopReached   bool               `json:"top_reached"`
+	ZoneAttempts *int               `json:"zone_attempts,omitempty"`
+	ZoneReached  bool               `json:"zone_reached"`
+}
 
 // CategoryCreate defines model for CategoryCreate.
 type CategoryCreate struct {
@@ -278,6 +390,22 @@ type CompetitionProblem struct {
 	ZonePoints *float32            `json:"zone_points,omitempty"`
 }
 
+// CompetitionRegistration defines model for CompetitionRegistration.
+type CompetitionRegistration struct {
+	BibNumber     *int               `json:"bib_number,omitempty"`
+	CategoryId    openapi_types.UUID `json:"category_id"`
+	CompetitionId openapi_types.UUID `json:"competition_id"`
+	CreatedAt     time.Time          `json:"created_at"`
+
+	// DisplayName Snapshot at registration time.
+	DisplayName    string             `json:"display_name"`
+	Id             openapi_types.UUID `json:"id"`
+	PaidAt         *time.Time         `json:"paid_at,omitempty"`
+	UserId         openapi_types.UUID `json:"user_id"`
+	WaiverSignedAt *time.Time         `json:"waiver_signed_at,omitempty"`
+	WithdrawnAt    *time.Time         `json:"withdrawn_at,omitempty"`
+}
+
 // CompetitionStatus defines model for CompetitionStatus.
 type CompetitionStatus string
 
@@ -379,6 +507,20 @@ type ProblemUpdate struct {
 	ZonePoints *float32            `json:"zone_points,omitempty"`
 }
 
+// RegistrationCreate defines model for RegistrationCreate.
+type RegistrationCreate struct {
+	// BibNumber Staff-assigned bib. Climbers self-registering should leave null.
+	BibNumber  *int               `json:"bib_number,omitempty"`
+	CategoryId openapi_types.UUID `json:"category_id"`
+
+	// DisplayName Optional. Defaults to the user's display_name.
+	DisplayName *string `json:"display_name,omitempty"`
+
+	// UserId Optional. Defaults to the calling user. Setting a different
+	// user_id requires `gym_manager+` role at the comp's location.
+	UserId *openapi_types.UUID `json:"user_id,omitempty"`
+}
+
 // CompetitionId defines model for CompetitionId.
 type CompetitionId = openapi_types.UUID
 
@@ -390,6 +532,9 @@ type LocationId = openapi_types.UUID
 
 // ProblemId defines model for ProblemId.
 type ProblemId = openapi_types.UUID
+
+// RegistrationId defines model for RegistrationId.
+type RegistrationId = openapi_types.UUID
 
 // BadRequest defines model for BadRequest.
 type BadRequest = Error
@@ -421,11 +566,17 @@ type RequestMagicLinkJSONRequestBody = MagicLinkRequest
 // UpdateCompetitionJSONRequestBody defines body for UpdateCompetition for application/json ContentType.
 type UpdateCompetitionJSONRequestBody = CompetitionUpdate
 
+// SubmitActionsJSONRequestBody defines body for SubmitActions for application/json ContentType.
+type SubmitActionsJSONRequestBody = ActionsRequest
+
 // CreateCategoryJSONRequestBody defines body for CreateCategory for application/json ContentType.
 type CreateCategoryJSONRequestBody = CategoryCreate
 
 // CreateEventJSONRequestBody defines body for CreateEvent for application/json ContentType.
 type CreateEventJSONRequestBody = EventCreate
+
+// CreateRegistrationJSONRequestBody defines body for CreateRegistration for application/json ContentType.
+type CreateRegistrationJSONRequestBody = RegistrationCreate
 
 // UpdateEventJSONRequestBody defines body for UpdateEvent for application/json ContentType.
 type UpdateEventJSONRequestBody = EventUpdate
@@ -450,6 +601,9 @@ type ServerInterface interface {
 	// Update a competition
 	// (PATCH /competitions/{id})
 	UpdateCompetition(w http.ResponseWriter, r *http.Request, id CompetitionId)
+	// Submit one or more attempt actions
+	// (POST /competitions/{id}/actions)
+	SubmitActions(w http.ResponseWriter, r *http.Request, id CompetitionId)
 	// List categories under a competition (sort order ASC)
 	// (GET /competitions/{id}/categories)
 	ListCategories(w http.ResponseWriter, r *http.Request, id CompetitionId)
@@ -462,6 +616,12 @@ type ServerInterface interface {
 	// Create an event under a competition
 	// (POST /competitions/{id}/events)
 	CreateEvent(w http.ResponseWriter, r *http.Request, id CompetitionId)
+	// List registrations for a competition
+	// (GET /competitions/{id}/registrations)
+	ListRegistrations(w http.ResponseWriter, r *http.Request, id CompetitionId)
+	// Register self (or another climber, if staff) for a competition
+	// (POST /competitions/{id}/registrations)
+	CreateRegistration(w http.ResponseWriter, r *http.Request, id CompetitionId)
 	// Update an event
 	// (PATCH /events/{id})
 	UpdateEvent(w http.ResponseWriter, r *http.Request, id EventId)
@@ -480,6 +640,9 @@ type ServerInterface interface {
 	// Update a problem
 	// (PATCH /problems/{id})
 	UpdateProblem(w http.ResponseWriter, r *http.Request, id ProblemId)
+	// Withdraw a registration (mark withdrawn)
+	// (DELETE /registrations/{id})
+	WithdrawRegistration(w http.ResponseWriter, r *http.Request, id RegistrationId)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -504,6 +667,12 @@ func (_ Unimplemented) UpdateCompetition(w http.ResponseWriter, r *http.Request,
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Submit one or more attempt actions
+// (POST /competitions/{id}/actions)
+func (_ Unimplemented) SubmitActions(w http.ResponseWriter, r *http.Request, id CompetitionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // List categories under a competition (sort order ASC)
 // (GET /competitions/{id}/categories)
 func (_ Unimplemented) ListCategories(w http.ResponseWriter, r *http.Request, id CompetitionId) {
@@ -525,6 +694,18 @@ func (_ Unimplemented) ListEvents(w http.ResponseWriter, r *http.Request, id Com
 // Create an event under a competition
 // (POST /competitions/{id}/events)
 func (_ Unimplemented) CreateEvent(w http.ResponseWriter, r *http.Request, id CompetitionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List registrations for a competition
+// (GET /competitions/{id}/registrations)
+func (_ Unimplemented) ListRegistrations(w http.ResponseWriter, r *http.Request, id CompetitionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Register self (or another climber, if staff) for a competition
+// (POST /competitions/{id}/registrations)
+func (_ Unimplemented) CreateRegistration(w http.ResponseWriter, r *http.Request, id CompetitionId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -561,6 +742,12 @@ func (_ Unimplemented) CreateCompetition(w http.ResponseWriter, r *http.Request,
 // Update a problem
 // (PATCH /problems/{id})
 func (_ Unimplemented) UpdateProblem(w http.ResponseWriter, r *http.Request, id ProblemId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Withdraw a registration (mark withdrawn)
+// (DELETE /registrations/{id})
+func (_ Unimplemented) WithdrawRegistration(w http.ResponseWriter, r *http.Request, id RegistrationId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -646,6 +833,40 @@ func (siw *ServerInterfaceWrapper) UpdateCompetition(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateCompetition(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SubmitActions operation middleware
+func (siw *ServerInterfaceWrapper) SubmitActions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id CompetitionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SubmitActions(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -782,6 +1003,74 @@ func (siw *ServerInterfaceWrapper) CreateEvent(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateEvent(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListRegistrations operation middleware
+func (siw *ServerInterfaceWrapper) ListRegistrations(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id CompetitionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRegistrations(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateRegistration operation middleware
+func (siw *ServerInterfaceWrapper) CreateRegistration(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id CompetitionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateRegistration(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1011,6 +1300,40 @@ func (siw *ServerInterfaceWrapper) UpdateProblem(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// WithdrawRegistration operation middleware
+func (siw *ServerInterfaceWrapper) WithdrawRegistration(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id RegistrationId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.WithdrawRegistration(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -1134,6 +1457,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Patch(options.BaseURL+"/competitions/{id}", wrapper.UpdateCompetition)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/competitions/{id}/actions", wrapper.SubmitActions)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/competitions/{id}/categories", wrapper.ListCategories)
 	})
 	r.Group(func(r chi.Router) {
@@ -1144,6 +1470,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/competitions/{id}/events", wrapper.CreateEvent)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/competitions/{id}/registrations", wrapper.ListRegistrations)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/competitions/{id}/registrations", wrapper.CreateRegistration)
 	})
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/events/{id}", wrapper.UpdateEvent)
@@ -1163,6 +1495,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/problems/{id}", wrapper.UpdateProblem)
 	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/registrations/{id}", wrapper.WithdrawRegistration)
+	})
 
 	return r
 }
@@ -1172,78 +1507,103 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

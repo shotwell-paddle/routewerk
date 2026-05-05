@@ -25,7 +25,7 @@ func TestSPARoutes(t *testing.T) {
 	r.Get("/favicon.svg", func(w http.ResponseWriter, req *http.Request) {
 		spa.AssetServer().ServeHTTP(w, req)
 	})
-	r.Handle("/spa-test", http.RedirectHandler("/spa-test/", http.StatusMovedPermanently))
+	r.Handle("/spa-test", spa.FallbackHandler())
 	r.Handle("/spa-test/*", spa.FallbackHandler())
 
 	cases := []struct {
@@ -59,9 +59,12 @@ func TestSPARoutes(t *testing.T) {
 			wantInBody: "svg",
 		},
 		{
-			name:       "spa-test without trailing slash redirects",
-			path:       "/spa-test",
-			wantStatus: http.StatusMovedPermanently,
+			name:        "spa-test without trailing slash also serves SPA",
+			path:        "/spa-test",
+			wantStatus:  http.StatusOK,
+			wantInBody:  "<!DOCTYPE html",
+			wantHeader:  "Content-Type",
+			wantHeaderV: "text/html; charset=utf-8",
 		},
 		{
 			name:       "unknown root path is not handled by SPA",

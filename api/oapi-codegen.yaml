@@ -1,0 +1,15 @@
+# Config for oapi-codegen. Drives `make api-gen` (and the CI drift check).
+# We generate three things into the `api` package: the type definitions,
+# the chi server scaffolding, and an embedded copy of the spec for
+# runtime validation if we ever need it.
+package: api
+output: internal/api/api.gen.go
+generate:
+  models: true
+  chi-server: true
+  embedded-spec: true
+output-options:
+  # Skip the prune step that drops "unused" types — we want every schema
+  # exposed (the SPA may reference types not directly tied to a path,
+  # e.g. Aggregation appears nested inside Competition only).
+  skip-prune: true

@@ -205,6 +205,58 @@ func (r *CompetitionRepo) CreateEvent(ctx context.Context, e *model.CompetitionE
 	).Scan(&e.ID)
 }
 
+// GetEventByID looks up a single event by its UUID. Returns
+// ErrCompetitionNotFound (slightly overloaded; the same sentinel covers
+// "any comp-tree row not found") when no row matches.
+func (r *CompetitionRepo) GetEventByID(ctx context.Context, id string) (*model.CompetitionEvent, error) {
+	ctx, cancel := database.QueryTimeout(ctx, database.TimeoutFast)
+	defer cancel()
+
+	e := &model.CompetitionEvent{}
+	err := r.db.QueryRow(ctx, `
+		SELECT id, competition_id, name, sequence, starts_at, ends_at, weight,
+			scoring_rule_override, scoring_config_override
+		FROM competition_events
+		WHERE id = $1`,
+		id,
+	).Scan(
+		&e.ID, &e.CompetitionID, &e.Name, &e.Sequence, &e.StartsAt, &e.EndsAt, &e.Weight,
+		&e.ScoringRuleOverride, &e.ScoringConfigOverride,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrCompetitionNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get event by id: %w", err)
+	}
+	return e, nil
+}
+
+// GetProblemByID looks up a single problem. See GetEventByID note re:
+// the shared ErrCompetitionNotFound sentinel.
+func (r *CompetitionRepo) GetProblemByID(ctx context.Context, id string) (*model.CompetitionProblem, error) {
+	ctx, cancel := database.QueryTimeout(ctx, database.TimeoutFast)
+	defer cancel()
+
+	p := &model.CompetitionProblem{}
+	err := r.db.QueryRow(ctx, `
+		SELECT id, event_id, route_id, label, points, zone_points, grade, color, sort_order
+		FROM competition_problems
+		WHERE id = $1`,
+		id,
+	).Scan(
+		&p.ID, &p.EventID, &p.RouteID, &p.Label, &p.Points, &p.ZonePoints,
+		&p.Grade, &p.Color, &p.SortOrder,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrCompetitionNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get problem by id: %w", err)
+	}
+	return p, nil
+}
+
 func (r *CompetitionRepo) ListEvents(ctx context.Context, competitionID string) ([]model.CompetitionEvent, error) {
 	ctx, cancel := database.QueryTimeout(ctx, database.TimeoutFast)
 	defer cancel()

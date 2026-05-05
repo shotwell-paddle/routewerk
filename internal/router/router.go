@@ -695,11 +695,28 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 
 			// ── Competitions by id (no location prefix) ─────────────
 			// Read is open to any authenticated user; the leaderboard
-			// visibility check (Phase 1f wave 3) gates downstream
-			// resources. Update authz happens inside the handler since
-			// the {locationID} chi param isn't on this URL.
+			// visibility check (Phase 1f wave 4) gates downstream
+			// resources. Write authz happens inside the handler via the
+			// shared requireCompRole helper since the {locationID} chi
+			// param isn't on these URLs.
 			r.Get("/competitions/{id}", compHandler.Get)
 			r.Patch("/competitions/{id}", compHandler.Update)
+
+			// Comp child resources (events, categories, problems —
+			// Phase 1f wave 2). Authz at the comp level happens
+			// inside each handler.
+			r.Route("/competitions/{id}", func(r chi.Router) {
+				r.Get("/events", compHandler.ListEvents)
+				r.Post("/events", compHandler.CreateEvent)
+				r.Get("/categories", compHandler.ListCategories)
+				r.Post("/categories", compHandler.CreateCategory)
+			})
+			r.Route("/events/{id}", func(r chi.Router) {
+				r.Patch("/", compHandler.UpdateEvent)
+				r.Get("/problems", compHandler.ListProblems)
+				r.Post("/problems", compHandler.CreateProblem)
+			})
+			r.Patch("/problems/{id}", compHandler.UpdateProblem)
 
 			// ── Social (no org context) ─────────────────────────────
 			r.Route("/users/{userID}", func(r chi.Router) {

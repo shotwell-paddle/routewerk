@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/shotwell-paddle/routewerk/internal/api"
 	"github.com/shotwell-paddle/routewerk/internal/model"
+	"github.com/shotwell-paddle/routewerk/internal/repository"
 	"github.com/shotwell-paddle/routewerk/internal/service/competition"
 )
 
@@ -40,54 +42,67 @@ func (h *CompHandler) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cache check — also short-circuits comp lookup on a hot path.
-	if cached, ok := h.cache.get(compID, categoryID); ok {
-		JSON(w, http.StatusOK, cached)
-		return
-	}
-
-	comp, ok := h.loadComp(w, r, compID)
-	if !ok {
-		return
-	}
-
-	// Pull problems by walking events. League comps are small enough
-	// that we'd rather avoid a JOIN-heavy SQL than premature optimize.
-	events, err := h.repo.ListEvents(r.Context(), compID)
+	board, err := h.buildLeaderboard(r, compID, categoryID)
 	if err != nil {
-		slog.Error("leaderboard: list events", "competition_id", compID, "error", err)
+		// buildLeaderboard already wrote a response on the not-found
+		// path; reaching here means a real infrastructure error.
+		if err == errLeaderboardCompNotFound {
+			Error(w, http.StatusNotFound, "competition not found")
+			return
+		}
+		slog.Error("leaderboard", "competition_id", compID, "error", err)
 		Error(w, http.StatusInternalServerError, "internal error")
 		return
+	}
+	JSON(w, http.StatusOK, board)
+}
+
+// errLeaderboardCompNotFound is the sentinel buildLeaderboard returns
+// when the comp doesn't exist; callers map to 404 in their own way.
+var errLeaderboardCompNotFound = errors.New("comp not found")
+
+// buildLeaderboard is the shared compute path used by both the
+// REST endpoint and the SSE stream. It checks the cache first and
+// stores the result on a miss. Returns errLeaderboardCompNotFound
+// when the comp doesn't exist.
+func (h *CompHandler) buildLeaderboard(r *http.Request, compID, categoryID string) (api.Leaderboard, error) {
+	if cached, ok := h.cache.get(compID, categoryID); ok {
+		return cached, nil
+	}
+
+	comp, err := h.repo.GetByID(r.Context(), compID)
+	if errors.Is(err, repository.ErrCompetitionNotFound) {
+		return api.Leaderboard{}, errLeaderboardCompNotFound
+	}
+	if err != nil {
+		return api.Leaderboard{}, err
+	}
+
+	events, err := h.repo.ListEvents(r.Context(), compID)
+	if err != nil {
+		return api.Leaderboard{}, err
 	}
 	var problems []model.CompetitionProblem
 	for i := range events {
 		ps, err := h.repo.ListProblems(r.Context(), events[i].ID)
 		if err != nil {
-			slog.Error("leaderboard: list problems", "event_id", events[i].ID, "error", err)
-			Error(w, http.StatusInternalServerError, "internal error")
-			return
+			return api.Leaderboard{}, err
 		}
 		problems = append(problems, ps...)
 	}
 
 	regs, err := h.regRepo.ListByCompetition(r.Context(), compID, categoryID)
 	if err != nil {
-		slog.Error("leaderboard: list registrations", "competition_id", compID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
-		return
+		return api.Leaderboard{}, err
 	}
 	attempts, err := h.attemptRepo.ListByCompetition(r.Context(), compID, categoryID)
 	if err != nil {
-		slog.Error("leaderboard: list attempts", "competition_id", compID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
-		return
+		return api.Leaderboard{}, err
 	}
 
 	entries, err := aggregateLeaderboard(comp, regs, problems, attempts)
 	if err != nil {
-		slog.Error("leaderboard: aggregate", "competition_id", compID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
-		return
+		return api.Leaderboard{}, err
 	}
 
 	respCompID, _ := uuid.Parse(compID)
@@ -101,9 +116,8 @@ func (h *CompHandler) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
 		c, _ := uuid.Parse(categoryID)
 		out.CategoryId = &c
 	}
-
 	h.cache.put(compID, categoryID, out)
-	JSON(w, http.StatusOK, out)
+	return out, nil
 }
 
 // aggregateLeaderboard is the pure scoring/ranking core, factored out

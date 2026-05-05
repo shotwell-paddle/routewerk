@@ -558,8 +558,56 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  # Phase 1f remaining (wave 5):
-  # SSE leaderboard stream.
+  # ── Leaderboard SSE stream ─────────────────────────────────────
+
+  /competitions/{id}/leaderboard/stream:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    get:
+      tags: [competitions]
+      operationId: streamLeaderboard
+      summary: Live leaderboard via Server-Sent Events
+      description: |
+        Long-lived `text/event-stream` connection. Server emits a
+        `leaderboard` event on connect (initial snapshot) and another
+        `leaderboard` event after every action / verify / override on
+        the comp. A `: keepalive` comment is emitted every 30 seconds
+        so reverse proxies don't kill idle connections.
+
+        Browsers consume via `EventSource`:
+
+        ```js
+        const es = new EventSource(`/api/v1/competitions/${id}/leaderboard/stream`);
+        es.addEventListener('leaderboard', e => {
+          const board = JSON.parse(e.data);
+          // …re-render…
+        });
+        ```
+
+        The handler closes the stream cleanly on client disconnect
+        (browser tab closed, or `es.close()`).
+
+        OpenAPI 3.0 doesn't model SSE responses well; the response
+        schema below describes the **payload of each `leaderboard`
+        event**, not the wire format itself.
+      parameters:
+        - in: query
+          name: category
+          description: Optional category UUID to filter the streamed leaderboard.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: |
+            Established event stream. Each `leaderboard` event has a
+            JSON `data:` payload matching the `Leaderboard` schema.
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/Leaderboard'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
 components:
 

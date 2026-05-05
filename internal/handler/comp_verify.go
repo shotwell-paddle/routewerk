@@ -45,6 +45,7 @@ func (h *CompHandler) VerifyAttempt(w http.ResponseWriter, r *http.Request) {
 	// change scoring fields but it does change attempt metadata that
 	// callers may reflect in the response.
 	h.cache.invalidate(comp.ID)
+	h.publishLeaderboardChange(comp.ID)
 	JSON(w, http.StatusOK, attemptToAPI(updated))
 }
 
@@ -109,6 +110,7 @@ func (h *CompHandler) OverrideAttempt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.cache.invalidate(comp.ID)
+	h.publishLeaderboardChange(comp.ID)
 	JSON(w, http.StatusOK, attemptToAPI(updated))
 }
 

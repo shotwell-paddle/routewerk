@@ -44,6 +44,32 @@ func NewCompHandler(repo *repository.CompetitionRepo, authz *middleware.Authoriz
 	return &CompHandler{repo: repo, authz: authz}
 }
 
+// requireCompRole verifies the authenticated user has one of the given
+// roles at the comp's location. Used by handlers whose URL doesn't carry
+// {locationID} (e.g. PATCH /competitions/{id} and all event/problem
+// child routes), where chi's RequireLocationRole middleware can't gate
+// the route.
+//
+// On failure, writes the appropriate JSON error and returns false; the
+// caller returns immediately without further work.
+func (h *CompHandler) requireCompRole(w http.ResponseWriter, r *http.Request, comp *model.Competition, roles ...string) bool {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		Error(w, http.StatusUnauthorized, "authentication required")
+		return false
+	}
+	mem, err := h.authz.LookupLocationMembership(r.Context(), userID, comp.LocationID)
+	if err != nil {
+		Error(w, http.StatusForbidden, "not a member of this location")
+		return false
+	}
+	if !rbac.HasAnyRole(mem.Role, roles...) {
+		Error(w, http.StatusForbidden, "insufficient role")
+		return false
+	}
+	return true
+}
+
 // ── List ───────────────────────────────────────────────────
 
 // List handles GET /api/v1/locations/{locationID}/competitions.
@@ -173,20 +199,9 @@ func (h *CompHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// /competitions/{id} doesn't carry a {locationID} path param, so the
-	// chi-mounted RequireLocationRole middleware can't run here. Look up
-	// the user's membership at the comp's location explicitly.
-	userID := middleware.GetUserID(r.Context())
-	if userID == "" {
-		Error(w, http.StatusUnauthorized, "authentication required")
-		return
-	}
-	mem, err := h.authz.LookupLocationMembership(r.Context(), userID, existing.LocationID)
-	if err != nil {
-		Error(w, http.StatusForbidden, "not a member of this location")
-		return
-	}
-	if !rbac.HasAnyRole(mem.Role, rbac.RoleGymManager) {
-		Error(w, http.StatusForbidden, "gym_manager+ required")
+	// chi-mounted RequireLocationRole middleware can't run here. Use the
+	// shared requireCompRole helper to do the inline lookup + role check.
+	if !h.requireCompRole(w, r, existing, rbac.RoleGymManager) {
 		return
 	}
 

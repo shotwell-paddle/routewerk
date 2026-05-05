@@ -163,11 +163,190 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  # Phase 1f stubs:
-  # The remaining comp endpoints (events, categories, problems CRUD,
-  # registrations, action endpoint, verification, leaderboard, SSE stream)
-  # are added in Phase 1f along with their handlers — keeping spec churn
-  # close to handler implementation so reviewer can see them together.
+  # ── Events ─────────────────────────────────────────────────────
+
+  /competitions/{id}/events:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    get:
+      tags: [competitions]
+      operationId: listEvents
+      summary: List events under a competition (sequence ASC)
+      responses:
+        '200':
+          description: Events ordered by sequence.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CompetitionEvent'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [competitions]
+      operationId: createEvent
+      summary: Create an event under a competition
+      description: Requires `head_setter+` role at the comp's location.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventCreate'
+      responses:
+        '201':
+          description: Event created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetitionEvent'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /events/{id}:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    patch:
+      tags: [competitions]
+      operationId: updateEvent
+      summary: Update an event
+      description: Requires `head_setter+` role at the comp's location.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventUpdate'
+      responses:
+        '200':
+          description: Updated event.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetitionEvent'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ── Categories ─────────────────────────────────────────────────
+
+  /competitions/{id}/categories:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    get:
+      tags: [competitions]
+      operationId: listCategories
+      summary: List categories under a competition (sort order ASC)
+      responses:
+        '200':
+          description: Categories.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CompetitionCategory'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [competitions]
+      operationId: createCategory
+      summary: Create a category
+      description: Requires `gym_manager+` role at the comp's location.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryCreate'
+      responses:
+        '201':
+          description: Category created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetitionCategory'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ── Problems ───────────────────────────────────────────────────
+
+  /events/{id}/problems:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [competitions]
+      operationId: listProblems
+      summary: List problems under an event (sort order ASC)
+      responses:
+        '200':
+          description: Problems.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CompetitionProblem'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [competitions]
+      operationId: createProblem
+      summary: Create a problem under an event
+      description: Requires `head_setter+` role at the comp's location.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProblemCreate'
+      responses:
+        '201':
+          description: Problem created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetitionProblem'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /problems/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ProblemId'
+    patch:
+      tags: [competitions]
+      operationId: updateProblem
+      summary: Update a problem
+      description: Requires `head_setter+` role at the comp's location.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProblemUpdate'
+      responses:
+        '200':
+          description: Updated problem.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetitionProblem'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # Phase 1f remaining (waves 3-5):
+  # Registrations, the unified action endpoint, verification, leaderboard
+  # read, and SSE leaderboard stream — added with their handlers.
 
 components:
 
@@ -185,6 +364,22 @@ components:
       in: path
       required: true
       description: Competition UUID.
+      schema:
+        type: string
+        format: uuid
+    EventId:
+      name: id
+      in: path
+      required: true
+      description: Competition event UUID.
+      schema:
+        type: string
+        format: uuid
+    ProblemId:
+      name: id
+      in: path
+      required: true
+      description: Competition problem UUID.
       schema:
         type: string
         format: uuid
@@ -435,6 +630,152 @@ components:
         ends_at: { type: string, format: date-time }
         registration_opens_at: { type: string, format: date-time, nullable: true }
         registration_closes_at: { type: string, format: date-time, nullable: true }
+
+    # ── Event ────────────────────────────────────────────────────
+
+    CompetitionEvent:
+      type: object
+      required: [id, competition_id, name, sequence, starts_at, ends_at, weight]
+      properties:
+        id: { type: string, format: uuid }
+        competition_id: { type: string, format: uuid }
+        name: { type: string }
+        sequence:
+          type: integer
+          minimum: 1
+          description: Position within the comp; unique per comp.
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        weight:
+          type: number
+          description: Multiplier when aggregating event scores into a series total.
+        scoring_rule_override:
+          type: string
+          nullable: true
+          description: |
+            If set, overrides the comp-level scoring_rule for this event.
+            NULL means "use the comp default". Lets a series mix event types
+            (boulder + speed + lead under one comp).
+        scoring_config_override:
+          type: object
+          additionalProperties: true
+          nullable: true
+
+    EventCreate:
+      type: object
+      required: [name, sequence, starts_at, ends_at]
+      properties:
+        name: { type: string }
+        sequence: { type: integer, minimum: 1 }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        weight:
+          type: number
+          description: Defaults to 1.0 if omitted.
+        scoring_rule_override: { type: string }
+        scoring_config_override:
+          type: object
+          additionalProperties: true
+
+    EventUpdate:
+      type: object
+      description: All fields optional; only provided fields are updated.
+      properties:
+        name: { type: string }
+        sequence: { type: integer, minimum: 1 }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        weight: { type: number }
+        scoring_rule_override: { type: string, nullable: true }
+        scoring_config_override:
+          type: object
+          additionalProperties: true
+          nullable: true
+
+    # ── Category ─────────────────────────────────────────────────
+
+    CompetitionCategory:
+      type: object
+      required: [id, competition_id, name, sort_order, rules]
+      properties:
+        id: { type: string, format: uuid }
+        competition_id: { type: string, format: uuid }
+        name: { type: string }
+        sort_order: { type: integer }
+        rules:
+          type: object
+          additionalProperties: true
+          description: |
+            Freeform jsonb describing eligibility (age band, gender, etc.).
+            Shape is intentionally open — staff define what makes sense
+            per comp.
+
+    CategoryCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        sort_order:
+          type: integer
+          description: Defaults to 0 if omitted.
+        rules:
+          type: object
+          additionalProperties: true
+
+    # ── Problem ──────────────────────────────────────────────────
+
+    CompetitionProblem:
+      type: object
+      required: [id, event_id, label, sort_order]
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        route_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional link to a routes table row (gym inventory).
+        label:
+          type: string
+          description: Short identifier shown to climbers (e.g. "M1", "B7").
+        points:
+          type: number
+          nullable: true
+          description: Used by `fixed` scorer; ignored by `top_zone` and `decay`.
+        zone_points:
+          type: number
+          nullable: true
+        grade:
+          type: string
+          nullable: true
+        color:
+          type: string
+          nullable: true
+        sort_order: { type: integer }
+
+    ProblemCreate:
+      type: object
+      required: [label]
+      properties:
+        route_id: { type: string, format: uuid, nullable: true }
+        label: { type: string }
+        points: { type: number, nullable: true }
+        zone_points: { type: number, nullable: true }
+        grade: { type: string, nullable: true }
+        color: { type: string, nullable: true }
+        sort_order: { type: integer }
+
+    ProblemUpdate:
+      type: object
+      description: All fields optional; only provided fields are updated.
+      properties:
+        route_id: { type: string, format: uuid, nullable: true }
+        label: { type: string }
+        points: { type: number, nullable: true }
+        zone_points: { type: number, nullable: true }
+        grade: { type: string, nullable: true }
+        color: { type: string, nullable: true }
+        sort_order: { type: integer }
 
   securitySchemes:
     bearerAuth:

@@ -78,6 +78,124 @@ export interface paths {
         patch: operations["updateCompetition"];
         trace?: never;
     };
+    "/competitions/{id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition UUID. */
+                id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        /** List events under a competition (sequence ASC) */
+        get: operations["listEvents"];
+        put?: never;
+        /**
+         * Create an event under a competition
+         * @description Requires `head_setter+` role at the comp's location.
+         */
+        post: operations["createEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition event UUID. */
+                id: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update an event
+         * @description Requires `head_setter+` role at the comp's location.
+         */
+        patch: operations["updateEvent"];
+        trace?: never;
+    };
+    "/competitions/{id}/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition UUID. */
+                id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        /** List categories under a competition (sort order ASC) */
+        get: operations["listCategories"];
+        put?: never;
+        /**
+         * Create a category
+         * @description Requires `gym_manager+` role at the comp's location.
+         */
+        post: operations["createCategory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events/{id}/problems": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition event UUID. */
+                id: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        /** List problems under an event (sort order ASC) */
+        get: operations["listProblems"];
+        put?: never;
+        /**
+         * Create a problem under an event
+         * @description Requires `head_setter+` role at the comp's location.
+         */
+        post: operations["createProblem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/problems/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition problem UUID. */
+                id: components["parameters"]["ProblemId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update a problem
+         * @description Requires `head_setter+` role at the comp's location.
+         */
+        patch: operations["updateProblem"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -237,6 +355,122 @@ export interface components {
             /** Format: date-time */
             registration_closes_at?: string | null;
         };
+        CompetitionEvent: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            competition_id: string;
+            name: string;
+            /** @description Position within the comp; unique per comp. */
+            sequence: number;
+            /** Format: date-time */
+            starts_at: string;
+            /** Format: date-time */
+            ends_at: string;
+            /** @description Multiplier when aggregating event scores into a series total. */
+            weight: number;
+            /**
+             * @description If set, overrides the comp-level scoring_rule for this event.
+             *     NULL means "use the comp default". Lets a series mix event types
+             *     (boulder + speed + lead under one comp).
+             */
+            scoring_rule_override?: string | null;
+            scoring_config_override?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        EventCreate: {
+            name: string;
+            sequence: number;
+            /** Format: date-time */
+            starts_at: string;
+            /** Format: date-time */
+            ends_at: string;
+            /** @description Defaults to 1.0 if omitted. */
+            weight?: number;
+            scoring_rule_override?: string;
+            scoring_config_override?: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description All fields optional; only provided fields are updated. */
+        EventUpdate: {
+            name?: string;
+            sequence?: number;
+            /** Format: date-time */
+            starts_at?: string;
+            /** Format: date-time */
+            ends_at?: string;
+            weight?: number;
+            scoring_rule_override?: string | null;
+            scoring_config_override?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        CompetitionCategory: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            competition_id: string;
+            name: string;
+            sort_order: number;
+            /**
+             * @description Freeform jsonb describing eligibility (age band, gender, etc.).
+             *     Shape is intentionally open — staff define what makes sense
+             *     per comp.
+             */
+            rules: {
+                [key: string]: unknown;
+            };
+        };
+        CategoryCreate: {
+            name: string;
+            /** @description Defaults to 0 if omitted. */
+            sort_order?: number;
+            rules?: {
+                [key: string]: unknown;
+            };
+        };
+        CompetitionProblem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            event_id: string;
+            /**
+             * Format: uuid
+             * @description Optional link to a routes table row (gym inventory).
+             */
+            route_id?: string | null;
+            /** @description Short identifier shown to climbers (e.g. "M1", "B7"). */
+            label: string;
+            /** @description Used by `fixed` scorer; ignored by `top_zone` and `decay`. */
+            points?: number | null;
+            zone_points?: number | null;
+            grade?: string | null;
+            color?: string | null;
+            sort_order: number;
+        };
+        ProblemCreate: {
+            /** Format: uuid */
+            route_id?: string | null;
+            label: string;
+            points?: number | null;
+            zone_points?: number | null;
+            grade?: string | null;
+            color?: string | null;
+            sort_order?: number;
+        };
+        /** @description All fields optional; only provided fields are updated. */
+        ProblemUpdate: {
+            /** Format: uuid */
+            route_id?: string | null;
+            label?: string;
+            points?: number | null;
+            zone_points?: number | null;
+            grade?: string | null;
+            color?: string | null;
+            sort_order?: number;
+        };
     };
     responses: {
         /** @description Malformed request body or invalid arguments. */
@@ -281,6 +515,10 @@ export interface components {
         LocationId: string;
         /** @description Competition UUID. */
         CompetitionId: string;
+        /** @description Competition event UUID. */
+        EventId: string;
+        /** @description Competition problem UUID. */
+        ProblemId: string;
     };
     requestBodies: never;
     headers: never;
@@ -428,6 +666,236 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Competition"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition UUID. */
+                id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Events ordered by sequence. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompetitionEvent"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition UUID. */
+                id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventCreate"];
+            };
+        };
+        responses: {
+            /** @description Event created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompetitionEvent"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition event UUID. */
+                id: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated event. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompetitionEvent"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listCategories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition UUID. */
+                id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Categories. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompetitionCategory"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createCategory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition UUID. */
+                id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryCreate"];
+            };
+        };
+        responses: {
+            /** @description Category created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompetitionCategory"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listProblems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition event UUID. */
+                id: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Problems. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompetitionProblem"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createProblem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition event UUID. */
+                id: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProblemCreate"];
+            };
+        };
+        responses: {
+            /** @description Problem created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompetitionProblem"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateProblem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition problem UUID. */
+                id: components["parameters"]["ProblemId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProblemUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated problem. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompetitionProblem"];
                 };
             };
             400: components["responses"]["BadRequest"];

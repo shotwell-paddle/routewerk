@@ -196,6 +196,103 @@ export interface paths {
         patch: operations["updateProblem"];
         trace?: never;
     };
+    "/competitions/{id}/registrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition UUID. */
+                id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List registrations for a competition
+         * @description Any authenticated user can list. The leaderboard-visibility
+         *     filter (wave 4) governs how much detail unaffiliated users see.
+         */
+        get: operations["listRegistrations"];
+        put?: never;
+        /**
+         * Register self (or another climber, if staff) for a competition
+         * @description With no `user_id` field, registers the calling user. Staff
+         *     (`gym_manager+` at the comp's location) may pass a `user_id`
+         *     to register someone else.
+         */
+        post: operations["createRegistration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registrations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition registration UUID. */
+                id: components["parameters"]["RegistrationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Withdraw a registration (mark withdrawn)
+         * @description Caller must be the registration's user OR `gym_manager+` at the
+         *     comp's location. Soft delete — the row stays for audit, the bib
+         *     number is freed for reuse.
+         */
+        delete: operations["withdrawRegistration"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/competitions/{id}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition UUID. */
+                id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit one or more attempt actions
+         * @description Unified write endpoint for the climber's scorecard. Each action
+         *     is independent and idempotent — accidental retries from a
+         *     flaky-network phone replay safely. Actions are processed in
+         *     order; failures don't abort the batch.
+         *
+         *     Action types:
+         *     - `increment` — add an attempt (you tried again)
+         *     - `zone` — mark zone reached at the current attempt count
+         *     - `top` — mark sent (implicitly marks zone if not already)
+         *     - `undo` — revert to the state before the most recent log entry
+         *     - `reset` — zero everything for this problem (climber within
+         *       grace window, or staff)
+         *
+         *     Idempotency: send a UUID `idempotency_key` per action. Server
+         *     dedupes against `competition_attempt_log`; replay returns the
+         *     cached result.
+         *
+         *     Authorization: caller must own the registration. Server rejects
+         *     actions whose problem belongs to an event whose `ends_at` has
+         *     passed (rejected with reason `event_closed`).
+         */
+        post: operations["submitActions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -471,6 +568,93 @@ export interface components {
             color?: string | null;
             sort_order?: number;
         };
+        CompetitionRegistration: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            competition_id: string;
+            /** Format: uuid */
+            category_id: string;
+            /** Format: uuid */
+            user_id: string;
+            /** @description Snapshot at registration time. */
+            display_name: string;
+            bib_number?: number | null;
+            /** Format: date-time */
+            waiver_signed_at?: string | null;
+            /** Format: date-time */
+            paid_at?: string | null;
+            /** Format: date-time */
+            withdrawn_at?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        RegistrationCreate: {
+            /** Format: uuid */
+            category_id: string;
+            /**
+             * Format: uuid
+             * @description Optional. Defaults to the calling user. Setting a different
+             *     user_id requires `gym_manager+` role at the comp's location.
+             */
+            user_id?: string;
+            /** @description Optional. Defaults to the user's display_name. */
+            display_name?: string;
+            /** @description Staff-assigned bib. Climbers self-registering should leave null. */
+            bib_number?: number | null;
+        };
+        /** @enum {string} */
+        ActionType: "increment" | "zone" | "top" | "undo" | "reset";
+        ActionItem: {
+            /**
+             * Format: uuid
+             * @description Strongly recommended; UUIDv4 generated client-side. Server
+             *     dedupes accidental retries (action queue + flaky network).
+             */
+            idempotency_key?: string;
+            type: components["schemas"]["ActionType"];
+            /** Format: uuid */
+            problem_id: string;
+            /**
+             * Format: date-time
+             * @description Optional; recorded but not used for ordering.
+             */
+            client_timestamp?: string;
+        };
+        ActionsRequest: {
+            actions: components["schemas"]["ActionItem"][];
+        };
+        AttemptState: {
+            /** Format: uuid */
+            problem_id: string;
+            attempts: number;
+            zone_attempts?: number | null;
+            zone_reached: boolean;
+            top_reached: boolean;
+        };
+        ActionApplied: {
+            /** Format: uuid */
+            idempotency_key?: string;
+            /** Format: uuid */
+            problem_id: string;
+            state: components["schemas"]["AttemptState"];
+            /** @description True if this action's idempotency key matched a prior request. */
+            replayed?: boolean;
+        };
+        ActionRejected: {
+            /** Format: uuid */
+            idempotency_key?: string;
+            /** Format: uuid */
+            problem_id: string;
+            /** @enum {string} */
+            reason: "unknown_problem" | "wrong_competition" | "event_closed" | "no_history" | "server_error";
+        };
+        ActionsResponse: {
+            applied: components["schemas"]["ActionApplied"][];
+            rejected: components["schemas"]["ActionRejected"][];
+            /** @description Current state for every problem touched by this batch. */
+            state: components["schemas"]["AttemptState"][];
+        };
     };
     responses: {
         /** @description Malformed request body or invalid arguments. */
@@ -519,6 +703,8 @@ export interface components {
         EventId: string;
         /** @description Competition problem UUID. */
         ProblemId: string;
+        /** @description Competition registration UUID. */
+        RegistrationId: string;
     };
     requestBodies: never;
     headers: never;
@@ -896,6 +1082,129 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CompetitionProblem"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listRegistrations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition UUID. */
+                id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Registrations. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompetitionRegistration"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createRegistration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition UUID. */
+                id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegistrationCreate"];
+            };
+        };
+        responses: {
+            /** @description Registration created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompetitionRegistration"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Climber already registered for this competition. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    withdrawRegistration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition registration UUID. */
+                id: components["parameters"]["RegistrationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Withdrawn. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    submitActions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition UUID. */
+                id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionsRequest"];
+            };
+        };
+        responses: {
+            /**
+             * @description Per-action results plus the resulting attempt state for every
+             *     problem touched by this batch.
+             */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionsResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];

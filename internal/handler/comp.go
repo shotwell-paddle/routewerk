@@ -36,12 +36,27 @@ import (
 )
 
 type CompHandler struct {
-	repo  *repository.CompetitionRepo
-	authz *middleware.Authorizer
+	repo        *repository.CompetitionRepo
+	regRepo     *repository.CompetitionRegistrationRepo
+	attemptRepo *repository.CompetitionAttemptRepo
+	userRepo    *repository.UserRepo
+	authz       *middleware.Authorizer
 }
 
-func NewCompHandler(repo *repository.CompetitionRepo, authz *middleware.Authorizer) *CompHandler {
-	return &CompHandler{repo: repo, authz: authz}
+func NewCompHandler(
+	repo *repository.CompetitionRepo,
+	regRepo *repository.CompetitionRegistrationRepo,
+	attemptRepo *repository.CompetitionAttemptRepo,
+	userRepo *repository.UserRepo,
+	authz *middleware.Authorizer,
+) *CompHandler {
+	return &CompHandler{
+		repo:        repo,
+		regRepo:     regRepo,
+		attemptRepo: attemptRepo,
+		userRepo:    userRepo,
+		authz:       authz,
+	}
 }
 
 // requireCompRole verifies the authenticated user has one of the given

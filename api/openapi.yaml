@@ -1,0 +1,29 @@
+openapi: 3.1.0
+info:
+  title: Routewerk API
+  version: 0.0.0
+  description: |
+    Source-of-truth OpenAPI spec for Routewerk's REST API. Empty in Phase 0;
+    Phase 1 (competitions module) populates it and wires up codegen for the
+    Go server interfaces and the TypeScript client.
+
+    See `make api-gen` and `docs/competitions-handoff.md`.
+servers:
+  - url: https://routewerk.fly.dev
+    description: production
+  - url: https://routewerk-dev.fly.dev
+    description: staging
+  - url: http://localhost:8080
+    description: local dev
+paths: {}
+components:
+  schemas: {}
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: _rw_session

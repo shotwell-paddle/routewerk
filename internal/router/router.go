@@ -101,6 +101,12 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	authService := service.NewAuthService(userRepo, loginAttemptRepo, cfg)
 	cardGen := service.NewCardGenerator(cfg.FrontendURL)
 
+	// Magic-link auth: passwordless sign-in. Email send goes through the
+	// shared EmailService job handler (registered in main.go); the
+	// service here just orchestrates token gen / persistence / enqueue.
+	magicLinkRepo := repository.NewMagicLinkRepo(db)
+	magicLinkSvc := service.NewMagicLinkService(magicLinkRepo, userRepo, deps.JobQueue, cfg.FrontendURL)
+
 	// Web session manager (cookie-based auth for HTMX frontend)
 	sessionMgr := middleware.NewSessionManager(webSessionRepo, userRepo, cfg.IsDev())
 
@@ -108,6 +114,8 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	storageSvc := service.NewStorageService(cfg)
 	healthHandler := handler.NewHealthHandler(db, storageSvc)
 	authHandler := handler.NewAuthHandler(authService)
+	magicAuthHandler := handler.NewMagicAuthHandler(magicLinkSvc)
+	magicVerifyHandler := webhandler.NewMagicVerifyHandler(magicLinkSvc, webSessionRepo, userRepo, sessionMgr, cfg)
 	orgHandler := handler.NewOrgHandler(orgRepo, auditService)
 	locationHandler := handler.NewLocationHandler(locationRepo)
 	wallHandler := handler.NewWallHandler(wallRepo, auditService)
@@ -222,6 +230,11 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			r.Post("/login", webHandler.LoginSubmit)
 			r.Get("/register", webHandler.RegisterPage)
 			r.Post("/register", webHandler.RegisterSubmit)
+			// Magic-link verify: GET so clicking a link from email works.
+			// CSRF doesn't apply (GET); auth not required (the token is
+			// the credential). The handler sets the session cookie on
+			// success and redirects to next/dashboard.
+			r.Get("/verify-magic", magicVerifyHandler.Verify)
 		})
 
 		// Authenticated web routes
@@ -430,6 +443,11 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			r.Use(authLimiter.Limit)
 			r.Post("/auth/register", authHandler.Register)
 			r.Post("/auth/login", authHandler.Login)
+			// Magic-link request: per-IP limit comes from authLimiter
+			// above; per-email throttle (3 / 15 min) is enforced inside
+			// the service against the DB so it survives process restarts
+			// and isn't bypassed by hitting different API instances.
+			r.Post("/auth/magic/request", magicAuthHandler.Request)
 		})
 
 		// Refresh token — accepts expired access tokens (signature still verified).

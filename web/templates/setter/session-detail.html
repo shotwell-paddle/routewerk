@@ -208,42 +208,7 @@
       </div>
 
       <!-- Playbook Checklist -->
-      {{if .ChecklistItems}}
-      <div class="session-section">
-        <div class="flex items-center justify-between mb-3">
-          <h3>Playbook</h3>
-          <span class="badge">{{len .ChecklistItems}} steps</span>
-        </div>
-        <div class="checklist">
-          {{range .ChecklistItems}}
-          <div class="checklist-item {{if .Completed}}checklist-done{{end}}"
-               hx-post="/sessions/{{.SessionID}}/checklist/{{.ID}}/toggle"
-               hx-vals='{"_csrf_token": "{{$.CSRFToken}}"}'
-               hx-target="#main-content"
-               style="cursor: pointer;">
-            <div class="checklist-toggle" title="{{if .Completed}}Mark incomplete{{else}}Mark complete{{end}}">
-              {{if .Completed}}
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
-                <rect x="3" y="3" width="18" height="18" rx="3" fill="var(--rw-accent, #e65100)" stroke="var(--rw-accent, #e65100)"/>
-                <polyline points="7 13 10 16 17 9" stroke="#fff"/>
-              </svg>
-              {{else}}
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
-                <rect x="3" y="3" width="18" height="18" rx="3"/>
-              </svg>
-              {{end}}
-            </div>
-            <div class="checklist-label">
-              <span class="checklist-title">{{.Title}}</span>
-              {{if .Completed}}
-              <span class="checklist-meta">{{if .CompletedByName}}{{deref .CompletedByName}}{{end}}</span>
-              {{end}}
-            </div>
-          </div>
-          {{end}}
-        </div>
-      </div>
-      {{end}}
+      {{template "playbook-checklist" .}}
 
       <!-- Assignments -->
       <div class="session-section">
@@ -467,4 +432,51 @@
   <p class="text-muted text-sm">Select a wall to continue.</p>
   {{end}}
 </div>
+{{end}}
+
+{{/*
+  playbook-checklist is rendered inline by session-detail and also returned
+  by SessionToggleChecklist as an HTMX partial. The wrapping <div> with id
+  is the swap target for outerHTML swaps.
+*/}}
+{{define "playbook-checklist"}}
+{{if .ChecklistItems}}
+<div class="session-section" id="session-playbook-checklist">
+  <div class="flex items-center justify-between mb-3">
+    <h3>Playbook</h3>
+    <span class="badge">{{len .ChecklistItems}} steps</span>
+  </div>
+  <div class="checklist">
+    {{range .ChecklistItems}}
+    <div class="checklist-item {{if .Completed}}checklist-done{{end}}"
+         hx-post="/sessions/{{.SessionID}}/checklist/{{.ID}}/toggle"
+         hx-vals='{"_csrf_token": "{{$.CSRFToken}}"}'
+         hx-target="#session-playbook-checklist"
+         hx-swap="outerHTML"
+         style="cursor: pointer;">
+      <div class="checklist-toggle" title="{{if .Completed}}Mark incomplete{{else}}Mark complete{{end}}">
+        {{if .Completed}}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+          <rect x="3" y="3" width="18" height="18" rx="3" fill="var(--rw-accent, #e65100)" stroke="var(--rw-accent, #e65100)"/>
+          <polyline points="7 13 10 16 17 9" stroke="#fff"/>
+        </svg>
+        {{else}}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+          <rect x="3" y="3" width="18" height="18" rx="3"/>
+        </svg>
+        {{end}}
+      </div>
+      <div class="checklist-label">
+        <span class="checklist-title">{{.Title}}</span>
+        {{if .Completed}}
+        <span class="checklist-meta">{{if .CompletedByName}}{{deref .CompletedByName}}{{end}}</span>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{else}}
+<div id="session-playbook-checklist"></div>
+{{end}}
 {{end}}

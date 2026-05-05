@@ -47,6 +47,7 @@ func (h *Handler) loadTemplates() {
 		"setter/session-complete.html",
 		"setter/session-photos.html",
 		"setter/settings.html",
+		"setter/playbook.html",
 		"setter/org-settings.html",
 		"setter/team.html",
 		"setter/org-team.html",

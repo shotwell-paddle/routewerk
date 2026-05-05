@@ -8,6 +8,10 @@
   </div>
   <div class="flex items-center gap-2">
     {{if .IsHeadSetter}}
+    <a href="/settings/playbook" class="btn btn-ghost"
+       hx-get="/settings/playbook" hx-target="#main-content" hx-push-url="true">
+      Edit Playbook
+    </a>
     <a href="/settings/team" class="btn btn-ghost"
        hx-get="/settings/team" hx-target="#main-content" hx-push-url="true">
       Manage Team

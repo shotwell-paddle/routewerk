@@ -376,6 +376,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/competitions/{id}/leaderboard/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition UUID. */
+                id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Live leaderboard via Server-Sent Events
+         * @description Long-lived `text/event-stream` connection. Server emits a
+         *     `leaderboard` event on connect (initial snapshot) and another
+         *     `leaderboard` event after every action / verify / override on
+         *     the comp. A `: keepalive` comment is emitted every 30 seconds
+         *     so reverse proxies don't kill idle connections.
+         *
+         *     Browsers consume via `EventSource`:
+         *
+         *     ```js
+         *     const es = new EventSource(`/api/v1/competitions/${id}/leaderboard/stream`);
+         *     es.addEventListener('leaderboard', e => {
+         *       const board = JSON.parse(e.data);
+         *       // …re-render…
+         *     });
+         *     ```
+         *
+         *     The handler closes the stream cleanly on client disconnect
+         *     (browser tab closed, or `es.close()`).
+         *
+         *     OpenAPI 3.0 doesn't model SSE responses well; the response
+         *     schema below describes the **payload of each `leaderboard`
+         *     event**, not the wire format itself.
+         */
+        get: operations["streamLeaderboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1444,6 +1488,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Leaderboard"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    streamLeaderboard: {
+        parameters: {
+            query?: {
+                /** @description Optional category UUID to filter the streamed leaderboard. */
+                category?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Competition UUID. */
+                id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /**
+             * @description Established event stream. Each `leaderboard` event has a
+             *     JSON `data:` payload matching the `Leaderboard` schema.
+             */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["Leaderboard"];
                 };
             };
             401: components["responses"]["Unauthorized"];

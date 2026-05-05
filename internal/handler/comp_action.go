@@ -165,13 +165,12 @@ func (h *CompHandler) SubmitActions(w http.ResponseWriter, r *http.Request) {
 		touched[problemID] = struct{}{}
 	}
 
-	// Bust the leaderboard cache for this comp if anything was applied.
-	// The TTL is short (~2s) so a missed invalidation isn't catastrophic,
-	// but invalidating here keeps the SPA's leaderboard reactive to
-	// climber actions in the wave-5 SSE world too (the SSE handler
-	// re-reads via the same cached path).
+	// Bust the leaderboard cache for this comp if anything was applied,
+	// then publish a "leaderboard changed" signal to the SSE hub so any
+	// connected stream subscribers re-render.
 	if len(resp.Applied) > 0 {
 		h.cache.invalidate(compID)
+		h.publishLeaderboardChange(compID)
 	}
 
 	// State snapshot for every problem touched by this batch.

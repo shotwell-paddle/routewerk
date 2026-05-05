@@ -19,6 +19,7 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/service"
 	"github.com/shotwell-paddle/routewerk/internal/service/cardbatch"
 	"github.com/shotwell-paddle/routewerk/internal/service/cardsheet"
+	"github.com/shotwell-paddle/routewerk/internal/sse"
 	"github.com/shotwell-paddle/routewerk/web/spa"
 )
 
@@ -107,12 +108,15 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	magicLinkRepo := repository.NewMagicLinkRepo(db)
 	magicLinkSvc := service.NewMagicLinkService(magicLinkRepo, userRepo, deps.JobQueue, cfg.FrontendURL)
 
-	// Competitions module (Phase 1f waves 1–3 wired here; waves 4–5 add
-	// verification, leaderboard read, and the SSE leaderboard stream).
+	// Competitions module — all five waves of Phase 1f wired here.
+	// Hub is in-process; if we ever scale horizontally, swap for a
+	// Postgres LISTEN/NOTIFY adapter behind the same Subscribe/Publish
+	// interface (see internal/sse/hub.go).
 	compRepo := repository.NewCompetitionRepo(db)
 	compRegRepo := repository.NewCompetitionRegistrationRepo(db)
 	compAttemptRepo := repository.NewCompetitionAttemptRepo(db)
-	compHandler := handler.NewCompHandler(compRepo, compRegRepo, compAttemptRepo, userRepo, authz)
+	compHub := sse.New()
+	compHandler := handler.NewCompHandler(compRepo, compRegRepo, compAttemptRepo, userRepo, authz, compHub)
 
 	// Web session manager (cookie-based auth for HTMX frontend)
 	sessionMgr := middleware.NewSessionManager(webSessionRepo, userRepo, cfg.IsDev())
@@ -732,6 +736,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			r.Post("/attempts/{id}/verify", compHandler.VerifyAttempt)
 			r.Post("/attempts/{id}/override", compHandler.OverrideAttempt)
 			r.Get("/competitions/{id}/leaderboard", compHandler.GetLeaderboard)
+			r.Get("/competitions/{id}/leaderboard/stream", compHandler.StreamLeaderboard)
 
 			// ── Social (no org context) ─────────────────────────────
 			r.Route("/users/{userID}", func(r chi.Router) {

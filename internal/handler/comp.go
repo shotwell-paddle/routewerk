@@ -33,6 +33,7 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/rbac"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
+	"github.com/shotwell-paddle/routewerk/internal/sse"
 )
 
 type CompHandler struct {
@@ -42,6 +43,7 @@ type CompHandler struct {
 	userRepo    *repository.UserRepo
 	authz       *middleware.Authorizer
 	cache       *leaderboardCache
+	hub         *sse.Hub
 }
 
 func NewCompHandler(
@@ -50,6 +52,7 @@ func NewCompHandler(
 	attemptRepo *repository.CompetitionAttemptRepo,
 	userRepo *repository.UserRepo,
 	authz *middleware.Authorizer,
+	hub *sse.Hub,
 ) *CompHandler {
 	return &CompHandler{
 		repo:        repo,
@@ -58,6 +61,7 @@ func NewCompHandler(
 		userRepo:    userRepo,
 		authz:       authz,
 		cache:       newLeaderboardCache(),
+		hub:         hub,
 	}
 }
 

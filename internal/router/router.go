@@ -107,6 +107,11 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	magicLinkRepo := repository.NewMagicLinkRepo(db)
 	magicLinkSvc := service.NewMagicLinkService(magicLinkRepo, userRepo, deps.JobQueue, cfg.FrontendURL)
 
+	// Competitions module (Phase 1f.1: CRUD only; subsequent waves add
+	// events, problems, registrations, action endpoint, leaderboard, SSE).
+	compRepo := repository.NewCompetitionRepo(db)
+	compHandler := handler.NewCompHandler(compRepo, authz)
+
 	// Web session manager (cookie-based auth for HTMX frontend)
 	sessionMgr := middleware.NewSessionManager(webSessionRepo, userRepo, cfg.IsDev())
 
@@ -675,7 +680,26 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 					r.Get("/engagement", analyticsHandler.Engagement)
 					r.Get("/setter-productivity", analyticsHandler.SetterProductivity)
 				})
+
+				// Competitions — list any member; create gym_manager+.
+				// Read/update by id live below at /competitions/{id}.
+				r.Route("/competitions", func(r chi.Router) {
+					r.Get("/", compHandler.List)
+
+					r.Group(func(r chi.Router) {
+						r.Use(authz.RequireLocationRole("gym_manager"))
+						r.Post("/", compHandler.Create)
+					})
+				})
 			})
+
+			// ── Competitions by id (no location prefix) ─────────────
+			// Read is open to any authenticated user; the leaderboard
+			// visibility check (Phase 1f wave 3) gates downstream
+			// resources. Update authz happens inside the handler since
+			// the {locationID} chi param isn't on this URL.
+			r.Get("/competitions/{id}", compHandler.Get)
+			r.Patch("/competitions/{id}", compHandler.Update)
 
 			// ── Social (no org context) ─────────────────────────────
 			r.Route("/users/{userID}", func(r chi.Router) {

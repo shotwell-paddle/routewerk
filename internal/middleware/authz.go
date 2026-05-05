@@ -203,6 +203,24 @@ func (a *Authorizer) resolveLocationMembership(w http.ResponseWriter, r *http.Re
 		return nil, false
 	}
 
+	m, err := a.LookupLocationMembership(r.Context(), userID, locationID)
+	if err != nil {
+		jsonError(w, http.StatusNotFound, "location not found")
+		return nil, false
+	}
+	return m, true
+}
+
+// LookupLocationMembership is the public helper that backs the
+// resolveLocationMembership chi middleware. Use it from handlers when
+// the location ID isn't on a chi URL path (e.g. PATCH /competitions/{id}
+// where the comp tells you the location, not the URL). Returns the
+// highest-privilege membership the user has at the location, or an
+// error if the location doesn't exist or the user isn't a member.
+//
+// Returns the same Membership shape the middleware places in context;
+// callers can compare Role against rbac constants or use HasAnyRole.
+func (a *Authorizer) LookupLocationMembership(ctx context.Context, userID, locationID string) (*Membership, error) {
 	// Join locations → user_memberships in a single query.
 	// This verifies: (a) the location exists, (b) the user is a member of
 	// the org that owns it. We pick the highest-privilege membership.
@@ -226,14 +244,13 @@ func (a *Authorizer) resolveLocationMembership(w http.ResponseWriter, r *http.Re
 		LIMIT 1`
 
 	var m Membership
-	err := a.db.QueryRow(r.Context(), query, userID, locationID).Scan(
+	err := a.db.QueryRow(ctx, query, userID, locationID).Scan(
 		&m.OrgID, &m.LocationID, &m.Role,
 	)
 	if err != nil {
-		jsonError(w, http.StatusNotFound, "location not found")
-		return nil, false
+		return nil, err
 	}
-	return &m, true
+	return &m, nil
 }
 
 // ============================================================

@@ -144,7 +144,12 @@ func (h *Handler) SessionRemoveStripTarget(w http.ResponseWriter, r *http.Reques
 	http.Redirect(w, r, "/sessions/"+sessionID, http.StatusSeeOther)
 }
 
-// SessionToggleChecklist toggles a checklist item (POST /sessions/{sessionID}/checklist/{itemID}/toggle).
+// SessionToggleChecklist toggles a checklist item
+// (POST /sessions/{sessionID}/checklist/{itemID}/toggle).
+//
+// HTMX requests get back just the playbook-checklist partial so the swap
+// is local and keeps scroll/focus state. Non-HTMX requests redirect to
+// the session page so a manual curl or noscript fallback still works.
 func (h *Handler) SessionToggleChecklist(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	sessionID := chi.URLParam(r, "sessionID")
@@ -169,7 +174,35 @@ func (h *Handler) SessionToggleChecklist(w http.ResponseWriter, r *http.Request)
 		slog.Error("toggle checklist item failed", "error", err)
 	}
 
-	http.Redirect(w, r, "/sessions/"+sessionID, http.StatusSeeOther)
+	if r.Header.Get("HX-Request") != "true" {
+		http.Redirect(w, r, "/sessions/"+sessionID, http.StatusSeeOther)
+		return
+	}
+
+	items, err := h.sessionRepo.ListChecklistItems(ctx, sessionID)
+	if err != nil {
+		slog.Error("reload checklist failed", "error", err)
+		http.Error(w, "Reload failed", http.StatusInternalServerError)
+		return
+	}
+
+	tmpl, ok := h.templates["setter/session-detail.html"]
+	if !ok {
+		slog.Error("session-detail template not loaded")
+		http.Error(w, "Template missing", http.StatusInternalServerError)
+		return
+	}
+
+	data := &PageData{
+		TemplateData: TemplateData{
+			CSRFToken: middleware.TokenFromRequest(r),
+		},
+		ChecklistItems: items,
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := tmpl.ExecuteTemplate(w, "playbook-checklist", data); err != nil {
+		slog.Error("render checklist partial failed", "error", err)
+	}
 }
 
 // SessionPhotos renders the photo upload page for a completed session (GET /sessions/{sessionID}/photos).

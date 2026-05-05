@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 )
@@ -662,4 +663,168 @@ func (r *SessionRepo) InitializeChecklist(ctx context.Context, sessionID, locati
 		sessionID, locationID,
 	)
 	return err
+}
+
+// ── Location Playbook Steps ────────────────────────────────
+//
+// These manage the per-gym playbook template that's copied into each new
+// session's checklist (see InitializeChecklist). Edits here only affect
+// future sessions — existing sessions keep the snapshot they were
+// initialised with.
+
+// ListPlaybookSteps returns the playbook template for a location, ordered
+// by sort_order.
+func (r *SessionRepo) ListPlaybookSteps(ctx context.Context, locationID string) ([]model.LocationPlaybookStep, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, location_id, sort_order, title, created_at
+		FROM location_playbook_steps
+		WHERE location_id = $1
+		ORDER BY sort_order, created_at`,
+		locationID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list playbook steps: %w", err)
+	}
+	defer rows.Close()
+
+	var steps []model.LocationPlaybookStep
+	for rows.Next() {
+		var s model.LocationPlaybookStep
+		if err := rows.Scan(&s.ID, &s.LocationID, &s.SortOrder, &s.Title, &s.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan playbook step: %w", err)
+		}
+		steps = append(steps, s)
+	}
+	return steps, rows.Err()
+}
+
+// GetPlaybookStep fetches a single step. Returns nil (no error) if not found.
+func (r *SessionRepo) GetPlaybookStep(ctx context.Context, stepID string) (*model.LocationPlaybookStep, error) {
+	var s model.LocationPlaybookStep
+	err := r.db.QueryRow(ctx, `
+		SELECT id, location_id, sort_order, title, created_at
+		FROM location_playbook_steps
+		WHERE id = $1`,
+		stepID,
+	).Scan(&s.ID, &s.LocationID, &s.SortOrder, &s.Title, &s.CreatedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get playbook step: %w", err)
+	}
+	return &s, nil
+}
+
+// CreatePlaybookStep appends a step to the end of the location's playbook.
+// The new step's sort_order is one greater than the current max.
+func (r *SessionRepo) CreatePlaybookStep(ctx context.Context, locationID, title string) (*model.LocationPlaybookStep, error) {
+	var s model.LocationPlaybookStep
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO location_playbook_steps (location_id, sort_order, title)
+		VALUES (
+			$1,
+			COALESCE((SELECT MAX(sort_order) + 1 FROM location_playbook_steps WHERE location_id = $1), 0),
+			$2
+		)
+		RETURNING id, location_id, sort_order, title, created_at`,
+		locationID, title,
+	).Scan(&s.ID, &s.LocationID, &s.SortOrder, &s.Title, &s.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("create playbook step: %w", err)
+	}
+	return &s, nil
+}
+
+// UpdatePlaybookStep replaces a step's title.
+func (r *SessionRepo) UpdatePlaybookStep(ctx context.Context, stepID, title string) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE location_playbook_steps SET title = $2 WHERE id = $1`,
+		stepID, title,
+	)
+	if err != nil {
+		return fmt.Errorf("update playbook step: %w", err)
+	}
+	return nil
+}
+
+// DeletePlaybookStep removes a step. Existing session checklist items are
+// unaffected — they're snapshots, not foreign-keyed to the template.
+func (r *SessionRepo) DeletePlaybookStep(ctx context.Context, stepID string) error {
+	_, err := r.db.Exec(ctx,
+		`DELETE FROM location_playbook_steps WHERE id = $1`,
+		stepID,
+	)
+	if err != nil {
+		return fmt.Errorf("delete playbook step: %w", err)
+	}
+	return nil
+}
+
+// MovePlaybookStep swaps the sort_order of a step with its neighbour in the
+// given direction ("up" or "down"). No-op if the step is already at the
+// edge in that direction. Done in a transaction so the swap is atomic.
+func (r *SessionRepo) MovePlaybookStep(ctx context.Context, stepID, direction string) error {
+	if direction != "up" && direction != "down" {
+		return fmt.Errorf("invalid direction %q", direction)
+	}
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback on commit is no-op
+
+	var locationID string
+	var sortOrder int
+	if err := tx.QueryRow(ctx,
+		`SELECT location_id, sort_order FROM location_playbook_steps WHERE id = $1 FOR UPDATE`,
+		stepID,
+	).Scan(&locationID, &sortOrder); err != nil {
+		return fmt.Errorf("lock step: %w", err)
+	}
+
+	// Find neighbour
+	var neighbourQuery string
+	if direction == "up" {
+		neighbourQuery = `
+			SELECT id, sort_order FROM location_playbook_steps
+			WHERE location_id = $1 AND sort_order < $2
+			ORDER BY sort_order DESC LIMIT 1
+			FOR UPDATE`
+	} else {
+		neighbourQuery = `
+			SELECT id, sort_order FROM location_playbook_steps
+			WHERE location_id = $1 AND sort_order > $2
+			ORDER BY sort_order ASC LIMIT 1
+			FOR UPDATE`
+	}
+
+	var neighbourID string
+	var neighbourOrder int
+	if err := tx.QueryRow(ctx, neighbourQuery, locationID, sortOrder).
+		Scan(&neighbourID, &neighbourOrder); err != nil {
+		if err == pgx.ErrNoRows {
+			// already at the edge; nothing to do
+			return tx.Commit(ctx)
+		}
+		return fmt.Errorf("find neighbour: %w", err)
+	}
+
+	// Swap. Sort_order has no UNIQUE constraint, so a direct two-step
+	// update is fine without a temporary value.
+	if _, err := tx.Exec(ctx,
+		`UPDATE location_playbook_steps SET sort_order = $1 WHERE id = $2`,
+		neighbourOrder, stepID,
+	); err != nil {
+		return fmt.Errorf("update step order: %w", err)
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE location_playbook_steps SET sort_order = $1 WHERE id = $2`,
+		sortOrder, neighbourID,
+	); err != nil {
+		return fmt.Errorf("update neighbour order: %w", err)
+	}
+
+	return tx.Commit(ctx)
 }

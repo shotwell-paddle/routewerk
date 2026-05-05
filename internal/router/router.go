@@ -378,6 +378,13 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 				r.Get("/settings/team", webHandler.TeamPage)
 				r.Post("/settings/team/{membershipID}/role", webHandler.TeamUpdateRole)
 
+				// Playbook editor — head_setter or above (handler checks role internally)
+				r.Get("/settings/playbook", webHandler.PlaybookEditPage)
+				r.Post("/settings/playbook/add", webHandler.PlaybookCreate)
+				r.Post("/settings/playbook/{stepID}/edit", webHandler.PlaybookUpdate)
+				r.Post("/settings/playbook/{stepID}/delete", webHandler.PlaybookDelete)
+				r.Post("/settings/playbook/{stepID}/move", webHandler.PlaybookMove)
+
 				// Progressions feature toggle — gym_manager or above (handler checks role internally)
 				r.Post("/settings/progressions-toggle", webHandler.ProgressionsToggle)
 

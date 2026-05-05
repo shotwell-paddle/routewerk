@@ -170,6 +170,9 @@ type PageData struct {
 	SettingsSuccess bool
 	PalettePresets  []model.PalettePreset // available palette presets for the gym settings UI
 
+	// Playbook editor
+	PlaybookSteps []model.LocationPlaybookStep
+
 	// Progressions — admin
 	QuestDomains     []model.QuestDomain
 	QuestDomain      *model.QuestDomain

@@ -4069,6 +4069,69 @@ details.session-route-pill > summary::marker { display: none; content: ''; }
   margin-left: auto;
 }
 
+/* Playbook editor (per-gym checklist template). Mirrors circuit-list
+   layout but row-shaped: number + editable title + reorder/delete. */
+.playbook-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2, 0.5rem);
+  margin-bottom: var(--sp-4, 1rem);
+}
+
+.playbook-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3, 0.75rem);
+  padding: var(--sp-2, 0.5rem) var(--sp-3, 0.75rem);
+  background: var(--rw-off-white, #f7f7f5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md, 8px);
+  transition: border-color 0.15s;
+}
+
+.playbook-item:hover {
+  border-color: var(--rw-warm-gray, #e8e6e1);
+}
+
+.playbook-item-num {
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 700;
+  color: var(--rw-mid-gray, #9b9590);
+  min-width: 1.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.playbook-item-form {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2, 0.5rem);
+  flex: 1;
+  min-width: 0;
+}
+
+.playbook-item-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.playbook-item-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1, 0.25rem);
+  flex-shrink: 0;
+}
+
+.playbook-add-form {
+  display: flex;
+  gap: var(--sp-2, 0.5rem);
+  align-items: center;
+}
+
+.playbook-add-form .form-input {
+  flex: 1;
+}
+
 /* Palette presets — one-click palette swap in Gym Settings. */
 .settings-preset-row {
   display: flex;

@@ -1,0 +1,96 @@
+{{define "title"}}Playbook — Routewerk{{end}}
+
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Playbook</h1>
+    <p class="page-subtitle">{{if .Location}}{{.Location.Name}}{{end}} — Steps copied into each new setting session</p>
+  </div>
+  <a href="/settings" class="btn btn-ghost"
+     hx-get="/settings" hx-target="#main-content" hx-push-url="true">
+    &larr; Gym Settings
+  </a>
+</div>
+
+{{if .SettingsSuccess}}
+<div class="settings-toast" id="settings-toast">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+  </svg>
+  Playbook saved
+</div>
+{{end}}
+
+<div class="page-body">
+  <p class="text-muted mb-4">
+    Edits here only affect <strong>future</strong> sessions — sessions that already exist keep the playbook
+    they were created with. Setters can check items off during a session.
+  </p>
+
+  {{if .PlaybookSteps}}
+  <div class="playbook-list">
+    {{range $i, $step := .PlaybookSteps}}
+    <div class="playbook-item">
+      <div class="playbook-item-num">{{add $i 1}}</div>
+
+      <form class="playbook-item-form"
+            hx-post="/settings/playbook/{{$step.ID}}/edit"
+            hx-vals='{"_csrf_token": "{{$.CSRFToken}}"}'>
+        <input type="text" name="title" value="{{$step.Title}}"
+               class="form-input playbook-item-input"
+               maxlength="200" required>
+        <button type="submit" class="btn btn-sm btn-ghost" title="Save">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </button>
+      </form>
+
+      <div class="playbook-item-actions">
+        <button type="button" class="btn btn-sm btn-ghost"
+                hx-post="/settings/playbook/{{$step.ID}}/move?dir=up"
+                hx-vals='{"_csrf_token": "{{$.CSRFToken}}"}'
+                title="Move up"
+                {{if eq $i 0}}disabled{{end}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="18 15 12 9 6 15"/>
+          </svg>
+        </button>
+        <button type="button" class="btn btn-sm btn-ghost"
+                hx-post="/settings/playbook/{{$step.ID}}/move?dir=down"
+                hx-vals='{"_csrf_token": "{{$.CSRFToken}}"}'
+                title="Move down"
+                {{if eq (add $i 1) (len $.PlaybookSteps)}}disabled{{end}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+        <button type="button" class="btn btn-sm btn-ghost btn-danger-text"
+                hx-post="/settings/playbook/{{$step.ID}}/delete"
+                hx-vals='{"_csrf_token": "{{$.CSRFToken}}"}'
+                hx-confirm="Remove “{{$step.Title}}” from the playbook?"
+                title="Delete">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 012-2h2a2 2 0 012 2v2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty-state">
+    <p>No playbook steps yet. Add the first step below.</p>
+  </div>
+  {{end}}
+
+  <form class="playbook-add-form mt-4"
+        hx-post="/settings/playbook/add"
+        hx-vals='{"_csrf_token": "{{.CSRFToken}}"}'>
+    <input type="text" name="title" class="form-input"
+           placeholder="New step (e.g., Take before photos)"
+           maxlength="200" required>
+    <button type="submit" class="btn btn-primary">+ Add Step</button>
+  </form>
+</div>
+{{end}}

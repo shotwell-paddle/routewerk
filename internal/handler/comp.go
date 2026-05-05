@@ -41,6 +41,7 @@ type CompHandler struct {
 	attemptRepo *repository.CompetitionAttemptRepo
 	userRepo    *repository.UserRepo
 	authz       *middleware.Authorizer
+	cache       *leaderboardCache
 }
 
 func NewCompHandler(
@@ -56,6 +57,7 @@ func NewCompHandler(
 		attemptRepo: attemptRepo,
 		userRepo:    userRepo,
 		authz:       authz,
+		cache:       newLeaderboardCache(),
 	}
 }
 

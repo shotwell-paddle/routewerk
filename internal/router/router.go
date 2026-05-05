@@ -726,6 +726,13 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			r.Patch("/problems/{id}", compHandler.UpdateProblem)
 			r.Delete("/registrations/{id}", compHandler.WithdrawRegistration)
 
+			// Phase 1f wave 4: staff verify/override + leaderboard read.
+			// Verify/override authz happens inside the handler since the
+			// {locationID} chi param isn't on these URLs.
+			r.Post("/attempts/{id}/verify", compHandler.VerifyAttempt)
+			r.Post("/attempts/{id}/override", compHandler.OverrideAttempt)
+			r.Get("/competitions/{id}/leaderboard", compHandler.GetLeaderboard)
+
 			// ── Social (no org context) ─────────────────────────────
 			r.Route("/users/{userID}", func(r chi.Router) {
 				r.Post("/follow", followHandler.Follow)

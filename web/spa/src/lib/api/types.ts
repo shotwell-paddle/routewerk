@@ -293,6 +293,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/attempts/{id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition attempt UUID. */
+                id: components["parameters"]["AttemptId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stamp an attempt as verified
+         * @description Setter+ at the comp's location signs off on a climber's recorded
+         *     attempt. Sets `verified_by` + `verified_at` on the attempt; does
+         *     not modify scoring fields.
+         */
+        post: operations["verifyAttempt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/attempts/{id}/override": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition attempt UUID. */
+                id: components["parameters"]["AttemptId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replace an attempt's state directly
+         * @description Setter+ at the comp's location forcibly sets the attempt state.
+         *     Use cases: late-night cleanup, dispute resolution, recording an
+         *     attempt that was missed in real time. The override is logged
+         *     with `action=override` and the actor's user id, so the audit
+         *     trail shows what staff did.
+         */
+        post: operations["overrideAttempt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/competitions/{id}/leaderboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition UUID. */
+                id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get the comp leaderboard
+         * @description Computes and returns the comp leaderboard using the active
+         *     scorer (`competitions.scoring_rule`). Optional `category` query
+         *     filter narrows to one category; otherwise returns ranks per
+         *     registration regardless of category (set staff expectations:
+         *     for multi-category comps you usually want one query per
+         *     category to get separated standings).
+         *
+         *     Response is cached server-side for ~2 seconds; cache is
+         *     invalidated whenever an action lands on the comp.
+         */
+        get: operations["getLeaderboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -655,6 +738,73 @@ export interface components {
             /** @description Current state for every problem touched by this batch. */
             state: components["schemas"]["AttemptState"][];
         };
+        CompetitionAttempt: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            registration_id: string;
+            /** Format: uuid */
+            problem_id: string;
+            attempts: number;
+            zone_attempts?: number | null;
+            zone_reached: boolean;
+            top_reached: boolean;
+            notes?: string | null;
+            /** Format: date-time */
+            logged_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: uuid */
+            verified_by?: string | null;
+            /** Format: date-time */
+            verified_at?: string | null;
+        };
+        /**
+         * @description Body for POST /attempts/{id}/override. The fields here
+         *     wholesale replace the attempt's state — staff is asserting
+         *     "this attempt is now exactly this." A log entry is appended
+         *     with action=override.
+         */
+        AttemptOverride: {
+            attempts: number;
+            zone_attempts?: number | null;
+            zone_reached: boolean;
+            top_reached: boolean;
+            notes?: string | null;
+        };
+        Leaderboard: {
+            /** Format: uuid */
+            competition_id: string;
+            /**
+             * Format: uuid
+             * @description NULL when the leaderboard spans all categories.
+             */
+            category_id?: string | null;
+            scoring_rule: string;
+            /** Format: date-time */
+            generated_at: string;
+            entries: components["schemas"]["LeaderboardEntry"][];
+        };
+        LeaderboardEntry: {
+            /** @description 1-indexed; ties share the lower rank (1224 ranking). */
+            rank: number;
+            /** Format: uuid */
+            registration_id: string;
+            display_name: string;
+            bib_number?: number | null;
+            /** Format: uuid */
+            category_id?: string;
+            /**
+             * @description Aggregate score from the comp's scorer. Used by `fixed`
+             *     and `decay`; `top_zone` ranks on (tops, zones, attempts)
+             *     and leaves this at 0.
+             */
+            points: number;
+            tops: number;
+            zones: number;
+            attempts_to_top: number;
+            attempts_to_zone: number;
+        };
     };
     responses: {
         /** @description Malformed request body or invalid arguments. */
@@ -705,6 +855,8 @@ export interface components {
         ProblemId: string;
         /** @description Competition registration UUID. */
         RegistrationId: string;
+        /** @description Competition attempt UUID. */
+        AttemptId: string;
     };
     requestBodies: never;
     headers: never;
@@ -1210,6 +1362,91 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    verifyAttempt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition attempt UUID. */
+                id: components["parameters"]["AttemptId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated attempt. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompetitionAttempt"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    overrideAttempt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition attempt UUID. */
+                id: components["parameters"]["AttemptId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttemptOverride"];
+            };
+        };
+        responses: {
+            /** @description Updated attempt. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompetitionAttempt"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getLeaderboard: {
+        parameters: {
+            query?: {
+                /** @description Optional category UUID to filter rankings. */
+                category?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Competition UUID. */
+                id: components["parameters"]["CompetitionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Computed leaderboard. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Leaderboard"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
     };

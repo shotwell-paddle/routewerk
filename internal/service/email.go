@@ -72,6 +72,7 @@ func (s *EmailService) RegisterHandlers(q *jobs.Queue) {
 	q.Register("email.password_reset", s.handlePasswordReset)
 	q.Register("email.invite", s.handleInvite)
 	q.Register("email.welcome", s.handleWelcome)
+	q.Register("email.magic_link", s.handleMagicLink)
 }
 
 func (s *EmailService) handlePasswordReset(_ context.Context, job jobs.Job) error {
@@ -112,6 +113,27 @@ func (s *EmailService) handleInvite(_ context.Context, job jobs.Job) error {
 	}
 
 	return s.send(p.UserEmail, fmt.Sprintf("You've been invited to %s on Routewerk", p.OrgName), body)
+}
+
+func (s *EmailService) handleMagicLink(_ context.Context, job jobs.Job) error {
+	var p MagicLinkPayload
+	if err := json.Unmarshal(job.Payload, &p); err != nil {
+		return fmt.Errorf("unmarshal payload: %w", err)
+	}
+
+	verifyURL := fmt.Sprintf("%s/verify-magic?token=%s", s.frontendURL, p.Token)
+	if p.NextPath != "" {
+		verifyURL += "&next=" + p.NextPath
+	}
+
+	body, err := renderTemplate(magicLinkTmpl, map[string]string{
+		"DisplayName": p.DisplayName,
+		"VerifyURL":   verifyURL,
+	})
+	if err != nil {
+		return err
+	}
+	return s.send(p.UserEmail, "Sign in to Routewerk", body)
 }
 
 func (s *EmailService) handleWelcome(_ context.Context, job jobs.Job) error {
@@ -216,6 +238,19 @@ const inviteTmpl = `<!DOCTYPE html>
     <a href="{{.InviteURL}}" style="background: #f97316; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">Accept Invite</a>
   </p>
   <p style="color: #6b7280; font-size: 14px;">This invitation expires in 7 days.</p>
+</body>
+</html>`
+
+const magicLinkTmpl = `<!DOCTYPE html>
+<html>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1a1a1a;">
+  <h2 style="margin-bottom: 16px;">Sign in to Routewerk</h2>
+  <p>Hi {{.DisplayName}},</p>
+  <p>Click the button below to sign in. No password needed.</p>
+  <p style="margin: 24px 0;">
+    <a href="{{.VerifyURL}}" style="background: #f97316; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">Sign In</a>
+  </p>
+  <p style="color: #6b7280; font-size: 14px;">This link expires in 15 minutes and can only be used once. If you didn't request this, you can safely ignore this email.</p>
 </body>
 </html>`
 

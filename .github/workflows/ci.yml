@@ -50,6 +50,13 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      # Drift check: regenerate everything from api/openapi.yaml and fail
+      # if the committed generated files don't match. Catches "someone
+      # edited the spec without running make api-gen" and "someone hand-
+      # edited a generated file".
+      - name: API codegen drift check
+        run: make api-gen-check
+
       - name: Vet
         run: go vet -tags=spa_embed ./...
 

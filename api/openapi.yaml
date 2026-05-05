@@ -467,8 +467,99 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  # Phase 1f remaining (waves 4-5):
-  # Verification + leaderboard read + SSE stream.
+  # ── Verification (staff) ───────────────────────────────────────
+
+  /attempts/{id}/verify:
+    parameters:
+      - $ref: '#/components/parameters/AttemptId'
+    post:
+      tags: [competitions]
+      operationId: verifyAttempt
+      summary: Stamp an attempt as verified
+      description: |
+        Setter+ at the comp's location signs off on a climber's recorded
+        attempt. Sets `verified_by` + `verified_at` on the attempt; does
+        not modify scoring fields.
+      responses:
+        '200':
+          description: Updated attempt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetitionAttempt'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /attempts/{id}/override:
+    parameters:
+      - $ref: '#/components/parameters/AttemptId'
+    post:
+      tags: [competitions]
+      operationId: overrideAttempt
+      summary: Replace an attempt's state directly
+      description: |
+        Setter+ at the comp's location forcibly sets the attempt state.
+        Use cases: late-night cleanup, dispute resolution, recording an
+        attempt that was missed in real time. The override is logged
+        with `action=override` and the actor's user id, so the audit
+        trail shows what staff did.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttemptOverride'
+      responses:
+        '200':
+          description: Updated attempt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetitionAttempt'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ── Leaderboard (read) ─────────────────────────────────────────
+
+  /competitions/{id}/leaderboard:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    get:
+      tags: [competitions]
+      operationId: getLeaderboard
+      summary: Get the comp leaderboard
+      description: |
+        Computes and returns the comp leaderboard using the active
+        scorer (`competitions.scoring_rule`). Optional `category` query
+        filter narrows to one category; otherwise returns ranks per
+        registration regardless of category (set staff expectations:
+        for multi-category comps you usually want one query per
+        category to get separated standings).
+
+        Response is cached server-side for ~2 seconds; cache is
+        invalidated whenever an action lands on the comp.
+      parameters:
+        - in: query
+          name: category
+          description: Optional category UUID to filter rankings.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Computed leaderboard.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Leaderboard'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # Phase 1f remaining (wave 5):
+  # SSE leaderboard stream.
 
 components:
 
@@ -510,6 +601,14 @@ components:
       in: path
       required: true
       description: Competition registration UUID.
+      schema:
+        type: string
+        format: uuid
+    AttemptId:
+      name: id
+      in: path
+      required: true
+      description: Competition attempt UUID.
       schema:
         type: string
         format: uuid
@@ -1027,6 +1126,88 @@ components:
           type: array
           items: { $ref: '#/components/schemas/AttemptState' }
           description: Current state for every problem touched by this batch.
+
+    # ── Attempts (verify / override) ─────────────────────────────
+
+    CompetitionAttempt:
+      type: object
+      required:
+        - id
+        - registration_id
+        - problem_id
+        - attempts
+        - zone_reached
+        - top_reached
+        - logged_at
+        - updated_at
+      properties:
+        id: { type: string, format: uuid }
+        registration_id: { type: string, format: uuid }
+        problem_id: { type: string, format: uuid }
+        attempts: { type: integer }
+        zone_attempts: { type: integer, nullable: true }
+        zone_reached: { type: boolean }
+        top_reached: { type: boolean }
+        notes: { type: string, nullable: true }
+        logged_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        verified_by: { type: string, format: uuid, nullable: true }
+        verified_at: { type: string, format: date-time, nullable: true }
+
+    AttemptOverride:
+      type: object
+      required: [attempts, zone_reached, top_reached]
+      description: |
+        Body for POST /attempts/{id}/override. The fields here
+        wholesale replace the attempt's state — staff is asserting
+        "this attempt is now exactly this." A log entry is appended
+        with action=override.
+      properties:
+        attempts: { type: integer, minimum: 0 }
+        zone_attempts: { type: integer, nullable: true, minimum: 0 }
+        zone_reached: { type: boolean }
+        top_reached: { type: boolean }
+        notes: { type: string, nullable: true }
+
+    # ── Leaderboard ──────────────────────────────────────────────
+
+    Leaderboard:
+      type: object
+      required: [competition_id, scoring_rule, generated_at, entries]
+      properties:
+        competition_id: { type: string, format: uuid }
+        category_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: NULL when the leaderboard spans all categories.
+        scoring_rule: { type: string }
+        generated_at: { type: string, format: date-time }
+        entries:
+          type: array
+          items: { $ref: '#/components/schemas/LeaderboardEntry' }
+
+    LeaderboardEntry:
+      type: object
+      required: [rank, registration_id, display_name, points, tops, zones, attempts_to_top, attempts_to_zone]
+      properties:
+        rank:
+          type: integer
+          description: 1-indexed; ties share the lower rank (1224 ranking).
+        registration_id: { type: string, format: uuid }
+        display_name: { type: string }
+        bib_number: { type: integer, nullable: true }
+        category_id: { type: string, format: uuid }
+        points:
+          type: number
+          description: |
+            Aggregate score from the comp's scorer. Used by `fixed`
+            and `decay`; `top_zone` ranks on (tops, zones, attempts)
+            and leaves this at 0.
+        tops: { type: integer }
+        zones: { type: integer }
+        attempts_to_top: { type: integer }
+        attempts_to_zone: { type: integer }
 
   securitySchemes:
     bearerAuth:

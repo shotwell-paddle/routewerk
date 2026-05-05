@@ -31,6 +31,35 @@ func NewCompetitionAttemptRepo(db *pgxpool.Pool) *CompetitionAttemptRepo {
 
 // ── Reads ──────────────────────────────────────────────────
 
+// GetByID returns an attempt by its UUID. Used by staff verify/override
+// flows where we have an attempt id from the leaderboard but not the
+// (registration, problem) pair.
+func (r *CompetitionAttemptRepo) GetByID(ctx context.Context, id string) (*model.CompetitionAttempt, error) {
+	ctx, cancel := database.QueryTimeout(ctx, database.TimeoutFast)
+	defer cancel()
+
+	a := &model.CompetitionAttempt{}
+	err := r.db.QueryRow(ctx, `
+		SELECT id, registration_id, problem_id, attempts, zone_attempts,
+			zone_reached, top_reached, notes, logged_at, updated_at,
+			verified_by, verified_at
+		FROM competition_attempts
+		WHERE id = $1`,
+		id,
+	).Scan(
+		&a.ID, &a.RegistrationID, &a.ProblemID, &a.Attempts, &a.ZoneAttempts,
+		&a.ZoneReached, &a.TopReached, &a.Notes, &a.LoggedAt, &a.UpdatedAt,
+		&a.VerifiedBy, &a.VerifiedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrAttemptNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get attempt by id: %w", err)
+	}
+	return a, nil
+}
+
 // Get returns the current attempt state for (registration, problem).
 // Returns ErrAttemptNotFound when the climber hasn't touched the problem;
 // callers typically treat that as "all-zero state" rather than a hard error.

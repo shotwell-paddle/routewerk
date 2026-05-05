@@ -19,6 +19,7 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/service"
 	"github.com/shotwell-paddle/routewerk/internal/service/cardbatch"
 	"github.com/shotwell-paddle/routewerk/internal/service/cardsheet"
+	"github.com/shotwell-paddle/routewerk/web/spa"
 )
 
 // Deps holds dependencies passed from main.
@@ -180,6 +181,22 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 		r.Use(middleware.SecureHeadersStatic)
 		r.Use(middleware.Gzip)
 		r.Handle("/static/*", webhandler.StaticHandler())
+		// SPA build assets are content-hashed under /_app/* — same caching
+		// policy. The SvelteKit build emits absolute paths, so we mount at
+		// the same root path the build references.
+		r.Handle("/_app/*", spa.AssetServer())
+	})
+
+	// SPA fallback: any unmatched path under an SPA-owned prefix returns
+	// index.html and the client router takes over. Phase 0 only mounts a
+	// smoke-test prefix; Phase 1 will add /comp/* and /staff/comp/*.
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.Gzip)
+		r.Get("/favicon.svg", func(w http.ResponseWriter, req *http.Request) {
+			spa.AssetServer().ServeHTTP(w, req)
+		})
+		r.Handle("/spa-test", http.RedirectHandler("/spa-test/", http.StatusMovedPermanently))
+		r.Handle("/spa-test/*", spa.FallbackHandler())
 	})
 
 	// Web pages — web-specific CSP, CSRF, rate limiting, gzip, query timeout.

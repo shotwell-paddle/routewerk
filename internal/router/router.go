@@ -195,7 +195,10 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 		r.Get("/favicon.svg", func(w http.ResponseWriter, req *http.Request) {
 			spa.AssetServer().ServeHTTP(w, req)
 		})
-		r.Handle("/spa-test", http.RedirectHandler("/spa-test/", http.StatusMovedPermanently))
+		// Mount fallback at both /spa-test and /spa-test/* so SvelteKit's
+		// trailingSlash='never' default (URL ends up as /spa-test) doesn't
+		// 404 on reload. The two registrations point at the same handler.
+		r.Handle("/spa-test", spa.FallbackHandler())
 		r.Handle("/spa-test/*", spa.FallbackHandler())
 	})
 

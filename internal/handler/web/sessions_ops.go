@@ -199,6 +199,13 @@ func (h *Handler) SessionToggleChecklist(w http.ResponseWriter, r *http.Request)
 		},
 		ChecklistItems: items,
 	}
+	// Override the client's hx-target/hx-swap so a long-lived tab whose
+	// page was rendered before the toggle-fix landed (where the rows still
+	// declare hx-target="#main-content") doesn't splat the partial across
+	// the whole page. New pages already declare these values; setting them
+	// here makes the response idempotent regardless of caller markup.
+	w.Header().Set("HX-Retarget", "#session-playbook-checklist")
+	w.Header().Set("HX-Reswap", "outerHTML")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.ExecuteTemplate(w, "playbook-checklist", data); err != nil {
 		slog.Error("render checklist partial failed", "error", err)

@@ -9,6 +9,8 @@
     type LocationShape,
   } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
+  import { roleRankAt } from '$lib/stores/auth.svelte';
+  import { goto } from '$app/navigation';
 
   let catalog = $state<QuestListItemShape[]>([]);
   let myQuests = $state<ClimberQuestShape[]>([]);
@@ -26,6 +28,17 @@
   // feature, render a "not enabled" panel instead of attempting the
   // catalog fetch (which the server would 403 anyway).
   const enabled = $derived(location ? !!location.progressions_enabled : null);
+  // Setter+ at this location can preview the catalog while it's still
+  // off, so they can set things up before flipping the feature flag.
+  // Climbers who navigate to /app/quests at a disabled location get
+  // bounced to the dashboard — no nav link, no empty-state.
+  const isStaff = $derived(roleRankAt(locId) >= 2);
+
+  $effect(() => {
+    if (enabled === false && !isStaff) {
+      goto('/app');
+    }
+  });
 
   $effect(() => {
     if (!locId) return;
@@ -117,11 +130,14 @@
   {:else if loading}
     <p class="muted">Loading quests…</p>
   {:else if enabled === false}
+    <!-- Climbers redirect away (effect above); only staff land here. -->
     <div class="empty-card">
-      <h3>Quests aren't enabled here</h3>
+      <h3>Quests aren't enabled here yet</h3>
       <p>
-        This location hasn't turned on the progressions / quests feature yet.
-        A gym manager can enable it in the gym settings.
+        Climbers won't see this page until the feature flag is on. Build out
+        the quest catalog under
+        <a class="link" href="/app/settings/progressions">progressions admin</a>,
+        then flip the toggle in <a class="link" href="/app/settings/gym">gym settings</a>.
       </p>
     </div>
   {:else if error}
@@ -445,6 +461,12 @@
   .empty-card p {
     color: var(--rw-text-muted);
     margin: 0 0 1.25rem;
+  }
+  .empty-card .link {
+    color: var(--rw-text);
+    text-decoration: underline;
+    text-decoration-color: var(--rw-accent);
+    text-underline-offset: 3px;
   }
   .btn-primary {
     background: var(--rw-accent);

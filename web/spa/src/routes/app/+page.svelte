@@ -1,8 +1,12 @@
 <script lang="ts">
   import {
     getDashboardSummary,
+    listWalls,
+    listRoutes,
     ApiClientError,
     type DashboardSummaryShape,
+    type WallShape,
+    type RouteShape,
   } from '$lib/api/client';
   import { currentUser, roleRankAt } from '$lib/stores/auth.svelte';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
@@ -17,17 +21,37 @@
   let summaryLoading = $state(false);
   let summaryError = $state<string | null>(null);
 
+  // Wall-by-route grid (setter dashboard). Mirrors the HTMX
+  // dashboard's per-wall list — derived client-side from listWalls +
+  // listRoutes(active) so we don't need a dedicated endpoint.
+  let walls = $state<WallShape[]>([]);
+  let activeRoutes = $state<RouteShape[]>([]);
+
   $effect(() => {
     if (!locId || !isStaff) {
       summary = null;
+      walls = [];
+      activeRoutes = [];
       return;
     }
     let cancelled = false;
     summaryLoading = true;
     summaryError = null;
-    getDashboardSummary(locId)
-      .then((s) => {
-        if (!cancelled) summary = s;
+    Promise.all([
+      getDashboardSummary(locId),
+      listWalls(locId).catch(() => [] as WallShape[]),
+      listRoutes(locId, { status: 'active', limit: 500 }).catch(() => ({
+        routes: [],
+        total: 0,
+        limit: 0,
+        offset: 0,
+      })),
+    ])
+      .then(([s, wls, rt]) => {
+        if (cancelled) return;
+        summary = s;
+        walls = wls;
+        activeRoutes = rt.routes;
       })
       .catch((err) => {
         if (cancelled) return;
@@ -39,6 +63,24 @@
     return () => {
       cancelled = true;
     };
+  });
+
+  // Group routes by wall for the per-wall grid. Walls with zero active
+  // routes still render so setters spot empty walls at a glance.
+  const wallsWithRoutes = $derived.by(() => {
+    const byWall = new Map<string, RouteShape[]>();
+    for (const r of activeRoutes) {
+      if (!byWall.has(r.wall_id)) byWall.set(r.wall_id, []);
+      byWall.get(r.wall_id)!.push(r);
+    }
+    // Sort routes within a wall by grade for stable display.
+    for (const list of byWall.values()) {
+      list.sort((a, b) => a.grade.localeCompare(b.grade));
+    }
+    return walls.map((w) => ({
+      wall: w,
+      routes: byWall.get(w.id) ?? [],
+    }));
   });
 
   const QUICK_ACTIONS = [
@@ -144,6 +186,47 @@
           </ul>
         {/if}
       </section>
+
+      {#if walls.length > 0}
+        <section class="card">
+          <h2>Walls &amp; routes</h2>
+          <p class="muted small">
+            Active routes per wall. Click a route to see ascents + ratings.
+          </p>
+          <ul class="wall-list">
+            {#each wallsWithRoutes as { wall, routes } (wall.id)}
+              <li>
+                <div class="wall-row">
+                  <a class="wall-name" href="/app/walls/{wall.id}">
+                    {wall.name}
+                    <span class="wall-type muted">{wall.wall_type}</span>
+                  </a>
+                  <span class="route-count muted">
+                    {routes.length} active
+                  </span>
+                </div>
+                {#if routes.length === 0}
+                  <p class="muted small empty-wall">No active routes — set or unstrip something.</p>
+                {:else}
+                  <ul class="route-chips">
+                    {#each routes as r (r.id)}
+                      <li>
+                        <a
+                          class="route-chip"
+                          href="/app/routes/{r.id}"
+                          title="{r.grade}{r.name ? ' · ' + r.name : ''}">
+                          <span class="color-chip" style="background:{r.color}"></span>
+                          <span class="chip-grade">{r.grade}</span>
+                        </a>
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
     {/if}
   {/if}
 
@@ -307,6 +390,81 @@
   }
   .age {
     font-size: 0.8rem;
+  }
+  .small {
+    font-size: 0.85rem;
+  }
+  .wall-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .wall-list > li {
+    border-top: 1px solid var(--rw-border);
+    padding-top: 10px;
+  }
+  .wall-list > li:first-child {
+    border-top: none;
+    padding-top: 4px;
+  }
+  .wall-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .wall-name {
+    color: var(--rw-text);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+  .wall-name:hover {
+    color: var(--rw-accent);
+  }
+  .wall-type {
+    margin-left: 6px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+  }
+  .route-count {
+    font-size: 0.8rem;
+  }
+  .empty-wall {
+    margin: 4px 0 0;
+  }
+  .route-chips {
+    list-style: none;
+    padding: 0;
+    margin: 4px 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .route-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border: 1px solid var(--rw-border);
+    border-radius: 999px;
+    text-decoration: none;
+    color: var(--rw-text);
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: border-color 120ms;
+  }
+  .route-chip:hover {
+    border-color: var(--rw-accent);
+  }
+  .chip-grade {
+    line-height: 1;
   }
   .card-grid {
     display: grid;

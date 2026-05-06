@@ -28,6 +28,8 @@ export type RegistrationCreate = Schemas['RegistrationCreate'];
 export type EventCreate = Schemas['EventCreate'];
 export type EventUpdate = Schemas['EventUpdate'];
 export type CategoryCreate = Schemas['CategoryCreate'];
+export type ProblemCreate = Schemas['ProblemCreate'];
+export type ProblemUpdate = Schemas['ProblemUpdate'];
 export type Aggregation = Schemas['Aggregation'];
 export type MagicLinkRequest = Schemas['MagicLinkRequest'];
 export type ApiError = Schemas['Error'];
@@ -307,6 +309,28 @@ export async function listProblems(
   signal?: AbortSignal,
 ): Promise<CompetitionProblem[]> {
   return request(`/events/${eventId}/problems`, { signal });
+}
+
+/** POST /events/{id}/problems */
+export async function createProblem(
+  eventId: string,
+  body: ProblemCreate,
+  signal?: AbortSignal,
+): Promise<CompetitionProblem> {
+  return request(`/events/${eventId}/problems`, {
+    method: 'POST',
+    body,
+    signal,
+  });
+}
+
+/** PATCH /problems/{id} */
+export async function updateProblem(
+  problemId: string,
+  body: ProblemUpdate,
+  signal?: AbortSignal,
+): Promise<CompetitionProblem> {
+  return request(`/problems/${problemId}`, { method: 'PATCH', body, signal });
 }
 
 /** GET /competitions/{id}/registrations */

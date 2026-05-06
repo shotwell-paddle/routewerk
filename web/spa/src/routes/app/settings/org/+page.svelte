@@ -14,6 +14,8 @@
     type LocationCreateShape,
   } from '$lib/api/client';
   import { authState, roleRankAt } from '$lib/stores/auth.svelte';
+  import { effectiveLocationId } from '$lib/stores/location.svelte';
+  import { goto } from '$app/navigation';
 
   // Org admin acts at the org level, not a single location. We let the user
   // pick which org to admin; for single-org users this is a one-option
@@ -34,6 +36,17 @@
     return me.memberships.some(
       (m) => m.org_id === selectedOrgId && m.role === 'org_admin',
     );
+  });
+
+  // Page-level gate. /app/settings/org requires org_admin (rank 5);
+  // honors view-as so an org_admin viewing as climber gets bounced too.
+  // The layout's blanket /app/settings gate only enforces head_setter+,
+  // which isn't enough for the org settings sub-path.
+  $effect(() => {
+    if (!authState().loaded || !authState().me) return;
+    if (roleRankAt(effectiveLocationId()) < 5) {
+      goto('/app');
+    }
   });
 
   let orgForm = $state({ name: '', slug: '', logo_url: '' });

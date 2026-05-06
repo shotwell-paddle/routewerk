@@ -17,7 +17,11 @@
   let saveOk = $state<string | null>(null);
 
   const locId = $derived(effectiveLocationId());
-  const canEdit = $derived(roleRankAt(locId) >= 4);
+  // head_setter+ matches the HTMX gym-settings policy at
+  // internal/handler/web/settings.go (head_setter can edit circuits,
+  // hold colors, grading defaults). gym_manager+ only on the
+  // progressions toggle, which lives elsewhere.
+  const canEdit = $derived(roleRankAt(locId) >= 3);
 
   $effect(() => {
     if (!locId) return;

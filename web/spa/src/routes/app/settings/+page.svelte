@@ -132,7 +132,7 @@
   <a class="back" href="/app/profile">← Profile</a>
   <h1>Settings</h1>
 
-  {#if roleRankAt(effectiveLocationId()) >= 4}
+  {#if roleRankAt(effectiveLocationId()) >= 3}
     <section class="card cta-card">
       <h2>Gym settings</h2>
       <p class="muted">

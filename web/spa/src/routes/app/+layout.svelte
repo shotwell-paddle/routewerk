@@ -8,6 +8,8 @@
     currentUser,
     effectiveRoleAt,
     roleRankAt,
+    realRoleAt,
+    realRoleRankAt,
     loadMe,
   } from '$lib/stores/auth.svelte';
   import {
@@ -84,27 +86,18 @@
       }));
   });
 
-  // Best role at the selected location, sourced from the shared helper.
-  // Mirrors the server's bestRole + app-admin promotion. Without the
-  // org-wide membership fallback, an org_admin (whose membership row has
-  // location_id=null) would get a climber-flavored sidebar even though
-  // the API treats them as admin.
-  // The view-as cookie can downgrade the effective role; selectedRole
-  // reflects that override so the sidebar shows what the user is actually
-  // allowed to see right now. realRole stays at the user's true highest
-  // role so the view-as bar only renders for head_setter+ and only
-  // offers downgrade options below their real rank.
+  // Best role at the selected location. `effectiveRoleAt` /
+  // `roleRankAt` already honor the view-as cookie (see
+  // auth.svelte::effectiveRoleAt), so the nav-rank gate downgrades
+  // automatically when an override is active and every page that uses
+  // those helpers gets the same downgrade for free. The `real*` helpers
+  // ignore view-as so the view-as bar can still see the user's true rank
+  // (needed to show only sub-real options + the Clear button).
   const viewAsRole = $derived(authState().me?.view_as_role || null);
-  const realRole = $derived(effectiveRoleAt(selectedLocId));
-  const realRank = $derived(roleRankAt(selectedLocId));
-  const selectedRole = $derived(viewAsRole || realRole);
-  const roleRank = $derived.by(() => {
-    if (!viewAsRole) return realRank;
-    const RR: Record<string, number> = {
-      climber: 1, setter: 2, head_setter: 3, gym_manager: 4, org_admin: 5,
-    };
-    return Math.min(realRank, RR[viewAsRole] ?? realRank);
-  });
+  const realRole = $derived(realRoleAt(selectedLocId));
+  const realRank = $derived(realRoleRankAt(selectedLocId));
+  const selectedRole = $derived(effectiveRoleAt(selectedLocId));
+  const roleRank = $derived(roleRankAt(selectedLocId));
 
   // View-as bar — head_setter+ at the selected location can preview
   // lower-rank surfaces. Options are every role strictly below realRank.
@@ -165,17 +158,47 @@
     },
     { label: 'Notifications', href: '/app/notifications', minRoleRank: 1, group: 'main' },
     { label: 'Profile', href: '/app/profile', minRoleRank: 1, group: 'main' },
-    // Staff
+    // Staff. Settings = head_setter+ (matches HTMX gym settings policy
+    // at internal/handler/web/settings.go::Settings — head_setter can
+    // edit circuits / hold colors / grading).
     { label: 'Sessions', href: '/app/sessions', minRoleRank: 2, group: 'staff' },
     { label: 'Card batches', href: '/app/card-batches', minRoleRank: 2, group: 'staff' },
-    { label: 'Competitions', href: '/app/competitions', minRoleRank: 4, group: 'staff' },
+    { label: 'Competitions', href: '/app/competitions', minRoleRank: 3, group: 'staff' },
     { label: 'Team', href: '/app/team', minRoleRank: 3, group: 'staff' },
-    { label: 'Settings', href: '/app/settings', minRoleRank: 4, group: 'staff' },
+    { label: 'Settings', href: '/app/settings', minRoleRank: 3, group: 'staff' },
   ];
 
   const visibleNav = $derived(
     NAV.filter((n) => roleRank >= n.minRoleRank && (n.visible ? n.visible() : true)),
   );
+
+  // Page-level role gate. The sidebar only HIDES links the role can't
+  // access; this redirects when a user (or a view-as override) directly
+  // navigates to a path beyond their effective rank. Without it, an
+  // org_admin viewing as climber could still hand-type /app/settings/org
+  // and see staff content even though the link disappears.
+  //
+  // Sub-paths inherit the parent's gate: /app/settings/gym requires the
+  // /app/settings rank, /app/competitions/[id] requires the
+  // /app/competitions rank, etc. Specific sub-paths (e.g. settings/org
+  // = org_admin only) get their own page-level redirect.
+  $effect(() => {
+    if (!authState().loaded || !isAuthenticated()) return;
+    const path = page.url.pathname;
+    // Find the most specific NAV match — sort by href length descending
+    // so /app/quests beats /app even though both prefix-match.
+    const match = [...NAV]
+      .sort((a, b) => b.href.length - a.href.length)
+      .find((n) => path === n.href || path.startsWith(n.href + '/'));
+    if (!match) return;
+    if (roleRank < match.minRoleRank) {
+      goto('/app');
+      return;
+    }
+    if (match.visible && !match.visible()) {
+      goto('/app');
+    }
+  });
 
   function isActive(href: string): boolean {
     if (href === '/app') return page.url.pathname === '/app';

@@ -90,11 +90,35 @@ const ROLE_RANK: Record<string, number> = {
 /**
  * Best role the current user has at the given location. Mirrors
  * internal/middleware/websession.go::bestRole + the app-admin promotion
- * applied in the SPA layout. Pages outside the layout (e.g. route detail)
- * use this to gate write affordances client-side; the server is still the
- * source of truth.
+ * applied in the SPA layout, AND honors the active view-as override
+ * from `me.view_as_role` so every page that gates affordances or
+ * content via this helper automatically respects view-as without each
+ * page having to know about it.
+ *
+ * Note: this is a UI-only gate. The server enforces authorization on
+ * every request and also honors the same view-as cookie, so pages can
+ * trust this for visibility without re-checking.
  */
 export function effectiveRoleAt(locationId: string | null | undefined): string | null {
+  const r = realRoleAt(locationId);
+  if (!r) return null;
+  const viewAs = state.me?.view_as_role;
+  if (!viewAs) return r;
+  // View-as can only downgrade, never elevate (server enforces this in
+  // applyViewAsOverride). If for any reason the cookie outranks the
+  // user's real role, ignore it.
+  const overrideRank = ROLE_RANK[viewAs] ?? 0;
+  const realRank = ROLE_RANK[r] ?? 0;
+  return overrideRank > 0 && overrideRank < realRank ? viewAs : r;
+}
+
+/**
+ * The user's actual best role at the given location, ignoring any
+ * view-as override. Use this when the UI needs to know "who is this
+ * person really?" (e.g. the view-as bar itself, which has to know your
+ * real rank to show only the lower-rank options).
+ */
+export function realRoleAt(locationId: string | null | undefined): string | null {
   const me = state.me;
   if (!me) return null;
   let best: string | null = null;
@@ -112,8 +136,14 @@ export function effectiveRoleAt(locationId: string | null | undefined): string |
   return best;
 }
 
-/** Numeric rank of `effectiveRoleAt`; 0 if no membership. */
+/** Numeric rank of `effectiveRoleAt`; 0 if no membership. View-as aware. */
 export function roleRankAt(locationId: string | null | undefined): number {
   const r = effectiveRoleAt(locationId);
+  return r ? (ROLE_RANK[r] ?? 0) : 0;
+}
+
+/** Numeric rank of `realRoleAt`; 0 if no membership. Ignores view-as. */
+export function realRoleRankAt(locationId: string | null | undefined): number {
+  const r = realRoleAt(locationId);
   return r ? (ROLE_RANK[r] ?? 0) : 0;
 }

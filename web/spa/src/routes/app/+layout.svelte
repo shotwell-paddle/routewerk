@@ -2,7 +2,13 @@
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { authState, isAuthenticated, currentUser } from '$lib/stores/auth.svelte';
+  import {
+    authState,
+    isAuthenticated,
+    currentUser,
+    effectiveRoleAt,
+    roleRankAt,
+  } from '$lib/stores/auth.svelte';
   import {
     locationState,
     setSelectedLocation,
@@ -72,28 +78,39 @@
       }));
   });
 
-  // Role rank — used to decide which nav items to show.
-  const ROLE_RANK: Record<string, number> = {
-    climber: 1,
-    setter: 2,
-    head_setter: 3,
-    gym_manager: 4,
-    org_admin: 5,
-  };
-  const selectedRole = $derived.by(() => {
-    const meV = authState().me;
-    if (!meV || !selectedLocId) return null;
-    return meV.memberships.find((m) => m.location_id === selectedLocId)?.role ?? null;
-  });
-  const roleRank = $derived(selectedRole ? (ROLE_RANK[selectedRole] ?? 0) : 0);
+  // Best role at the selected location, sourced from the shared helper.
+  // Mirrors the server's bestRole + app-admin promotion. Without the
+  // org-wide membership fallback, an org_admin (whose membership row has
+  // location_id=null) would get a climber-flavored sidebar even though
+  // the API treats them as admin.
+  const selectedRole = $derived(effectiveRoleAt(selectedLocId));
+  const roleRank = $derived(roleRankAt(selectedLocId));
 
-  type NavItem = { label: string; href: string; minRoleRank: number; group: 'main' | 'staff' };
+  // Quests are gated by the location's progressions_enabled flag.
+  // Only show the nav link when the selected location has it on.
+  const progressionsEnabled = $derived<boolean>(
+    selectedLoc ? !!selectedLoc.progressions_enabled : false,
+  );
+
+  type NavItem = {
+    label: string;
+    href: string;
+    minRoleRank: number;
+    group: 'main' | 'staff';
+    visible?: () => boolean;
+  };
   const NAV: NavItem[] = [
     // Climber + everyone
     { label: 'Dashboard', href: '/app', minRoleRank: 0, group: 'main' },
     { label: 'Walls', href: '/app/walls', minRoleRank: 0, group: 'main' },
     { label: 'Routes', href: '/app/routes', minRoleRank: 0, group: 'main' },
-    { label: 'Quests', href: '/app/quests', minRoleRank: 1, group: 'main' },
+    {
+      label: 'Quests',
+      href: '/app/quests',
+      minRoleRank: 1,
+      group: 'main',
+      visible: () => progressionsEnabled,
+    },
     { label: 'Profile', href: '/app/profile', minRoleRank: 1, group: 'main' },
     // Staff
     { label: 'Sessions', href: '/app/sessions', minRoleRank: 2, group: 'staff' },
@@ -103,7 +120,9 @@
     { label: 'Settings', href: '/app/settings', minRoleRank: 4, group: 'staff' },
   ];
 
-  const visibleNav = $derived(NAV.filter((n) => roleRank >= n.minRoleRank));
+  const visibleNav = $derived(
+    NAV.filter((n) => roleRank >= n.minRoleRank && (n.visible ? n.visible() : true)),
+  );
 
   function isActive(href: string): boolean {
     if (href === '/app') return page.url.pathname === '/app';

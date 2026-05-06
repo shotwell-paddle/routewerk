@@ -10,6 +10,7 @@
     type RouteListFilters,
   } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
+  import { roleRankAt } from '$lib/stores/auth.svelte';
 
   const PAGE_SIZE = 50;
 
@@ -28,6 +29,9 @@
   });
 
   const locId = $derived(effectiveLocationId());
+  // Setter+ may create routes; the API enforces this server-side, the UI
+  // just hides the affordance for climbers so they don't bounce off a 403.
+  const canManage = $derived(roleRankAt(locId) >= 2);
 
   // Build the wall lookup once routes load — the route card needs the wall
   // name, which the route shape doesn't include directly.
@@ -112,7 +116,7 @@
       <h1>Routes</h1>
       <p class="lede">Browse the active route list for the selected location.</p>
     </div>
-    {#if locId}
+    {#if locId && canManage}
       <a class="btn-primary" href="/app/routes/new">+ New route</a>
     {/if}
   </header>

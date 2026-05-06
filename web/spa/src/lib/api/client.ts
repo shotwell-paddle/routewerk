@@ -168,6 +168,12 @@ export interface LocationShape {
   website_url?: string | null;
   phone?: string | null;
   custom_domain?: string | null;
+  /**
+   * Feature flag that gates the quests / progressions surface at this
+   * location. The HTMX side checks the same field via Location.ProgressionsEnabled
+   * (see internal/handler/web/progressions_climber.go::progressionsGated).
+   */
+  progressions_enabled?: boolean;
   created_at: string;
   updated_at: string;
 }

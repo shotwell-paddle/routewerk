@@ -651,6 +651,99 @@ export async function listCompetitions(
   return request(`/locations/${locationId}/competitions${q}`, { signal });
 }
 
+// ── /me writes + climber stats (Phase 2.6) ─────────────────
+
+export interface UpdateMeShape {
+  display_name?: string;
+  avatar_url?: string | null;
+  bio?: string | null;
+  /** Set true (with omitted/null avatar_url) to clear the existing avatar. */
+  clear_avatar_url?: boolean;
+  /** Set true (with omitted/null bio) to clear the existing bio. */
+  clear_bio?: boolean;
+}
+
+export interface UpdateMeResponse {
+  user: UserShape;
+}
+
+/**
+ * PATCH /api/v1/me — patch caller's profile fields. Pass `clear_*: true`
+ * along with omitted/null on the field to explicitly clear it (since the
+ * server can't distinguish "missing" from "JSON null" otherwise).
+ */
+export async function updateMe(
+  body: UpdateMeShape,
+  signal?: AbortSignal,
+): Promise<UserShape> {
+  const res = await request<UpdateMeResponse>('/me', { method: 'PATCH', body, signal });
+  return res.user;
+}
+
+/** POST /api/v1/me/password — change password. Returns 204. */
+export async function changePassword(
+  oldPassword: string,
+  newPassword: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request('/me/password', {
+    method: 'POST',
+    body: { old_password: oldPassword, new_password: newPassword },
+    signal,
+  });
+}
+
+export interface AscentWithRouteShape {
+  id: string;
+  user_id: string;
+  route_id: string;
+  ascent_type: string;
+  attempts: number;
+  notes?: string | null;
+  climbed_at: string;
+  created_at: string;
+  route_grade: string;
+  route_grading_system: string;
+  route_type: string;
+  route_color: string;
+  route_name?: string | null;
+  wall_id: string;
+}
+
+export interface MyAscentsResponse {
+  ascents: AscentWithRouteShape[];
+  total: number;
+}
+
+/** GET /api/v1/me/ascents — paginated list of caller's ticks (newest first). */
+export async function listMyAscents(
+  limit = 25,
+  offset = 0,
+  signal?: AbortSignal,
+): Promise<MyAscentsResponse> {
+  const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return request(`/me/ascents?${qs}`, { signal });
+}
+
+export interface GradePyramidEntryShape {
+  grading_system: string;
+  grade: string;
+  count: number;
+}
+
+export interface MyStatsShape {
+  total_sends: number;
+  total_flashes: number;
+  total_logged: number;
+  unique_routes: number;
+  grade_pyramid: GradePyramidEntryShape[];
+}
+
+/** GET /api/v1/me/stats — climber summary + grade pyramid. */
+export async function getMyStats(signal?: AbortSignal): Promise<MyStatsShape> {
+  return request('/me/stats', { signal });
+}
+
 /** GET /competitions/{id} */
 export async function getCompetition(id: string, signal?: AbortSignal): Promise<Competition> {
   return request(`/competitions/${id}`, { signal });

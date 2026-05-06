@@ -245,6 +245,38 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, oldPassword, n
 	return nil
 }
 
+// UpdateProfile patches the user's editable profile fields (display_name,
+// avatar_url, bio). Pass nil for any field you don't want to change. The
+// returned user reflects the post-update state (with refreshed updated_at).
+func (s *AuthService) UpdateProfile(
+	ctx context.Context,
+	userID string,
+	displayName *string,
+	avatarURL **string,
+	bio **string,
+) (*model.User, error) {
+	u, err := s.users.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if u == nil {
+		return nil, ErrUserNotFound
+	}
+	if displayName != nil {
+		u.DisplayName = *displayName
+	}
+	if avatarURL != nil {
+		u.AvatarURL = *avatarURL
+	}
+	if bio != nil {
+		u.Bio = *bio
+	}
+	if err := s.users.Update(ctx, u); err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
 // ResetPassword sets a new password without requiring the old one.
 // Intended for admin-initiated resets.
 func (s *AuthService) ResetPassword(ctx context.Context, userID, newPassword string) error {

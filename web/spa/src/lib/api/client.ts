@@ -598,6 +598,161 @@ export async function updateSession(
   });
 }
 
+/** DELETE /locations/{locationId}/sessions/{sessionId} — head_setter+. Soft delete. */
+export async function deleteSession(
+  locationId: string,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/locations/${locationId}/sessions/${sessionId}`, {
+    method: 'DELETE',
+    signal,
+  });
+}
+
+/**
+ * POST /locations/{locationId}/sessions/{sessionId}/status — head_setter+.
+ * Simple status flip. Note: transitioning to 'complete' via this endpoint
+ * does NOT publish draft routes or run the strip-targets pipeline; for
+ * that, use the existing HTMX /sessions/{id}/complete view.
+ */
+export async function updateSessionStatus(
+  locationId: string,
+  sessionId: string,
+  status: SessionStatus,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/locations/${locationId}/sessions/${sessionId}/status`, {
+    method: 'POST',
+    body: { status },
+    signal,
+  });
+}
+
+/** POST /locations/{locationId}/sessions/{sessionId}/assignments — head_setter+. */
+export async function addSessionAssignment(
+  locationId: string,
+  sessionId: string,
+  body: {
+    setter_id: string;
+    wall_id?: string | null;
+    target_grades?: string[];
+    notes?: string | null;
+  },
+  signal?: AbortSignal,
+): Promise<SessionAssignmentShape> {
+  return request(`/locations/${locationId}/sessions/${sessionId}/assignments`, {
+    method: 'POST',
+    body,
+    signal,
+  });
+}
+
+/** DELETE /locations/{locationId}/sessions/{sessionId}/assignments/{assignmentId} — head_setter+. */
+export async function removeSessionAssignment(
+  locationId: string,
+  sessionId: string,
+  assignmentId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(
+    `/locations/${locationId}/sessions/${sessionId}/assignments/${assignmentId}`,
+    { method: 'DELETE', signal },
+  );
+}
+
+export interface StripTargetShape {
+  id: string;
+  session_id: string;
+  wall_id: string;
+  route_id?: string | null;
+  created_at: string;
+  wall_name: string;
+  wall_type: string;
+  route_grade?: string | null;
+  route_color?: string | null;
+  route_name?: string | null;
+  route_type?: string | null;
+}
+
+/** GET /locations/{locationId}/sessions/{sessionId}/strip-targets — setter+. */
+export async function listStripTargets(
+  locationId: string,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<StripTargetShape[]> {
+  return request(
+    `/locations/${locationId}/sessions/${sessionId}/strip-targets`,
+    { signal },
+  );
+}
+
+/** POST /locations/{locationId}/sessions/{sessionId}/strip-targets — head_setter+. */
+export async function addStripTarget(
+  locationId: string,
+  sessionId: string,
+  body: { wall_id: string; route_id?: string | null },
+  signal?: AbortSignal,
+): Promise<StripTargetShape> {
+  return request(`/locations/${locationId}/sessions/${sessionId}/strip-targets`, {
+    method: 'POST',
+    body,
+    signal,
+  });
+}
+
+/** DELETE /locations/{locationId}/sessions/{sessionId}/strip-targets/{targetId} — head_setter+. */
+export async function removeStripTarget(
+  locationId: string,
+  sessionId: string,
+  targetId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(
+    `/locations/${locationId}/sessions/${sessionId}/strip-targets/${targetId}`,
+    { method: 'DELETE', signal },
+  );
+}
+
+export interface ChecklistItemShape {
+  id: string;
+  session_id: string;
+  sort_order: number;
+  title: string;
+  completed: boolean;
+  completed_by?: string | null;
+  completed_at?: string | null;
+  created_at: string;
+  completed_by_name?: string | null;
+}
+
+/** GET /locations/{locationId}/sessions/{sessionId}/checklist — setter+. */
+export async function listSessionChecklist(
+  locationId: string,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<ChecklistItemShape[]> {
+  return request(`/locations/${locationId}/sessions/${sessionId}/checklist`, {
+    signal,
+  });
+}
+
+/**
+ * POST /locations/{locationId}/sessions/{sessionId}/checklist/{itemId}/toggle —
+ * setter+. Returns the new completion count for the session.
+ */
+export async function toggleChecklistItem(
+  locationId: string,
+  sessionId: string,
+  itemId: string,
+  signal?: AbortSignal,
+): Promise<{ completion_count: number }> {
+  return request(
+    `/locations/${locationId}/sessions/${sessionId}/checklist/${itemId}/toggle`,
+    { method: 'POST', signal },
+  );
+}
+
 // ── Card batches (Phase 2.5) ──────────────────────────────
 //
 // Hand-written shapes — card batches aren't in the OpenAPI spec yet.

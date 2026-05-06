@@ -627,16 +627,32 @@ func (r *SessionRepo) ListChecklistItems(ctx context.Context, sessionID string) 
 
 // ToggleChecklistItem toggles the completed state of a checklist item.
 // If marking complete, stores who completed it and when.
-func (r *SessionRepo) ToggleChecklistItem(ctx context.Context, itemID, userID string) error {
-	_, err := r.db.Exec(ctx, `
+//
+// Returns the number of rows affected so callers can detect a missing item
+// (id mismatch / wrong session) instead of silently no-oping on the user.
+//
+// userID may be empty — we still toggle the boolean but skip recording who
+// completed it. The previous version passed an empty string straight into
+// a UUID parameter, which caused the whole UPDATE to fail with
+// "invalid input syntax for type uuid: \"\"" and the handler swallowed
+// the error, so toggles silently never persisted.
+func (r *SessionRepo) ToggleChecklistItem(ctx context.Context, itemID, userID string) (int64, error) {
+	var userArg any
+	if userID != "" {
+		userArg = userID
+	}
+	tag, err := r.db.Exec(ctx, `
 		UPDATE session_checklist_items
 		SET completed = NOT completed,
-			completed_by = CASE WHEN NOT completed THEN $2 ELSE NULL END,
+			completed_by = CASE WHEN NOT completed THEN $2::uuid ELSE NULL END,
 			completed_at = CASE WHEN NOT completed THEN NOW() ELSE NULL END
 		WHERE id = $1`,
-		itemID, userID,
+		itemID, userArg,
 	)
-	return err
+	if err != nil {
+		return 0, fmt.Errorf("toggle checklist item: %w", err)
+	}
+	return tag.RowsAffected(), nil
 }
 
 // InitializeChecklist copies the location's playbook steps into a session's checklist.

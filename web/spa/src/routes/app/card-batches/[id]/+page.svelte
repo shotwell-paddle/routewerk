@@ -4,6 +4,7 @@
   import {
     getCardBatch,
     deleteCardBatch,
+    updateCardBatch,
     listRoutes,
     cardBatchDownloadUrl,
     ApiClientError,
@@ -17,6 +18,45 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let deleting = $state(false);
+
+  // Edit-mode state. Pre-populates the selection from the current batch
+  // when the user clicks Edit; saving PATCHes the route_ids.
+  let editing = $state(false);
+  let editSelected = $state<Set<string>>(new Set());
+  let editSaving = $state(false);
+  let editError = $state<string | null>(null);
+
+  function openEdit() {
+    if (!batch) return;
+    editSelected = new Set(batch.route_ids);
+    editError = null;
+    editing = true;
+  }
+
+  function toggleEdit(id: string) {
+    if (editSelected.has(id)) editSelected.delete(id);
+    else editSelected.add(id);
+    editSelected = new Set(editSelected);
+  }
+
+  async function saveEdit() {
+    if (!locId || !batchId || editSaving) return;
+    if (editSelected.size === 0) {
+      editError = 'Pick at least one route.';
+      return;
+    }
+    editSaving = true;
+    editError = null;
+    try {
+      const updated = await updateCardBatch(locId, batchId, Array.from(editSelected));
+      batch = updated;
+      editing = false;
+    } catch (err) {
+      editError = err instanceof ApiClientError ? err.message : 'Save failed.';
+    } finally {
+      editSaving = false;
+    }
+  }
 
   const batchId = $derived(page.params.id ?? '');
   const locId = $derived(effectiveLocationId());
@@ -110,25 +150,61 @@
     {/if}
 
     <section class="card">
-      <h2>Routes ({batch.route_ids.length})</h2>
-      {#if batch.page_count > 0}
+      <div class="routes-head">
+        <h2>Routes ({editing ? editSelected.size : batch.route_ids.length})</h2>
+        {#if !editing}
+          <button class="ghost" onclick={openEdit}>Edit routes</button>
+        {/if}
+      </div>
+      {#if !editing && batch.page_count > 0}
         <p class="muted page-count">{batch.page_count} page{batch.page_count === 1 ? '' : 's'} at 8-up</p>
       {/if}
-      <ul class="route-list">
-        {#each batch.route_ids as rid}
-          {@const r = routes.get(rid)}
-          <li>
-            {#if r}
-              <span class="color-chip" style="background:{r.color}"></span>
-              <span class="grade">{r.grade}</span>
-              {#if r.name}<span class="rname">{r.name}</span>{/if}
-            {:else}
-              <span class="color-chip placeholder"></span>
-              <span class="muted">Route {rid.slice(0, 8)}…</span>
-            {/if}
-          </li>
-        {/each}
-      </ul>
+      {#if editing}
+        <p class="muted small">
+          Toggle routes to add or remove. Save to update the batch — the next
+          download re-renders against the new selection.
+        </p>
+        <ul class="route-list editable">
+          {#each Array.from(routes.values()).sort((a, b) => a.grade.localeCompare(b.grade)) as r (r.id)}
+            <li>
+              <label class="route-row-edit">
+                <input
+                  type="checkbox"
+                  checked={editSelected.has(r.id)}
+                  onchange={() => toggleEdit(r.id)} />
+                <span class="color-chip" style="background:{r.color}"></span>
+                <span class="grade">{r.grade}</span>
+                {#if r.name}<span class="rname">{r.name}</span>{/if}
+              </label>
+            </li>
+          {/each}
+        </ul>
+        {#if editError}<p class="error">{editError}</p>{/if}
+        <div class="edit-actions">
+          <button class="primary" disabled={editSaving} onclick={saveEdit}>
+            {editSaving ? 'Saving…' : 'Save routes'}
+          </button>
+          <button disabled={editSaving} onclick={() => (editing = false)}>
+            Cancel
+          </button>
+        </div>
+      {:else}
+        <ul class="route-list">
+          {#each batch.route_ids as rid}
+            {@const r = routes.get(rid)}
+            <li>
+              {#if r}
+                <span class="color-chip" style="background:{r.color}"></span>
+                <span class="grade">{r.grade}</span>
+                {#if r.name}<span class="rname">{r.name}</span>{/if}
+              {:else}
+                <span class="color-chip placeholder"></span>
+                <span class="muted">Route {rid.slice(0, 8)}…</span>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
     </section>
 
     <section class="card danger-zone">
@@ -264,6 +340,70 @@
   }
   .rname {
     color: var(--rw-text);
+  }
+  .routes-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+  .routes-head button.ghost {
+    background: transparent;
+    border: 1px solid var(--rw-border-strong);
+    color: var(--rw-text);
+    padding: 0.35rem 0.85rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .routes-head button.ghost:hover {
+    border-color: var(--rw-accent);
+  }
+  .small {
+    font-size: 0.85rem;
+    margin: 0 0 0.75rem;
+  }
+  .route-list.editable {
+    max-height: 24rem;
+    overflow-y: auto;
+    border: 1px solid var(--rw-border);
+    border-radius: 8px;
+    padding: 0;
+  }
+  .route-list.editable li {
+    grid-template-columns: 22px 18px 3rem 1fr;
+    border-top: 1px solid var(--rw-border);
+    padding: 0.4rem 0.7rem;
+  }
+  .route-row-edit {
+    display: contents;
+    cursor: pointer;
+  }
+  .edit-actions {
+    margin-top: 0.85rem;
+    display: flex;
+    gap: 8px;
+  }
+  .edit-actions button {
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    border: 1px solid var(--rw-border-strong);
+    background: var(--rw-surface);
+    color: var(--rw-text);
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+  .edit-actions button.primary {
+    background: var(--rw-accent);
+    color: var(--rw-accent-ink);
+    border-color: var(--rw-accent);
+  }
+  .edit-actions button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
   .danger-zone {
     border-color: #fde2e2;

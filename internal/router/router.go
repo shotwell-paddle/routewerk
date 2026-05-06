@@ -727,6 +727,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 					r.With(batchCreateLimitByUser).Post("/", cardBatchHandler.Create)
 					r.Get("/{batchID}", cardBatchHandler.Get)
 					r.Get("/{batchID}/pdf", cardBatchHandler.Download)
+					r.Patch("/{batchID}", cardBatchHandler.Update)
 					r.Delete("/{batchID}", cardBatchHandler.Delete)
 				})
 

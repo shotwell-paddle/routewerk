@@ -176,6 +176,10 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	dashboardHandler := handler.NewDashboardHandler(analyticsRepo)
 	settingsHandler := handler.NewSettingsHandler(settingsRepo)
 	progressionsAdminHandler := handler.NewProgressionsAdminHandler(questRepo, badgeRepo)
+	// JSON variant of the HTMX route-photo upload pipeline (multipart upload,
+	// image processing, S3 upload, route_photos row insert). Cap concurrent
+	// processing at 4 to bound peak memory on the 256 MB VM.
+	routePhotoHandler := handler.NewRoutePhotoHandler(routeRepo, photoRepo, storageSvc, 4)
 
 	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, questRepo, badgeRepo, activityRepo, routeSkillTagRepo, notifRepo, deps.QuestSvc, deps.EventBus, authService, storageSvc, cardGen, cardBatchRepo, batchSvc, auditService, sessionMgr, cfg, db)
 
@@ -650,6 +654,13 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 						// Climber actions — any member can log ascents and rate
 						r.Post("/ascent", ascentHandler.Log)
 						r.Post("/rate", ratingHandler.Rate)
+
+						// Route photos — any member can upload + list; delete is
+						// scoped to setter+ or the photo's original uploader
+						// (enforced in the handler). Mirrors the HTMX policy.
+						r.Get("/photos", routePhotoHandler.List)
+						r.Post("/photos", routePhotoHandler.Upload)
+						r.Delete("/photos/{photoID}", routePhotoHandler.Delete)
 
 						// Edit route — setter or above
 						r.Group(func(r chi.Router) {

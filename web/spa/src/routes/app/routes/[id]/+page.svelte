@@ -12,6 +12,9 @@
     updateRouteStatus,
     deleteRoute,
     getLocationSettings,
+    listRoutePhotos,
+    uploadRoutePhoto,
+    deleteRoutePhoto,
     ApiClientError,
     type RouteShape,
     type RouteStatus,
@@ -21,6 +24,7 @@
     type RouteRatingShape,
     type AscentType,
     type LocationSettingsShape,
+    type RoutePhotoShape,
   } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
   import { roleRankAt } from '$lib/stores/auth.svelte';
@@ -32,8 +36,14 @@
   let settings = $state<LocationSettingsShape | null>(null);
   let ascents = $state<AscentShape[]>([]);
   let ratings = $state<RouteRatingShape[]>([]);
+  let photos = $state<RoutePhotoShape[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
+
+  // Photo upload state — file picker + lightbox + per-photo delete.
+  let photoUploading = $state(false);
+  let photoError = $state<string | null>(null);
+  let lightboxIdx = $state<number | null>(null);
 
   let editing = $state(false);
   let saving = $state(false);
@@ -86,14 +96,16 @@
       // Settings drive the edit form's pickers — best-effort; permission
       // failure leaves the form on default lists.
       getLocationSettings(locId).catch(() => null),
+      listRoutePhotos(locId, routeId).catch(() => [] as RoutePhotoShape[]),
     ])
-      .then(([r, wls, asc, rt, st]) => {
+      .then(([r, wls, asc, rt, st, ph]) => {
         if (cancelled) return;
         route = r;
         walls = wls;
         ascents = asc;
         ratings = rt;
         settings = st;
+        photos = ph;
       })
       .catch((err) => {
         if (cancelled) return;
@@ -228,6 +240,59 @@
     return ascents.find((a) => a.user_id === meId) ?? null;
   });
 
+  // Photo upload — multipart POST. After success, re-list photos so the
+  // new one shows up; the server may have set route.photo_url too if this
+  // was the first photo, so refetch the route in the same pass.
+  async function onPhotoFile(e: Event) {
+    if (!locId || !routeId) return;
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    photoUploading = true;
+    photoError = null;
+    try {
+      await uploadRoutePhoto(locId, routeId, file);
+      const [r, ph] = await Promise.all([
+        getRoute(locId, routeId).catch(() => route),
+        listRoutePhotos(locId, routeId).catch(() => photos),
+      ]);
+      route = r;
+      photos = ph;
+      input.value = '';
+    } catch (err) {
+      photoError = err instanceof ApiClientError ? err.message : 'Upload failed.';
+    } finally {
+      photoUploading = false;
+    }
+  }
+
+  async function removePhoto(p: RoutePhotoShape) {
+    if (!locId || !routeId) return;
+    if (!confirm('Delete this photo?')) return;
+    photoError = null;
+    try {
+      await deleteRoutePhoto(locId, routeId, p.id);
+      const [r, ph] = await Promise.all([
+        getRoute(locId, routeId).catch(() => route),
+        listRoutePhotos(locId, routeId).catch(() => photos),
+      ]);
+      route = r;
+      photos = ph;
+    } catch (err) {
+      photoError = err instanceof ApiClientError ? err.message : 'Delete failed.';
+    }
+  }
+
+  // The current user can delete a photo if they uploaded it OR if they're
+  // setter+ at the location. Mirrors the server's authz at
+  // internal/handler/routephoto.go::Delete.
+  function canDeletePhoto(p: RoutePhotoShape): boolean {
+    const meId = authState().me?.user.id;
+    if (!meId) return false;
+    if (p.uploaded_by === meId) return true;
+    return roleRankAt(locId) >= 2;
+  }
+
   function fmtDate(iso: string | null | undefined): string {
     if (!iso) return '—';
     return new Date(iso).toLocaleDateString();
@@ -337,11 +402,67 @@
         </section>
       {/if}
 
-      {#if route.photo_url}
-        <section class="card">
-          <h2>Photo</h2>
-          <img src={route.photo_url} alt="" class="photo" />
-        </section>
+      <section class="card">
+        <div class="card-head">
+          <h2>Photos {photos.length > 0 ? `(${photos.length})` : ''}</h2>
+          {#if route.status !== 'archived' && photos.length < 20}
+            <label class="upload-trigger">
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onchange={onPhotoFile}
+                disabled={photoUploading} />
+              <span>{photoUploading ? 'Uploading…' : '+ Add photo'}</span>
+            </label>
+          {/if}
+        </div>
+        {#if photoError}<p class="error">{photoError}</p>{/if}
+        {#if photos.length === 0}
+          {#if route.photo_url}
+            <!-- Legacy: route has a primary URL but no row in route_photos yet
+                 (e.g. set via the HTMX form pre-photo-row migration). Show it
+                 so the page isn't visually empty. -->
+            <img src={route.photo_url} alt="" class="photo" />
+          {:else}
+            <p class="muted">No photos yet — add one to help climbers spot the route on the wall.</p>
+          {/if}
+        {:else}
+          <ul class="photo-grid">
+            {#each photos as p, i (p.id)}
+              <li>
+                <button
+                  type="button"
+                  class="photo-thumb"
+                  onclick={() => (lightboxIdx = i)}
+                  aria-label="View photo">
+                  <img src={p.photo_url} alt="" loading="lazy" />
+                </button>
+                {#if p.uploader_name}
+                  <span class="photo-meta muted">by {p.uploader_name}</span>
+                {/if}
+                {#if canDeletePhoto(p)}
+                  <button
+                    type="button"
+                    class="photo-delete"
+                    onclick={() => removePhoto(p)}
+                    aria-label="Delete photo">
+                    ×
+                  </button>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </section>
+
+      {#if lightboxIdx !== null && photos[lightboxIdx]}
+        <button
+          type="button"
+          class="lightbox"
+          onclick={() => (lightboxIdx = null)}
+          aria-label="Close photo">
+          <img src={photos[lightboxIdx].photo_url} alt="" />
+        </button>
       {/if}
 
       {#if route.status !== 'archived'}
@@ -616,6 +737,97 @@
     max-width: 100%;
     border-radius: 8px;
     border: 1px solid var(--rw-border);
+  }
+  .card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .card-head h2 {
+    margin: 0;
+  }
+  .upload-trigger {
+    cursor: pointer;
+    background: var(--rw-accent);
+    color: var(--rw-accent-ink);
+    border-radius: 6px;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .upload-trigger:hover {
+    background: var(--rw-accent-hover);
+  }
+  .upload-trigger input[type='file'] {
+    display: none;
+  }
+  .photo-grid {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+  }
+  .photo-grid li {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .photo-thumb {
+    background: none;
+    border: 1px solid var(--rw-border);
+    border-radius: 8px;
+    padding: 0;
+    cursor: pointer;
+    overflow: hidden;
+    aspect-ratio: 1 / 1;
+  }
+  .photo-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .photo-meta {
+    font-size: 0.7rem;
+  }
+  .photo-delete {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 0;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .photo-delete:hover {
+    background: rgba(220, 38, 38, 0.85);
+  }
+  .lightbox {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    border: 0;
+    padding: 0;
+    cursor: zoom-out;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .lightbox img {
+    max-width: min(90vw, 1200px);
+    max-height: 90vh;
+    object-fit: contain;
   }
   .histogram {
     display: flex;

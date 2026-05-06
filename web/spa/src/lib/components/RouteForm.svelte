@@ -287,10 +287,17 @@
     <textarea id="r-desc" bind:value={form.description} rows="3"></textarea>
   </div>
 
-  <div class="field">
-    <label for="r-photo">Photo URL</label>
-    <input id="r-photo" bind:value={form.photo_url} placeholder="https://…" />
-  </div>
+  <!--
+    Photo upload lives on the route detail page (POST .../routes/{id}/photos)
+    rather than here — matches the HTMX form's two-step flow where you
+    create the route first, then upload photos against its id. Keeps
+    multipart out of the JSON-only RouteForm pipeline.
+  -->
+  {#if seed && form.photo_url}
+    <div class="field">
+      <span class="hint">Photos are managed on the route detail page after save.</span>
+    </div>
+  {/if}
 
   <div class="row">
     <div class="field">

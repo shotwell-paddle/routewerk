@@ -654,6 +654,80 @@ export async function listRouteRatings(
   return request(`/locations/${locationId}/routes/${routeId}/ratings`, { signal });
 }
 
+// ── Route photos ─────────────────────────────────────────────
+
+export interface RoutePhotoShape {
+  id: string;
+  photo_url: string;
+  sort_order: number;
+  caption?: string | null;
+  uploaded_by?: string | null;
+  uploader_name?: string;
+  created_at: string;
+}
+
+/** GET /locations/{locationId}/routes/{routeId}/photos — any member. */
+export async function listRoutePhotos(
+  locationId: string,
+  routeId: string,
+  signal?: AbortSignal,
+): Promise<RoutePhotoShape[]> {
+  return request(`/locations/${locationId}/routes/${routeId}/photos`, { signal });
+}
+
+/**
+ * POST /locations/{locationId}/routes/{routeId}/photos — multipart upload.
+ *
+ * The server validates content type via byte-sniffing (allow-list:
+ * jpeg/png/webp), caps the size at 5 MB and the per-route count at 20,
+ * processes the image (resize/compress), and uploads to S3-compatible
+ * storage. First photo on a route auto-becomes the primary.
+ *
+ * Bypasses the JSON-only `request()` helper since fetch needs the
+ * browser to set the multipart boundary header itself.
+ */
+export async function uploadRoutePhoto(
+  locationId: string,
+  routeId: string,
+  file: File,
+  signal?: AbortSignal,
+): Promise<RoutePhotoShape> {
+  const fd = new FormData();
+  fd.append('photo', file);
+  const res = await fetch(`${API_BASE}/locations/${locationId}/routes/${routeId}/photos`, {
+    method: 'POST',
+    body: fd,
+    credentials: 'same-origin',
+    signal,
+  });
+  const text = await res.text();
+  let payload: unknown;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = text;
+    }
+  }
+  if (!res.ok) {
+    throw new ApiClientError(res.status, payload as ApiError | string);
+  }
+  return payload as RoutePhotoShape;
+}
+
+/** DELETE /locations/{locationId}/routes/{routeId}/photos/{photoId} — uploader or setter+. */
+export async function deleteRoutePhoto(
+  locationId: string,
+  routeId: string,
+  photoId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(
+    `/locations/${locationId}/routes/${routeId}/photos/${photoId}`,
+    { method: 'DELETE', signal },
+  );
+}
+
 export type AscentType = 'send' | 'flash' | 'attempt';
 
 export interface LogAscentShape {

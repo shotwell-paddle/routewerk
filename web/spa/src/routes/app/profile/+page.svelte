@@ -2,8 +2,11 @@
   import {
     listMyAscents,
     getMyStats,
+    updateMyAscent,
+    deleteMyAscent,
     ApiClientError,
     type AscentWithRouteShape,
+    type AscentType,
     type MyStatsShape,
   } from '$lib/api/client';
   import { currentUser } from '$lib/stores/auth.svelte';
@@ -47,6 +50,78 @@
 
   function fmtDateTime(iso: string): string {
     return new Date(iso).toLocaleString();
+  }
+
+  // Per-tick edit state. Only one row open at a time keeps the markup
+  // simple; switching to another row closes the prior form.
+  let editingId = $state<string | null>(null);
+  let editForm = $state<{ ascent_type: AscentType; attempts: number; notes: string }>({
+    ascent_type: 'send',
+    attempts: 1,
+    notes: '',
+  });
+  let editSaving = $state(false);
+  let editError = $state<string | null>(null);
+  let mutatingId = $state<string | null>(null);
+
+  function openEdit(a: AscentWithRouteShape) {
+    editingId = a.id;
+    editForm = {
+      ascent_type: (a.ascent_type as AscentType) ?? 'send',
+      attempts: a.attempts ?? 1,
+      notes: a.notes ?? '',
+    };
+    editError = null;
+  }
+
+  async function saveEdit(id: string) {
+    if (editSaving) return;
+    editSaving = true;
+    editError = null;
+    try {
+      await updateMyAscent(id, {
+        ascent_type: editForm.ascent_type,
+        attempts: Math.max(1, Math.floor(editForm.attempts)),
+        notes: editForm.notes.trim() || null,
+      });
+      // Reflect locally without a full re-fetch — the row stays in the
+      // same position, the new fields render immediately.
+      ascents = ascents.map((a) =>
+        a.id === id
+          ? {
+              ...a,
+              ascent_type: editForm.ascent_type,
+              attempts: Math.max(1, Math.floor(editForm.attempts)),
+              notes: editForm.notes.trim() || null,
+            }
+          : a,
+      );
+      editingId = null;
+    } catch (err) {
+      editError = err instanceof ApiClientError ? err.message : 'Save failed.';
+    } finally {
+      editSaving = false;
+    }
+  }
+
+  async function removeAscent(id: string) {
+    if (!confirm('Delete this tick? Your stats will update; the route stays.')) return;
+    mutatingId = id;
+    try {
+      await deleteMyAscent(id);
+      ascents = ascents.filter((a) => a.id !== id);
+      total = Math.max(0, total - 1);
+      // Refresh stats so the totals on the avatar row stay honest.
+      try {
+        stats = await getMyStats();
+      } catch {
+        // best-effort
+      }
+    } catch (err) {
+      editError = err instanceof ApiClientError ? err.message : 'Delete failed.';
+    } finally {
+      mutatingId = null;
+    }
   }
 
   const showingStart = $derived(ascents.length > 0 ? offset + 1 : 0);
@@ -133,16 +208,63 @@
       <div class="results-meta muted">Showing {showingStart}–{showingEnd} of {total}</div>
       <ul class="ascent-list">
         {#each ascents as a (a.id)}
-          <li>
+          <li class:editing={editingId === a.id}>
             <span class="color-chip" style="background:{a.route_color}"></span>
             <span class="ascent-grade">{a.route_grade}</span>
             {#if a.route_name}<span class="ascent-name">{a.route_name}</span>{/if}
-            <span class="type type-{a.ascent_type}">{a.ascent_type}</span>
-            <span class="ascent-meta muted">
-              {fmtDateTime(a.climbed_at)} · {a.attempts} attempt{a.attempts === 1 ? '' : 's'}
-            </span>
-            {#if a.notes}
-              <span class="ascent-notes">{a.notes}</span>
+
+            {#if editingId === a.id}
+              <form class="tick-edit" onsubmit={(e) => { e.preventDefault(); saveEdit(a.id); }}>
+                <select bind:value={editForm.ascent_type}>
+                  <option value="send">Send</option>
+                  <option value="flash">Flash</option>
+                  <option value="attempt">Attempt</option>
+                  <option value="project">Project</option>
+                </select>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  bind:value={editForm.attempts}
+                  aria-label="Attempts" />
+                <input
+                  type="text"
+                  bind:value={editForm.notes}
+                  placeholder="Notes (optional)" />
+                <div class="tick-edit-actions">
+                  <button class="primary" type="submit" disabled={editSaving}>
+                    {editSaving ? '…' : 'Save'}
+                  </button>
+                  <button type="button" disabled={editSaving} onclick={() => (editingId = null)}>
+                    Cancel
+                  </button>
+                </div>
+                {#if editError}<p class="error tick-error">{editError}</p>{/if}
+              </form>
+            {:else}
+              <span class="type type-{a.ascent_type}">{a.ascent_type}</span>
+              <span class="ascent-meta muted">
+                {fmtDateTime(a.climbed_at)} · {a.attempts} attempt{a.attempts === 1 ? '' : 's'}
+              </span>
+              {#if a.notes}
+                <span class="ascent-notes">{a.notes}</span>
+              {/if}
+              <span class="tick-actions">
+                <button
+                  type="button"
+                  class="ghost"
+                  disabled={mutatingId === a.id}
+                  onclick={() => openEdit(a)}>
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  class="ghost danger"
+                  disabled={mutatingId === a.id}
+                  onclick={() => removeAscent(a.id)}>
+                  {mutatingId === a.id ? '…' : 'Delete'}
+                </button>
+              </span>
             {/if}
           </li>
         {/each}
@@ -308,16 +430,95 @@
   }
   .ascent-list li {
     display: grid;
-    grid-template-columns: 18px 3rem 1fr auto;
+    grid-template-columns: 18px 3rem 1fr auto auto;
     grid-template-areas:
-      'chip grade name type'
-      'chip meta meta meta'
-      'chip notes notes notes';
+      'chip grade name type actions'
+      'chip meta meta meta meta'
+      'chip notes notes notes notes';
     column-gap: 10px;
     align-items: center;
     padding: 0.55rem 0;
     border-top: 1px solid var(--rw-border);
     font-size: 0.9rem;
+  }
+  .ascent-list li.editing {
+    grid-template-columns: 18px 3rem 1fr;
+    grid-template-areas:
+      'chip grade name'
+      'edit edit edit';
+  }
+  .tick-actions {
+    grid-area: actions;
+    display: inline-flex;
+    gap: 4px;
+  }
+  .tick-actions button {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--rw-text-muted);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .tick-actions button:hover:not(:disabled) {
+    border-color: var(--rw-border-strong);
+    color: var(--rw-text);
+  }
+  .tick-actions button.danger:hover:not(:disabled) {
+    color: var(--rw-danger);
+    border-color: #fecaca;
+  }
+  .tick-actions button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .tick-edit {
+    grid-area: edit;
+    display: grid;
+    grid-template-columns: 8rem 5rem 1fr;
+    gap: 8px;
+    align-items: center;
+    margin-top: 6px;
+  }
+  .tick-edit select,
+  .tick-edit input {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--rw-border-strong);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    background: var(--rw-surface);
+    color: var(--rw-text);
+  }
+  .tick-edit-actions {
+    grid-column: 1 / -1;
+    display: inline-flex;
+    gap: 6px;
+  }
+  .tick-edit-actions button {
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--rw-border-strong);
+    background: var(--rw-surface);
+    color: var(--rw-text);
+  }
+  .tick-edit-actions button.primary {
+    background: var(--rw-accent);
+    color: var(--rw-accent-ink);
+    border-color: var(--rw-accent);
+  }
+  .tick-edit-actions button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .tick-error {
+    grid-column: 1 / -1;
+    margin: 4px 0 0;
+    font-size: 0.85rem;
   }
   .ascent-list li:first-child {
     border-top: none;

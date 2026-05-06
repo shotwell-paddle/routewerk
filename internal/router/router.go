@@ -538,6 +538,8 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			r.Post("/me/password", authHandler.ChangePassword)
 			r.Put("/me/view-as", authHandler.SetViewAs)
 			r.Get("/me/ascents", ascentHandler.MyAscents)
+			r.Patch("/me/ascents/{ascentID}", ascentHandler.UpdateMine)
+			r.Delete("/me/ascents/{ascentID}", ascentHandler.DeleteMine)
 			r.Get("/me/stats", ascentHandler.MyStats)
 			r.Get("/me/quests", questHandler.MyQuests)
 			r.Get("/me/notifications", notifHandler.List)

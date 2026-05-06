@@ -1868,6 +1868,37 @@ export interface BadgeShowcaseEntry {
   earned_at?: string;
 }
 
+export interface ActivityEntryShape {
+  id: string;
+  location_id: string;
+  user_id: string;
+  activity_type: string;
+  entity_type: string;
+  entity_id: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  user_display_name?: string;
+  user_avatar_url?: string | null;
+}
+
+/**
+ * GET /api/v1/locations/{id}/activity?limit=50&offset=0&type=...
+ * Location-wide activity feed (quest progress, badges, route sets).
+ * Any location member can read.
+ */
+export async function listLocationActivity(
+  locationId: string,
+  opts: { limit?: number; offset?: number; type?: string } = {},
+  signal?: AbortSignal,
+): Promise<ActivityEntryShape[]> {
+  const qs = new URLSearchParams();
+  if (opts.limit != null) qs.set('limit', String(opts.limit));
+  if (opts.offset != null) qs.set('offset', String(opts.offset));
+  if (opts.type) qs.set('type', opts.type);
+  const suffix = qs.toString() ? `?${qs}` : '';
+  return request(`/locations/${locationId}/activity${suffix}`, { signal });
+}
+
 /**
  * GET /api/v1/locations/{id}/badges/showcase — climber-facing view.
  * Returns the location's catalog with `earned_at` populated for each

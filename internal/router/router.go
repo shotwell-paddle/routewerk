@@ -190,6 +190,11 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	// Climber-facing badge showcase — pairs the location's catalog with
 	// the caller's earned set in one round-trip.
 	badgeShowcaseHandler := handler.NewBadgeShowcaseHandler(badgeRepo)
+	// Location-wide activity feed (quest progress, badges earned, route
+	// sets). Mirrors the HTMX /quests/activity page but is not gated by
+	// the progressions feature flag — staff often want activity while
+	// the flag is still off.
+	activityHandler := handler.NewActivityHandler(activityRepo)
 
 	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, questRepo, badgeRepo, activityRepo, routeSkillTagRepo, notifRepo, deps.QuestSvc, deps.EventBus, authService, storageSvc, cardGen, cardBatchRepo, batchSvc, auditService, sessionMgr, cfg, db)
 
@@ -830,6 +835,9 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 				// Climber badge showcase — catalog + caller's earned set.
 				// Any member can read; gated by location membership above.
 				r.Get("/badges/showcase", badgeShowcaseHandler.Get)
+
+				// Location-wide activity feed. Any member can read.
+				r.Get("/activity", activityHandler.List)
 
 				// Setter dashboard summary (stats + recent activity). Setter+
 				// only because the HTMX /dashboard requires the same.

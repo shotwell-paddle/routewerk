@@ -466,3 +466,19 @@ func (r *UserRepo) UpdateMemberRole(ctx context.Context, membershipID, newRole s
 	)
 	return err
 }
+
+// RemoveMembership soft-deletes a membership row. The user can re-join later
+// (a new membership row will be created).
+func (r *UserRepo) RemoveMembership(ctx context.Context, membershipID string) error {
+	ct, err := r.db.Exec(ctx,
+		`UPDATE user_memberships SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL`,
+		membershipID,
+	)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("membership not found")
+	}
+	return nil
+}

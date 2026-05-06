@@ -744,6 +744,62 @@ export async function getMyStats(signal?: AbortSignal): Promise<MyStatsShape> {
   return request('/me/stats', { signal });
 }
 
+// ── Team management (Phase 2.7) ────────────────────────────
+
+export type MembershipRole =
+  | 'climber'
+  | 'setter'
+  | 'head_setter'
+  | 'gym_manager'
+  | 'org_admin';
+
+export interface TeamMemberShape {
+  membership_id: string;
+  user_id: string;
+  display_name: string;
+  email: string;
+  role: MembershipRole;
+}
+
+export interface TeamListResponse {
+  members: TeamMemberShape[];
+  total_count: number;
+}
+
+/** GET /api/v1/locations/{locationId}/team — head_setter+. */
+export async function listTeam(
+  locationId: string,
+  filters: { q?: string; role?: MembershipRole } = {},
+  signal?: AbortSignal,
+): Promise<TeamListResponse> {
+  const qs = new URLSearchParams();
+  if (filters.q) qs.set('q', filters.q);
+  if (filters.role) qs.set('role', filters.role);
+  const suffix = qs.toString() ? `?${qs}` : '';
+  return request(`/locations/${locationId}/team${suffix}`, { signal });
+}
+
+/** PATCH /api/v1/memberships/{membershipId} — gym_manager+ to assign elevated roles. */
+export async function updateMembership(
+  membershipId: string,
+  role: MembershipRole,
+  signal?: AbortSignal,
+): Promise<void> {
+  await request(`/memberships/${membershipId}`, {
+    method: 'PATCH',
+    body: { role },
+    signal,
+  });
+}
+
+/** DELETE /api/v1/memberships/{membershipId} — gym_manager+. Soft-deletes. */
+export async function removeMembership(
+  membershipId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/memberships/${membershipId}`, { method: 'DELETE', signal });
+}
+
 /** GET /competitions/{id} */
 export async function getCompetition(id: string, signal?: AbortSignal): Promise<Competition> {
   return request(`/competitions/${id}`, { signal });

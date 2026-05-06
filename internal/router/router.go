@@ -131,6 +131,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	locationHandler := handler.NewLocationHandler(locationRepo)
 	wallHandler := handler.NewWallHandler(wallRepo, auditService)
 	routeHandler := handler.NewRouteHandler(routeRepo, auditService)
+	teamHandler := handler.NewTeamHandler(userRepo)
 	ascentHandler := handler.NewAscentHandler(ascentRepo)
 	ratingHandler := handler.NewRatingHandler(ratingRepo)
 	sessionHandler := handler.NewSessionHandler(sessionRepo)
@@ -722,7 +723,23 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 						r.Post("/", compHandler.Create)
 					})
 				})
+
+				// Team list — head_setter+. Returns memberships at this
+				// location (or org-wide) joined with user info for the SPA
+				// /app/team page (Phase 2.7).
+				r.Route("/team", func(r chi.Router) {
+					r.Use(authz.RequireLocationRole("head_setter"))
+					r.Get("/", teamHandler.List)
+				})
 			})
+
+			// Membership writes (Phase 2.7) — no location prefix because the
+			// caller might not be acting "at" the membership's location
+			// directly. The handler resolves the membership's org and looks
+			// up the caller's effective role within that org before allowing
+			// the write. gym_manager+ minimum.
+			r.Patch("/memberships/{membershipID}", teamHandler.UpdateMembership)
+			r.Delete("/memberships/{membershipID}", teamHandler.RemoveMembership)
 
 			// ── Competitions by id (no location prefix) ─────────────
 			// Read is open to any authenticated user; the leaderboard

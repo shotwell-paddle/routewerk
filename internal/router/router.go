@@ -187,6 +187,9 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	// Climber difficulty consensus — same difficulty_votes table as the
 	// HTMX feedback flow.
 	routeDifficultyHandler := handler.NewRouteDifficultyHandler(routeRepo, difficultyRepo)
+	// Climber-facing badge showcase — pairs the location's catalog with
+	// the caller's earned set in one round-trip.
+	badgeShowcaseHandler := handler.NewBadgeShowcaseHandler(badgeRepo)
 
 	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, questRepo, badgeRepo, activityRepo, routeSkillTagRepo, notifRepo, deps.QuestSvc, deps.EventBus, authService, storageSvc, cardGen, cardBatchRepo, batchSvc, auditService, sessionMgr, cfg, db)
 
@@ -802,6 +805,10 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 				// Quests catalog — Phase 2.8. Any location member can browse
 				// the active quests at this location.
 				r.Get("/quests", questHandler.ListAvailable)
+
+				// Climber badge showcase — catalog + caller's earned set.
+				// Any member can read; gated by location membership above.
+				r.Get("/badges/showcase", badgeShowcaseHandler.Get)
 
 				// Setter dashboard summary (stats + recent activity). Setter+
 				// only because the HTMX /dashboard requires the same.

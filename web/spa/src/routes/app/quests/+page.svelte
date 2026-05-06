@@ -114,13 +114,16 @@
       <p class="lede">Pick a challenge, log your progress, earn badges.</p>
     </div>
     {#if enabled}
-      <div class="view-toggle">
-        <button class:active={view === 'browse'} onclick={() => (view = 'browse')}>
-          Browse
-        </button>
-        <button class:active={view === 'mine'} onclick={() => (view = 'mine')}>
-          My quests ({myQuests.length})
-        </button>
+      <div class="header-actions">
+        <div class="view-toggle">
+          <button class:active={view === 'browse'} onclick={() => (view = 'browse')}>
+            Browse
+          </button>
+          <button class:active={view === 'mine'} onclick={() => (view = 'mine')}>
+            My quests ({myQuests.length})
+          </button>
+        </div>
+        <a class="badges-link" href="/app/quests/badges">Badges →</a>
       </div>
     {/if}
   </header>
@@ -308,6 +311,25 @@
     cursor: pointer;
     font-size: 0.85rem;
     font-weight: 600;
+  }
+  .header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+  }
+  .badges-link {
+    color: var(--rw-text);
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-decoration: none;
+    border: 1px solid var(--rw-border-strong);
+    padding: 0.4rem 0.85rem;
+    border-radius: 6px;
+  }
+  .badges-link:hover {
+    border-color: var(--rw-accent);
+    color: var(--rw-accent);
   }
   .view-toggle button.active {
     background: var(--rw-accent);

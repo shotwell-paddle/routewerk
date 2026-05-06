@@ -742,6 +742,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 
 					r.Get("/", sessionHandler.List)
 					r.Get("/{sessionID}", sessionHandler.Get)
+					r.Get("/{sessionID}/routes", sessionHandler.ListRoutes)
 					r.Get("/{sessionID}/strip-targets", sessionHandler.ListStripTargets)
 					r.Get("/{sessionID}/checklist", sessionHandler.ListChecklist)
 					// Setter+ can tick checklist items off (own assignments,

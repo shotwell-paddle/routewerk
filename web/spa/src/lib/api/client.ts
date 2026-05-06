@@ -1135,6 +1135,24 @@ export async function listStripTargets(
   );
 }
 
+/**
+ * Routes linked to a setting session, enriched with setter + wall
+ * names. Same shape the HTMX session-photos page uses.
+ */
+export interface SessionRouteDetailShape extends RouteShape {
+  setter_name: string;
+  wall_name: string;
+}
+
+/** GET /locations/{locationId}/sessions/{sessionId}/routes — setter+. */
+export async function listSessionRoutes(
+  locationId: string,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<SessionRouteDetailShape[]> {
+  return request(`/locations/${locationId}/sessions/${sessionId}/routes`, { signal });
+}
+
 /** POST /locations/{locationId}/sessions/{sessionId}/strip-targets — head_setter+. */
 export async function addStripTarget(
   locationId: string,

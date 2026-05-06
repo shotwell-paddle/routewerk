@@ -302,6 +302,27 @@ func (h *SessionHandler) Publish(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListRoutes — GET /sessions/{sessionID}/routes. Returns every route
+// linked to the session enriched with setter + wall names. Used by the
+// SPA session-photos page so setters can see at a glance which routes
+// still need photos uploaded. Setter+ enforced at router level.
+func (h *SessionHandler) ListRoutes(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+	if !isUUID(sessionID) {
+		Error(w, http.StatusBadRequest, "invalid session id")
+		return
+	}
+	routes, err := h.sessions.ListSessionRoutes(r.Context(), sessionID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if routes == nil {
+		routes = []repository.SessionRouteDetail{}
+	}
+	JSON(w, http.StatusOK, routes)
+}
+
 // ── Strip targets ────────────────────────────────────────
 
 // ListStripTargets — GET /sessions/{sessionID}/strip-targets.

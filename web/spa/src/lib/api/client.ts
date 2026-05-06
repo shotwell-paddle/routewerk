@@ -406,6 +406,59 @@ export async function updateRouteStatus(
   });
 }
 
+/** DELETE /locations/{locationId}/routes/{routeId} — head_setter+ at the location. */
+export async function deleteRoute(
+  locationId: string,
+  routeId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/locations/${locationId}/routes/${routeId}`, { method: 'DELETE', signal });
+}
+
+// Ascents + ratings — surfaced on the route detail page. Hand-written
+// shapes; mirror internal/model/Ascent + RouteRating.
+
+export interface AscentShape {
+  id: string;
+  user_id: string;
+  route_id: string;
+  ascent_type: string;
+  attempts: number;
+  notes?: string | null;
+  climbed_at: string;
+  created_at: string;
+}
+
+export interface RouteRatingShape {
+  id: string;
+  user_id: string;
+  route_id: string;
+  rating: number;
+  comment?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** GET /locations/{locationId}/routes/{routeId}/ascents — paginated, descending. */
+export async function listRouteAscents(
+  locationId: string,
+  routeId: string,
+  limit = 20,
+  signal?: AbortSignal,
+): Promise<AscentShape[]> {
+  const qs = limit ? `?limit=${limit}` : '';
+  return request(`/locations/${locationId}/routes/${routeId}/ascents${qs}`, { signal });
+}
+
+/** GET /locations/{locationId}/routes/{routeId}/ratings — paginated, descending. */
+export async function listRouteRatings(
+  locationId: string,
+  routeId: string,
+  signal?: AbortSignal,
+): Promise<RouteRatingShape[]> {
+  return request(`/locations/${locationId}/routes/${routeId}/ratings`, { signal });
+}
+
 /**
  * GET /api/v1/me — returns the authenticated user + their memberships.
  * Resolves with `null` on 401 (caller should redirect to login).

@@ -11,6 +11,7 @@
     updateRoute,
     updateRouteStatus,
     deleteRoute,
+    getLocationSettings,
     ApiClientError,
     type RouteShape,
     type RouteStatus,
@@ -19,6 +20,7 @@
     type AscentShape,
     type RouteRatingShape,
     type AscentType,
+    type LocationSettingsShape,
   } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
   import { roleRankAt } from '$lib/stores/auth.svelte';
@@ -27,6 +29,7 @@
 
   let route = $state<RouteShape | null>(null);
   let walls = $state<WallShape[]>([]);
+  let settings = $state<LocationSettingsShape | null>(null);
   let ascents = $state<AscentShape[]>([]);
   let ratings = $state<RouteRatingShape[]>([]);
   let loading = $state(true);
@@ -80,13 +83,17 @@
       // detail render, just leave the panels empty.
       listRouteAscents(locId, routeId, 20).catch(() => [] as AscentShape[]),
       listRouteRatings(locId, routeId).catch(() => [] as RouteRatingShape[]),
+      // Settings drive the edit form's pickers — best-effort; permission
+      // failure leaves the form on default lists.
+      getLocationSettings(locId).catch(() => null),
     ])
-      .then(([r, wls, asc, rt]) => {
+      .then(([r, wls, asc, rt, st]) => {
         if (cancelled) return;
         route = r;
         walls = wls;
         ascents = asc;
         ratings = rt;
+        settings = st;
       })
       .catch((err) => {
         if (cancelled) return;
@@ -278,6 +285,7 @@
       <RouteForm
         initial={route}
         {walls}
+        {settings}
         submitLabel="Save changes"
         onSubmit={submitEdit}
         onCancel={() => {

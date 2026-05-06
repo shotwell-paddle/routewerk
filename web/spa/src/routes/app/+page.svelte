@@ -51,7 +51,7 @@
     },
     {
       label: 'Competitions',
-      href: '/staff/comp',
+      href: '/app/competitions',
       desc: 'Build comps, manage events + registrations.',
     },
   ];

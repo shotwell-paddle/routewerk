@@ -120,7 +120,7 @@
     // Staff
     { label: 'Sessions', href: '/app/sessions', minRoleRank: 2, group: 'staff' },
     { label: 'Card batches', href: '/app/card-batches', minRoleRank: 2, group: 'staff' },
-    { label: 'Competitions', href: '/staff/comp', minRoleRank: 4, group: 'staff' },
+    { label: 'Competitions', href: '/app/competitions', minRoleRank: 4, group: 'staff' },
     { label: 'Team', href: '/app/team', minRoleRank: 3, group: 'staff' },
     { label: 'Settings', href: '/app/settings', minRoleRank: 4, group: 'staff' },
   ];

@@ -4,15 +4,22 @@
   import {
     createRoute,
     listWalls,
+    getLocationSettings,
     ApiClientError,
     type RouteWriteShape,
     type WallShape,
+    type LocationSettingsShape,
   } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
   import RouteForm from '$lib/components/RouteForm.svelte';
 
   const locId = $derived(effectiveLocationId());
   let walls = $state<WallShape[]>([]);
+  // Settings are best-effort: a setter without head_setter+ won't be able
+  // to PUT them, but the GET is open to setter+ so the form can mirror the
+  // gym's preferences (allowed grading systems, circuit + hold colors,
+  // strip-age default).
+  let settings = $state<LocationSettingsShape | null>(null);
   let saving = $state(false);
   let error = $state<string | null>(null);
 
@@ -22,6 +29,13 @@
     listWalls(locId).then((res) => {
       if (!cancelled) walls = res;
     });
+    getLocationSettings(locId)
+      .then((s) => {
+        if (!cancelled) settings = s;
+      })
+      .catch(() => {
+        // Permission or fetch error — RouteForm falls back to defaults.
+      });
     return () => {
       cancelled = true;
     };
@@ -58,6 +72,7 @@
   {:else}
     <RouteForm
       {walls}
+      {settings}
       submitLabel="Create route"
       onSubmit={submit}
       onCancel={() => goto('/app/routes')}

@@ -175,6 +175,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	notifHandler := handler.NewNotificationHandler(notifRepo)
 	dashboardHandler := handler.NewDashboardHandler(analyticsRepo)
 	settingsHandler := handler.NewSettingsHandler(settingsRepo)
+	progressionsAdminHandler := handler.NewProgressionsAdminHandler(questRepo, badgeRepo)
 
 	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, questRepo, badgeRepo, activityRepo, routeSkillTagRepo, notifRepo, deps.QuestSvc, deps.EventBus, authService, storageSvc, cardGen, cardBatchRepo, batchSvc, auditService, sessionMgr, cfg, db)
 
@@ -775,7 +776,32 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 					r.Get("/settings", settingsHandler.GetLocationSettings)
 					r.Put("/settings", settingsHandler.UpdateLocationSettings)
 				})
+
+				// Progressions admin — quest / badge / domain CRUD for
+				// head_setter+. Mirrors HTMX /settings/progressions.
+				r.Group(func(r chi.Router) {
+					r.Use(authz.RequireLocationRole("head_setter"))
+					r.Get("/admin/quests", progressionsAdminHandler.ListAllQuests)
+					r.Post("/admin/quests", progressionsAdminHandler.CreateQuest)
+					r.Post("/admin/quests/{questID}/deactivate", progressionsAdminHandler.DeactivateQuest)
+					r.Post("/admin/quests/{questID}/duplicate", progressionsAdminHandler.DuplicateQuest)
+
+					r.Get("/admin/quest-domains", progressionsAdminHandler.ListDomains)
+					r.Post("/admin/quest-domains", progressionsAdminHandler.CreateDomain)
+					r.Delete("/admin/quest-domains/{domainID}", progressionsAdminHandler.DeleteDomain)
+
+					r.Get("/admin/badges", progressionsAdminHandler.ListBadges)
+					r.Post("/admin/badges", progressionsAdminHandler.CreateBadge)
+				})
 			})
+
+			// Quest / domain / badge updates by id (no location prefix).
+			// Authorization is enforced by the handler via the location_id
+			// stored on each row, not the URL.
+			r.Put("/quests/{questID}", progressionsAdminHandler.UpdateQuest)
+			r.Put("/quest-domains/{domainID}", progressionsAdminHandler.UpdateDomain)
+			r.Put("/badges/{badgeID}", progressionsAdminHandler.UpdateBadge)
+			r.Delete("/badges/{badgeID}", progressionsAdminHandler.DeleteBadge)
 
 			// Membership writes (Phase 2.7) — no location prefix because the
 			// caller might not be acting "at" the membership's location

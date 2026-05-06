@@ -1413,6 +1413,168 @@ export async function abandonQuest(
   return request(`/climber-quests/${climberQuestId}`, { method: 'DELETE', signal });
 }
 
+// ── Progressions admin (head_setter+) ─────────────────────
+
+/** GET /api/v1/locations/{id}/admin/quests — every quest, including inactive. */
+export async function listAllQuests(
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<QuestListItemShape[]> {
+  const res = await request<{ quests: QuestListItemShape[] }>(
+    `/locations/${locationId}/admin/quests`,
+    { signal },
+  );
+  return res.quests ?? [];
+}
+
+/** POST /api/v1/locations/{id}/admin/quests. Body matches the Quest model. */
+export async function createQuest(
+  locationId: string,
+  body: Partial<QuestShape>,
+  signal?: AbortSignal,
+): Promise<QuestShape> {
+  return request(`/locations/${locationId}/admin/quests`, {
+    method: 'POST',
+    body,
+    signal,
+  });
+}
+
+/** PUT /api/v1/quests/{questId}. */
+export async function updateQuest(
+  questId: string,
+  body: Partial<QuestShape>,
+  signal?: AbortSignal,
+): Promise<QuestShape> {
+  return request(`/quests/${questId}`, { method: 'PUT', body, signal });
+}
+
+/** POST /api/v1/locations/{id}/admin/quests/{questId}/deactivate. */
+export async function deactivateQuest(
+  locationId: string,
+  questId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/locations/${locationId}/admin/quests/${questId}/deactivate`, {
+    method: 'POST',
+    signal,
+  });
+}
+
+/** POST /api/v1/locations/{id}/admin/quests/{questId}/duplicate. */
+export async function duplicateQuest(
+  locationId: string,
+  questId: string,
+  signal?: AbortSignal,
+): Promise<QuestShape> {
+  return request(`/locations/${locationId}/admin/quests/${questId}/duplicate`, {
+    method: 'POST',
+    signal,
+  });
+}
+
+export interface QuestDomainShapeFull {
+  id: string;
+  location_id: string;
+  name: string;
+  description?: string | null;
+  color?: string | null;
+  icon?: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** GET /api/v1/locations/{id}/admin/quest-domains. */
+export async function listQuestDomains(
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<QuestDomainShapeFull[]> {
+  return request(`/locations/${locationId}/admin/quest-domains`, { signal });
+}
+
+/** POST /api/v1/locations/{id}/admin/quest-domains. */
+export async function createQuestDomain(
+  locationId: string,
+  body: Partial<QuestDomainShapeFull>,
+  signal?: AbortSignal,
+): Promise<QuestDomainShapeFull> {
+  return request(`/locations/${locationId}/admin/quest-domains`, {
+    method: 'POST',
+    body,
+    signal,
+  });
+}
+
+/** PUT /api/v1/quest-domains/{id}. */
+export async function updateQuestDomain(
+  domainId: string,
+  body: Partial<QuestDomainShapeFull>,
+  signal?: AbortSignal,
+): Promise<QuestDomainShapeFull> {
+  return request(`/quest-domains/${domainId}`, { method: 'PUT', body, signal });
+}
+
+/** DELETE /api/v1/locations/{id}/admin/quest-domains/{domainId}. */
+export async function deleteQuestDomain(
+  locationId: string,
+  domainId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/locations/${locationId}/admin/quest-domains/${domainId}`, {
+    method: 'DELETE',
+    signal,
+  });
+}
+
+export interface BadgeShape {
+  id: string;
+  location_id: string;
+  name: string;
+  description?: string | null;
+  icon: string;
+  color: string;
+  created_at: string;
+}
+
+/** GET /api/v1/locations/{id}/admin/badges. */
+export async function listBadges(
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<BadgeShape[]> {
+  return request(`/locations/${locationId}/admin/badges`, { signal });
+}
+
+/** POST /api/v1/locations/{id}/admin/badges. */
+export async function createBadge(
+  locationId: string,
+  body: Partial<BadgeShape>,
+  signal?: AbortSignal,
+): Promise<BadgeShape> {
+  return request(`/locations/${locationId}/admin/badges`, {
+    method: 'POST',
+    body,
+    signal,
+  });
+}
+
+/** PUT /api/v1/badges/{id}. */
+export async function updateBadge(
+  badgeId: string,
+  body: Partial<BadgeShape>,
+  signal?: AbortSignal,
+): Promise<BadgeShape> {
+  return request(`/badges/${badgeId}`, { method: 'PUT', body, signal });
+}
+
+/** DELETE /api/v1/badges/{id}. */
+export async function deleteBadge(
+  badgeId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/badges/${badgeId}`, { method: 'DELETE', signal });
+}
+
 /** GET /competitions/{id} */
 export async function getCompetition(id: string, signal?: AbortSignal): Promise<Competition> {
   return request(`/competitions/${id}`, { signal });

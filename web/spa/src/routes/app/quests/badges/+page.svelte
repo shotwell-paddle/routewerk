@@ -7,6 +7,8 @@
     type LocationShape,
   } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
+  import { roleRankAt } from '$lib/stores/auth.svelte';
+  import { goto } from '$app/navigation';
 
   // Climber-facing badge collection — earned cards lit up, unearned
   // cards greyed. Mirrors the HTMX /quests/badges page (template at
@@ -22,6 +24,16 @@
 
   const locId = $derived(effectiveLocationId());
   const enabled = $derived(location ? !!location.progressions_enabled : null);
+  // Same setter-vs-climber split as /app/quests — climbers redirect
+  // away when progressions are off, staff stay so they can preview the
+  // catalog while building it.
+  const isStaff = $derived(roleRankAt(locId) >= 2);
+
+  $effect(() => {
+    if (enabled === false && !isStaff) {
+      goto('/app');
+    }
+  });
 
   $effect(() => {
     if (!locId) return;

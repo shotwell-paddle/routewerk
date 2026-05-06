@@ -196,9 +196,12 @@
       goto('/app');
       return;
     }
-    if (match.visible && !match.visible()) {
-      goto('/app');
-    }
+    // `visible: () => progressionsEnabled` etc. only hides the nav
+    // LINK — pages can still render to staff who are setting things up
+    // (e.g. /app/quests still loads for setter+ when progressions are
+    // off so they can configure the catalog). Each gated page is
+    // responsible for redirecting climbers itself; we don't double-gate
+    // here.
   });
 
   function isActive(href: string): boolean {

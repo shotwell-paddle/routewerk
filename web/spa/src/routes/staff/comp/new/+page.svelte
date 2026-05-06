@@ -11,7 +11,7 @@
   } from '$lib/api/client';
   import { authState, isAuthenticated } from '$lib/stores/auth.svelte';
 
-  const STAFF_ROLES = new Set(['gym_manager', 'org_admin']);
+  const STAFF_ROLES = new Set(['head_setter', 'gym_manager', 'org_admin']);
   const SCORERS = ['top_zone', 'fixed', 'decay'] as const;
 
   interface LocationOption {
@@ -158,7 +158,7 @@
     <p class="muted">Loading…</p>
   {:else if locations.length === 0}
     <p class="muted">
-      You need <code>gym_manager</code> at a location to create a competition.
+      You need <code>head_setter</code> (or higher) at a location to create a competition.
     </p>
   {:else}
     <form onsubmit={submit}>

@@ -11,9 +11,9 @@
   import { authState, isAuthenticated, currentUser } from '$lib/stores/auth.svelte';
 
   // A "staff location" = a location the user can manage comps at.
-  // Server enforces gym_manager+ for create; we filter the same way
+  // Server enforces head_setter+ for create; we filter the same way
   // client-side so the UI only shows locations they can act on.
-  const STAFF_ROLES = new Set(['gym_manager', 'org_admin']);
+  const STAFF_ROLES = new Set(['head_setter', 'gym_manager', 'org_admin']);
 
   interface Section {
     location: LocationShape;
@@ -43,7 +43,7 @@
       const me = a.me;
       if (!me) return;
 
-      // Pick memberships at gym_manager+ that have a location_id.
+      // Pick memberships at head_setter+ that have a location_id.
       const staffLocations = me.memberships
         .filter((m) => STAFF_ROLES.has(m.role) && m.location_id)
         .map((m) => ({ location_id: m.location_id as string, role: m.role }));
@@ -96,7 +96,7 @@
     <div class="empty">
       <h2>No staff access</h2>
       <p class="muted">
-        You don't have <code>gym_manager</code> (or higher) at any location, so
+        You don't have <code>head_setter</code> (or higher) at any location, so
         you can't create or manage competitions here.
       </p>
       <p>

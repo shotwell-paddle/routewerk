@@ -98,7 +98,7 @@ paths:
       tags: [competitions]
       operationId: createCompetition
       summary: Create a competition
-      description: Requires `gym_manager+` role at the location.
+      description: Requires `head_setter+` role at the location.
       requestBody:
         required: true
         content:
@@ -171,7 +171,7 @@ paths:
       operationId: updateCompetition
       summary: Update a competition
       description: |
-        Requires `gym_manager+` role at the comp's location. All fields
+        Requires `head_setter+` role at the comp's location. All fields
         are optional; only provided fields are updated.
       requestBody:
         required: true
@@ -284,7 +284,7 @@ paths:
       tags: [competitions]
       operationId: createCategory
       summary: Create a category
-      description: Requires `gym_manager+` role at the comp's location.
+      description: Requires `head_setter+` role at the comp's location.
       requestBody:
         required: true
         content:

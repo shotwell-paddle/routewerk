@@ -19,6 +19,10 @@ This is a substantial revision. Major changes:
 - **SSE for live updates.** Replaces HTMX polling for the leaderboard.
 - **Scorer interface revised.** `Rank()` operates on raw attempts so IFSC-style count-back tiebreaks work correctly.
 
+## What changed from v3
+
+- **Comp + event + category CRUD now requires `head_setter+`** (was `gym_manager+`). Head setters already own problem set edits; lowering comp-shell CRUD to the same gate rounds out the comp-setup story so head setters can build comps end-to-end without a manager hand-off. Affected paths: `POST /locations/{id}/competitions`, `PATCH /competitions/{id}`, `POST /competitions/{id}/events`, `PATCH /events/{id}`, `POST /competitions/{id}/categories`. Registration management gates are unchanged.
+
 ## What changed from v2 (post-audit reconciliation, 2026-05-05)
 
 After auditing the actual repo, these adjustments apply throughout this doc:
@@ -495,15 +499,15 @@ API:
 
 ```
 # Comp CRUD
-POST   /api/v1/locations/{location}/competitions   gym_manager+
+POST   /api/v1/locations/{location}/competitions   head_setter+
 GET    /api/v1/locations/{location}/competitions
 GET    /api/v1/competitions/{id}
-PATCH  /api/v1/competitions/{id}                   gym_manager+
+PATCH  /api/v1/competitions/{id}                   head_setter+
 
 # Comp setup
-POST   /api/v1/competitions/{id}/events            gym_manager+
-PATCH  /api/v1/events/{id}                         gym_manager+
-POST   /api/v1/competitions/{id}/categories        gym_manager+
+POST   /api/v1/competitions/{id}/events            head_setter+
+PATCH  /api/v1/events/{id}                         head_setter+
+POST   /api/v1/competitions/{id}/categories        head_setter+
 POST   /api/v1/events/{id}/problems                head_setter+
 PATCH  /api/v1/problems/{id}                       head_setter+
 POST   /api/v1/events/{id}/problems/import         head_setter+   # CSV
@@ -544,7 +548,7 @@ Web (SPA serves all of these client-side; server only needs to send `index.html`
 
 ## Authz
 
-- Comp + event + category CRUD → `gym_manager+`
+- Comp + event + category CRUD → `head_setter+`
 - Problem set edits → `head_setter+`
 - Action endpoint → authenticated, registered, registration's user matches caller, event not ended
 - Verify / override → `setter+`, logged with `action='verify'` or `action='override'`

@@ -271,6 +271,141 @@ export async function deleteWall(
   return request(`/locations/${locationId}/walls/${wallId}`, { method: 'DELETE', signal });
 }
 
+// ── Routes (Phase 2.3) ────────────────────────────────────
+//
+// Hand-written shapes — routes aren't in the OpenAPI spec yet.
+// Mirror `internal/model/models.go::Route` and `RouteHandler.Create`.
+
+export type RouteType = 'boulder' | 'route';
+export type RouteStatus = 'active' | 'flagged' | 'archived';
+
+export interface RouteShape {
+  id: string;
+  location_id: string;
+  wall_id: string;
+  setter_id?: string | null;
+  route_type: RouteType;
+  status: RouteStatus;
+  grading_system: string;
+  grade: string;
+  grade_low?: string | null;
+  grade_high?: string | null;
+  circuit_color?: string | null;
+  name?: string | null;
+  color: string;
+  description?: string | null;
+  photo_url?: string | null;
+  date_set: string;
+  projected_strip_date?: string | null;
+  date_stripped?: string | null;
+  avg_rating: number;
+  rating_count: number;
+  ascent_count: number;
+  attempt_count: number;
+  session_id?: string | null;
+  tags?: TagShape[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TagShape {
+  id: string;
+  org_id: string;
+  category: string;
+  name: string;
+}
+
+export interface RouteListResponse {
+  routes: RouteShape[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface RouteListFilters {
+  wall_id?: string;
+  status?: RouteStatus;
+  route_type?: RouteType;
+  grade?: string;
+  setter_id?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/** GET /locations/{locationId}/routes — paginated, filtered. */
+export async function listRoutes(
+  locationId: string,
+  filters: RouteListFilters = {},
+  signal?: AbortSignal,
+): Promise<RouteListResponse> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(filters)) {
+    if (v != null && v !== '') qs.set(k, String(v));
+  }
+  const suffix = qs.toString() ? `?${qs}` : '';
+  return request(`/locations/${locationId}/routes${suffix}`, { signal });
+}
+
+/** GET /locations/{locationId}/routes/{routeId} */
+export async function getRoute(
+  locationId: string,
+  routeId: string,
+  signal?: AbortSignal,
+): Promise<RouteShape> {
+  return request(`/locations/${locationId}/routes/${routeId}`, { signal });
+}
+
+export interface RouteWriteShape {
+  wall_id: string;
+  route_type: RouteType;
+  grading_system: string;
+  grade: string;
+  color: string;
+  grade_low?: string | null;
+  grade_high?: string | null;
+  circuit_color?: string | null;
+  name?: string | null;
+  description?: string | null;
+  photo_url?: string | null;
+  /** ISO date (YYYY-MM-DD). */
+  date_set?: string | null;
+  projected_strip_date?: string | null;
+  tag_ids?: string[];
+}
+
+/** POST /locations/{locationId}/routes — setter+. */
+export async function createRoute(
+  locationId: string,
+  body: RouteWriteShape,
+  signal?: AbortSignal,
+): Promise<RouteShape> {
+  return request(`/locations/${locationId}/routes`, { method: 'POST', body, signal });
+}
+
+/** PUT /locations/{locationId}/routes/{routeId} — setter+. */
+export async function updateRoute(
+  locationId: string,
+  routeId: string,
+  body: RouteWriteShape,
+  signal?: AbortSignal,
+): Promise<RouteShape> {
+  return request(`/locations/${locationId}/routes/${routeId}`, { method: 'PUT', body, signal });
+}
+
+/** PATCH /locations/{locationId}/routes/{routeId}/status — setter+. */
+export async function updateRouteStatus(
+  locationId: string,
+  routeId: string,
+  status: RouteStatus,
+  signal?: AbortSignal,
+): Promise<RouteShape> {
+  return request(`/locations/${locationId}/routes/${routeId}/status`, {
+    method: 'PATCH',
+    body: { status },
+    signal,
+  });
+}
+
 /**
  * GET /api/v1/me — returns the authenticated user + their memberships.
  * Resolves with `null` on 401 (caller should redirect to login).

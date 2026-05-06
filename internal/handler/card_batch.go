@@ -385,6 +385,51 @@ func (h *CardBatchHandler) Update(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, toBatchResponse(*updated))
 }
 
+// Retry — POST /api/v1/locations/{id}/card-batches/{batchID}/retry.
+//
+// Resets a failed batch back to pending so the next download re-renders.
+// Mirrors the HTMX retry flow at
+// internal/handler/web/route_card_batches.go::CardBatchRetry. Authz:
+// creator or head_setter+ (same gate as Delete / Update).
+func (h *CardBatchHandler) Retry(w http.ResponseWriter, r *http.Request) {
+	locationID := chi.URLParam(r, "locationID")
+	batchID := chi.URLParam(r, "batchID")
+
+	b, err := h.batches.GetByID(r.Context(), batchID)
+	if err != nil {
+		slog.Error("card batch retry: db error", "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if b == nil || b.LocationID != locationID {
+		Error(w, http.StatusNotFound, "batch not found")
+		return
+	}
+
+	actorID := middleware.GetUserID(r.Context())
+	actorRole := ""
+	if m := middleware.GetMembership(r.Context()); m != nil {
+		actorRole = m.Role
+	}
+	if !CanDeleteCardBatch(b.CreatedBy, actorID, actorRole) {
+		Error(w, http.StatusForbidden, "only the creator or a head setter can retry this batch")
+		return
+	}
+
+	if err := h.batches.InvalidateStorageKey(r.Context(), batchID); err != nil {
+		slog.Error("card batch retry: db error", "batch_id", batchID, "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	updated, err := h.batches.GetByID(r.Context(), batchID)
+	if err != nil || updated == nil {
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	JSON(w, http.StatusOK, toBatchResponse(*updated))
+}
+
 // CanDeleteCardBatch encodes the shared "creator-or-head_setter+" rule used
 // by both the JSON API and the web handler. Exported for use from the web
 // package; the duplication there is intentional to keep web-package tests

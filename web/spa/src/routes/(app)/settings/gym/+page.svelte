@@ -209,6 +209,13 @@
               onclick={() => applyPreset(p.name)}>
               <span class="preset-name">{p.display_name}</span>
               <span class="muted small">{p.description}</span>
+              {#if p.circuits.length > 0}
+                <span class="preset-swatches" aria-hidden="true">
+                  {#each p.circuits as sw (sw.name)}
+                    <span class="preset-swatch" style="background: {sw.hex}" title={sw.name}></span>
+                  {/each}
+                </span>
+              {/if}
               {#if applyingPreset === p.name}<span class="preset-pending">applying…</span>{/if}
             </button>
           {/each}
@@ -577,6 +584,19 @@
   .preset-name {
     font-weight: 700;
     font-size: 0.95rem;
+  }
+  .preset-swatches {
+    display: inline-flex;
+    gap: 4px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .preset-swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 1px solid var(--rw-border-strong);
+    flex-shrink: 0;
   }
   .preset-pending {
     font-size: 0.75rem;

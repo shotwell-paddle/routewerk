@@ -173,6 +173,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	routeSkillTagRepo := repository.NewRouteSkillTagRepo(db)
 	notifRepo := repository.NewNotificationRepo(db)
 	notifHandler := handler.NewNotificationHandler(notifRepo)
+	dashboardHandler := handler.NewDashboardHandler(analyticsRepo)
 
 	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, questRepo, badgeRepo, activityRepo, routeSkillTagRepo, notifRepo, deps.QuestSvc, deps.EventBus, authService, storageSvc, cardGen, cardBatchRepo, batchSvc, auditService, sessionMgr, cfg, db)
 
@@ -744,6 +745,13 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 				// Quests catalog — Phase 2.8. Any location member can browse
 				// the active quests at this location.
 				r.Get("/quests", questHandler.ListAvailable)
+
+				// Setter dashboard summary (stats + recent activity). Setter+
+				// only because the HTMX /dashboard requires the same.
+				r.Group(func(r chi.Router) {
+					r.Use(authz.RequireLocationRole("setter"))
+					r.Get("/dashboard", dashboardHandler.Stats)
+				})
 			})
 
 			// Membership writes (Phase 2.7) — no location prefix because the

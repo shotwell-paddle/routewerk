@@ -728,6 +728,120 @@ export async function deleteRoutePhoto(
   );
 }
 
+// ── Community tags ──────────────────────────────────────────
+
+export interface CommunityTagShape {
+  tag_name: string;
+  count: number;
+  /** True when the current viewer added this tag. Drives the chip's "voted" state. */
+  user_added: boolean;
+}
+
+/** GET /locations/{locationId}/routes/{routeId}/tags — any member. */
+export async function listCommunityTags(
+  locationId: string,
+  routeId: string,
+  signal?: AbortSignal,
+): Promise<CommunityTagShape[]> {
+  return request(`/locations/${locationId}/routes/${routeId}/tags`, { signal });
+}
+
+/**
+ * POST /locations/{locationId}/routes/{routeId}/tags — any member adds a
+ * tag. Server normalizes (trim/lowercase/collapse whitespace), enforces
+ * 1–30 runes, runs the profanity filter; duplicates are a no-op.
+ * Returns the updated aggregated list so the SPA can swap state in one
+ * round-trip.
+ */
+export async function addCommunityTag(
+  locationId: string,
+  routeId: string,
+  tagName: string,
+  signal?: AbortSignal,
+): Promise<CommunityTagShape[]> {
+  return request(`/locations/${locationId}/routes/${routeId}/tags`, {
+    method: 'POST',
+    body: { tag_name: tagName },
+    signal,
+  });
+}
+
+/** DELETE /locations/{locationId}/routes/{routeId}/tags — drops the caller's vote. */
+export async function removeCommunityTag(
+  locationId: string,
+  routeId: string,
+  tagName: string,
+  signal?: AbortSignal,
+): Promise<CommunityTagShape[]> {
+  return request(`/locations/${locationId}/routes/${routeId}/tags`, {
+    method: 'DELETE',
+    body: { tag_name: tagName },
+    signal,
+  });
+}
+
+/**
+ * DELETE /locations/{locationId}/routes/{routeId}/tags/all — head_setter+
+ * scrubs every vote for a tag from a route. Used by moderators to remove
+ * misleading or off-topic tags entirely.
+ */
+export async function moderateCommunityTag(
+  locationId: string,
+  routeId: string,
+  tagName: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/locations/${locationId}/routes/${routeId}/tags/all`, {
+    method: 'DELETE',
+    body: { tag_name: tagName },
+    signal,
+  });
+}
+
+// ── Difficulty consensus ────────────────────────────────────
+
+export type DifficultyVote = 'easy' | 'right' | 'hard';
+
+export interface DifficultyConsensusShape {
+  easy_count: number;
+  right_count: number;
+  hard_count: number;
+  total_votes: number;
+  /** Whole-percent breakdown that sums to ~100 (rounding may drop a point). */
+  easy_pct: number;
+  right_pct: number;
+  hard_pct: number;
+  /** Caller's prior vote, or "" if they haven't voted. */
+  my_vote: '' | DifficultyVote;
+}
+
+/** GET /locations/{locationId}/routes/{routeId}/difficulty — any member. */
+export async function getRouteDifficulty(
+  locationId: string,
+  routeId: string,
+  signal?: AbortSignal,
+): Promise<DifficultyConsensusShape> {
+  return request(`/locations/${locationId}/routes/${routeId}/difficulty`, { signal });
+}
+
+/**
+ * POST /locations/{locationId}/routes/{routeId}/difficulty — vote
+ * easy/right/hard. One row per (user, route); resubmits upsert. Returns
+ * the updated consensus + the caller's new vote.
+ */
+export async function voteRouteDifficulty(
+  locationId: string,
+  routeId: string,
+  vote: DifficultyVote,
+  signal?: AbortSignal,
+): Promise<DifficultyConsensusShape> {
+  return request(`/locations/${locationId}/routes/${routeId}/difficulty`, {
+    method: 'POST',
+    body: { vote },
+    signal,
+  });
+}
+
 export type AscentType = 'send' | 'flash' | 'attempt';
 
 export interface LogAscentShape {

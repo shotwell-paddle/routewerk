@@ -15,6 +15,12 @@
     listRoutePhotos,
     uploadRoutePhoto,
     deleteRoutePhoto,
+    listCommunityTags,
+    addCommunityTag,
+    removeCommunityTag,
+    moderateCommunityTag,
+    getRouteDifficulty,
+    voteRouteDifficulty,
     ApiClientError,
     type RouteShape,
     type RouteStatus,
@@ -25,6 +31,9 @@
     type AscentType,
     type LocationSettingsShape,
     type RoutePhotoShape,
+    type CommunityTagShape,
+    type DifficultyConsensusShape,
+    type DifficultyVote,
   } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
   import { roleRankAt } from '$lib/stores/auth.svelte';
@@ -37,6 +46,19 @@
   let ascents = $state<AscentShape[]>([]);
   let ratings = $state<RouteRatingShape[]>([]);
   let photos = $state<RoutePhotoShape[]>([]);
+  let communityTags = $state<CommunityTagShape[]>([]);
+  let consensus = $state<DifficultyConsensusShape | null>(null);
+
+  // New-tag input + per-row mutating state. Two requests can fly in
+  // parallel without stomping each other because we key the loading
+  // flag by tag name.
+  let tagInput = $state('');
+  let tagSubmitting = $state(false);
+  let tagError = $state<string | null>(null);
+  let tagBusy = $state<string | null>(null);
+
+  let voteSubmitting = $state(false);
+  let voteError = $state<string | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
 
@@ -97,8 +119,10 @@
       // failure leaves the form on default lists.
       getLocationSettings(locId).catch(() => null),
       listRoutePhotos(locId, routeId).catch(() => [] as RoutePhotoShape[]),
+      listCommunityTags(locId, routeId).catch(() => [] as CommunityTagShape[]),
+      getRouteDifficulty(locId, routeId).catch(() => null),
     ])
-      .then(([r, wls, asc, rt, st, ph]) => {
+      .then(([r, wls, asc, rt, st, ph, tg, cons]) => {
         if (cancelled) return;
         route = r;
         walls = wls;
@@ -106,6 +130,8 @@
         ratings = rt;
         settings = st;
         photos = ph;
+        communityTags = tg;
+        consensus = cons;
       })
       .catch((err) => {
         if (cancelled) return;
@@ -293,6 +319,72 @@
     return roleRankAt(locId) >= 2;
   }
 
+  // Community tag handlers. The server returns the updated aggregated
+  // list on add/remove so we don't need a separate refetch.
+  async function submitTag(e: Event) {
+    e.preventDefault();
+    if (!locId || !routeId) return;
+    const v = tagInput.trim();
+    if (!v) return;
+    tagSubmitting = true;
+    tagError = null;
+    try {
+      communityTags = await addCommunityTag(locId, routeId, v);
+      tagInput = '';
+    } catch (err) {
+      tagError = err instanceof ApiClientError ? err.message : 'Could not add tag.';
+    } finally {
+      tagSubmitting = false;
+    }
+  }
+
+  async function toggleTag(tag: CommunityTagShape) {
+    if (!locId || !routeId || tagBusy) return;
+    tagBusy = tag.tag_name;
+    tagError = null;
+    try {
+      communityTags = tag.user_added
+        ? await removeCommunityTag(locId, routeId, tag.tag_name)
+        : await addCommunityTag(locId, routeId, tag.tag_name);
+    } catch (err) {
+      tagError = err instanceof ApiClientError ? err.message : 'Could not update tag.';
+    } finally {
+      tagBusy = null;
+    }
+  }
+
+  async function moderateTag(tag: CommunityTagShape) {
+    if (!locId || !routeId || tagBusy) return;
+    if (!confirm(`Remove every "${tag.tag_name}" vote from this route? Climbers won't be able to see it anymore.`)) return;
+    tagBusy = tag.tag_name;
+    tagError = null;
+    try {
+      await moderateCommunityTag(locId, routeId, tag.tag_name);
+      communityTags = await listCommunityTags(locId, routeId);
+    } catch (err) {
+      tagError = err instanceof ApiClientError ? err.message : 'Could not delete tag.';
+    } finally {
+      tagBusy = null;
+    }
+  }
+
+  // head_setter+ may scrub a tag from the route entirely (matches the
+  // HTMX moderation endpoint). The server enforces the same gate.
+  const canModerateTags = $derived(roleRankAt(locId) >= 3);
+
+  async function submitVote(v: DifficultyVote) {
+    if (!locId || !routeId || voteSubmitting) return;
+    voteSubmitting = true;
+    voteError = null;
+    try {
+      consensus = await voteRouteDifficulty(locId, routeId, v);
+    } catch (err) {
+      voteError = err instanceof ApiClientError ? err.message : 'Could not save vote.';
+    } finally {
+      voteSubmitting = false;
+    }
+  }
+
   function fmtDate(iso: string | null | undefined): string {
     if (!iso) return '—';
     return new Date(iso).toLocaleDateString();
@@ -463,6 +555,105 @@
           aria-label="Close photo">
           <img src={photos[lightboxIdx].photo_url} alt="" />
         </button>
+      {/if}
+
+      <section class="card">
+        <h2>Community tags</h2>
+        <p class="muted small">
+          What climbers say this route feels like. Click a tag to vote it up
+          or back out; add your own below.
+        </p>
+        {#if communityTags.length === 0}
+          <p class="muted">No tags yet — be the first.</p>
+        {:else}
+          <ul class="tag-list">
+            {#each communityTags as tag (tag.tag_name)}
+              <li>
+                <button
+                  type="button"
+                  class="tag-chip"
+                  class:voted={tag.user_added}
+                  disabled={tagBusy === tag.tag_name}
+                  onclick={() => toggleTag(tag)}
+                  title={tag.user_added ? 'You voted for this — click to remove your vote' : 'Vote for this tag'}>
+                  {tag.tag_name}
+                  <span class="tag-count">{tag.count}</span>
+                </button>
+                {#if canModerateTags}
+                  <button
+                    type="button"
+                    class="tag-mod"
+                    disabled={tagBusy === tag.tag_name}
+                    onclick={() => moderateTag(tag)}
+                    title="Remove this tag from the route entirely (moderator)">
+                    ×
+                  </button>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+
+        {#if route.status !== 'archived'}
+          <form class="tag-form" onsubmit={submitTag}>
+            <input
+              type="text"
+              bind:value={tagInput}
+              maxlength="30"
+              placeholder="add a tag (e.g. crimpy, slab, pumpy)…"
+              disabled={tagSubmitting} />
+            <button class="primary" type="submit" disabled={tagSubmitting || !tagInput.trim()}>
+              {tagSubmitting ? '…' : 'Add'}
+            </button>
+          </form>
+        {/if}
+        {#if tagError}<p class="error tag-err">{tagError}</p>{/if}
+      </section>
+
+      {#if consensus}
+        <section class="card">
+          <h2>Difficulty consensus</h2>
+          {#if consensus.total_votes === 0}
+            <p class="muted">
+              No one has rated the difficulty yet. Vote so the next climber knows
+              what to expect for {route.grade}.
+            </p>
+          {:else}
+            <div class="consensus-bar" aria-label="Vote breakdown">
+              {#if consensus.easy_pct > 0}
+                <span class="seg easy" style="width: {consensus.easy_pct}%" title="{consensus.easy_count} climbers said easier"></span>
+              {/if}
+              {#if consensus.right_pct > 0}
+                <span class="seg right" style="width: {consensus.right_pct}%" title="{consensus.right_count} climbers said right on"></span>
+              {/if}
+              {#if consensus.hard_pct > 0}
+                <span class="seg hard" style="width: {consensus.hard_pct}%" title="{consensus.hard_count} climbers said harder"></span>
+              {/if}
+            </div>
+            <p class="muted small consensus-counts">
+              <span class="dot easy" aria-hidden="true"></span>{consensus.easy_count} easier ·
+              <span class="dot right" aria-hidden="true"></span>{consensus.right_count} right on ·
+              <span class="dot hard" aria-hidden="true"></span>{consensus.hard_count} harder
+              ({consensus.total_votes} {consensus.total_votes === 1 ? 'vote' : 'votes'})
+            </p>
+          {/if}
+          {#if route.status !== 'archived'}
+            <div class="vote-row">
+              <span class="muted small">Your vote:</span>
+              {#each [['easy', 'Easier'], ['right', 'Right on'], ['hard', 'Harder']] as [v, label]}
+                <button
+                  type="button"
+                  class="vote-btn vote-{v}"
+                  class:active={consensus.my_vote === v}
+                  disabled={voteSubmitting}
+                  onclick={() => submitVote(v as DifficultyVote)}>
+                  {label}
+                </button>
+              {/each}
+            </div>
+            {#if voteError}<p class="error tag-err">{voteError}</p>{/if}
+          {/if}
+        </section>
       {/if}
 
       {#if route.status !== 'archived'}
@@ -828,6 +1019,188 @@
     max-width: min(90vw, 1200px);
     max-height: 90vh;
     object-fit: contain;
+  }
+  .tag-list {
+    list-style: none;
+    padding: 0;
+    margin: 8px 0 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .tag-list li {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .tag-chip {
+    background: var(--rw-surface-alt);
+    border: 1px solid var(--rw-border);
+    color: var(--rw-text);
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .tag-chip:hover:not(:disabled) {
+    border-color: var(--rw-accent);
+  }
+  .tag-chip.voted {
+    background: rgba(252, 82, 0, 0.15);
+    border-color: var(--rw-accent);
+    color: var(--rw-text);
+  }
+  .tag-chip:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .tag-count {
+    font-size: 0.7rem;
+    background: rgba(0, 0, 0, 0.06);
+    padding: 1px 6px;
+    border-radius: 999px;
+    color: var(--rw-text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .tag-chip.voted .tag-count {
+    background: rgba(252, 82, 0, 0.25);
+    color: var(--rw-accent);
+  }
+  .tag-mod {
+    border: 0;
+    background: none;
+    color: var(--rw-text-faint);
+    cursor: pointer;
+    padding: 0 4px;
+    font-size: 1rem;
+    line-height: 1;
+  }
+  .tag-mod:hover:not(:disabled) {
+    color: var(--rw-danger);
+  }
+  .tag-form {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+  }
+  .tag-form input {
+    flex: 1;
+    padding: 0.45rem 0.7rem;
+    border: 1px solid var(--rw-border-strong);
+    border-radius: 6px;
+    font-size: 0.9rem;
+    background: var(--rw-surface);
+    color: var(--rw-text);
+  }
+  .tag-form input:focus {
+    outline: none;
+    border-color: var(--rw-accent);
+  }
+  .tag-form button {
+    padding: 0.45rem 0.95rem;
+    border-radius: 6px;
+    border: 1px solid var(--rw-accent);
+    background: var(--rw-accent);
+    color: var(--rw-accent-ink);
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .tag-form button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .tag-err {
+    margin-top: 8px;
+  }
+  .consensus-bar {
+    display: flex;
+    height: 12px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--rw-surface-alt);
+    margin: 8px 0 6px;
+  }
+  .consensus-bar .seg {
+    display: block;
+    height: 100%;
+  }
+  .consensus-bar .easy {
+    background: #3b82f6;
+  }
+  .consensus-bar .right {
+    background: var(--rw-success);
+  }
+  .consensus-bar .hard {
+    background: var(--rw-danger);
+  }
+  .consensus-counts {
+    margin: 0 0 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .consensus-counts .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  .consensus-counts .dot.easy {
+    background: #3b82f6;
+  }
+  .consensus-counts .dot.right {
+    background: var(--rw-success);
+  }
+  .consensus-counts .dot.hard {
+    background: var(--rw-danger);
+  }
+  .vote-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .vote-btn {
+    padding: 0.4rem 0.85rem;
+    border: 1px solid var(--rw-border-strong);
+    background: var(--rw-surface);
+    color: var(--rw-text);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .vote-btn:hover:not(:disabled) {
+    border-color: var(--rw-accent);
+  }
+  .vote-btn.vote-easy.active {
+    background: rgba(59, 130, 246, 0.12);
+    border-color: #3b82f6;
+    color: #1d4ed8;
+  }
+  .vote-btn.vote-right.active {
+    background: rgba(22, 163, 74, 0.12);
+    border-color: var(--rw-success);
+    color: #15803d;
+  }
+  .vote-btn.vote-hard.active {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: var(--rw-danger);
+    color: #b91c1c;
+  }
+  .vote-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
   .histogram {
     display: flex;

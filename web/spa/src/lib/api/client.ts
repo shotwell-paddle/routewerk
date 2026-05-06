@@ -102,6 +102,51 @@ export async function requestMagicLink(
   return request('/auth/magic/request', { method: 'POST', body, signal });
 }
 
+// ── /me (not yet in spec — added directly while we expand the spec
+//      to cover existing routes piecemeal in later phases) ──────────
+
+export interface MembershipShape {
+  id: string;
+  user_id: string;
+  org_id: string;
+  location_id?: string | null;
+  role: string;
+  specialties?: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserShape {
+  id: string;
+  email: string;
+  display_name: string;
+  avatar_url?: string | null;
+  bio?: string | null;
+  is_app_admin: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MeResponse {
+  user: UserShape;
+  memberships: MembershipShape[];
+}
+
+/**
+ * GET /api/v1/me — returns the authenticated user + their memberships.
+ * Resolves with `null` on 401 (caller should redirect to login).
+ */
+export async function getMe(signal?: AbortSignal): Promise<MeResponse | null> {
+  try {
+    return await request<MeResponse>('/me', { signal });
+  } catch (err) {
+    if (err instanceof ApiClientError && err.status === 401) {
+      return null;
+    }
+    throw err;
+  }
+}
+
 /** GET /locations/{locationId}/competitions */
 export async function listCompetitions(
   locationId: string,

@@ -207,18 +207,22 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	})
 
 	// SPA fallback: any unmatched path under an SPA-owned prefix returns
-	// index.html and the client router takes over. Phase 0 only mounts a
-	// smoke-test prefix; Phase 1 will add /comp/* and /staff/comp/*.
+	// index.html and the client router takes over. Each SPA-owned prefix
+	// is mounted at both /prefix and /prefix/* so SvelteKit's
+	// trailingSlash='never' default (URL ends up as /prefix) doesn't
+	// 404 on reload. All registrations point at the same handler.
+	//
+	// Phase 1g adds /comp/*; Phase 1h adds /staff/comp/*. /spa-test
+	// stays around as a smoke-test landing.
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.Gzip)
 		r.Get("/favicon.svg", func(w http.ResponseWriter, req *http.Request) {
 			spa.AssetServer().ServeHTTP(w, req)
 		})
-		// Mount fallback at both /spa-test and /spa-test/* so SvelteKit's
-		// trailingSlash='never' default (URL ends up as /spa-test) doesn't
-		// 404 on reload. The two registrations point at the same handler.
 		r.Handle("/spa-test", spa.FallbackHandler())
 		r.Handle("/spa-test/*", spa.FallbackHandler())
+		r.Handle("/comp", spa.FallbackHandler())
+		r.Handle("/comp/*", spa.FallbackHandler())
 	})
 
 	// Web pages — web-specific CSP, CSRF, rate limiting, gzip, query timeout.
@@ -477,9 +481,13 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			r.Post("/auth/refresh", authHandler.Refresh)
 		})
 
-		// Authenticated — all routes below require a valid (non-expired) JWT
+		// Authenticated — all routes below accept either a valid web
+		// session cookie (SvelteKit SPA, same-origin) OR a valid JWT
+		// (mobile / API clients). The dual-auth middleware tries cookie
+		// first; mobile flows that send only Authorization continue to
+		// work unchanged.
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.Authenticate(cfg.JWTSecret, cfg.EnforceJWTAudience))
+			r.Use(middleware.AuthenticateCookieOrJWT(sessionMgr, cfg.JWTSecret, cfg.EnforceJWTAudience))
 
 			// ── User's own data (no org context needed) ─────────────
 			r.Get("/me", authHandler.Me)

@@ -291,6 +291,41 @@ export async function setLocationProgressions(
   });
 }
 
+export interface PalettePresetEntry {
+  name: string;
+  display_name: string;
+  description: string;
+}
+
+/**
+ * GET /locations/{locationId}/settings/palette-presets — setter+.
+ * Static catalog of named palette presets the SPA can render as
+ * one-click apply buttons.
+ */
+export async function listPalettePresets(
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<PalettePresetEntry[]> {
+  return request(`/locations/${locationId}/settings/palette-presets`, { signal });
+}
+
+/**
+ * POST /locations/{locationId}/settings/palette-preset — head_setter+.
+ * Replaces circuits + hold-color lists with the named preset in one
+ * shot. Returns the post-apply settings so the SPA can refresh inline.
+ */
+export async function applyPalettePreset(
+  locationId: string,
+  preset: string,
+  signal?: AbortSignal,
+): Promise<LocationSettingsShape> {
+  return request(`/locations/${locationId}/settings/palette-preset`, {
+    method: 'POST',
+    body: { preset },
+    signal,
+  });
+}
+
 /** PUT /locations/{locationId}/settings — gym_manager+. Replaces the full struct. */
 export async function updateLocationSettings(
   locationId: string,

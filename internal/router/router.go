@@ -845,10 +845,18 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 				r.Group(func(r chi.Router) {
 					r.Use(authz.RequireLocationRole("setter"))
 					r.Get("/settings", settingsHandler.GetLocationSettings)
+					// Static catalog of named palette presets the SPA can
+					// render as one-click apply buttons. Same role gate
+					// (setter+) since the data is location-agnostic but
+					// the only callers are the gym-settings UI.
+					r.Get("/settings/palette-presets", settingsHandler.ListPalettePresets)
 				})
 				r.Group(func(r chi.Router) {
 					r.Use(authz.RequireLocationRole("head_setter"))
 					r.Put("/settings", settingsHandler.UpdateLocationSettings)
+					// Apply a named palette preset — head_setter+ matches the
+					// HTMX flow. Replaces circuits + hold-color lists in one shot.
+					r.Post("/settings/palette-preset", settingsHandler.ApplyPalettePreset)
 				})
 
 				// Progressions admin — quest / badge / domain CRUD for

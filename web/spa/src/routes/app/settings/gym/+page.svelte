@@ -4,11 +4,14 @@
     updateLocationSettings,
     getLocation,
     setLocationProgressions,
+    listPalettePresets,
+    applyPalettePreset,
     ApiClientError,
     type LocationSettingsShape,
     type LocationShape,
     type CircuitColor,
     type HoldColor,
+    type PalettePresetEntry,
   } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
   import { roleRankAt } from '$lib/stores/auth.svelte';
@@ -21,6 +24,10 @@
   let saveOk = $state<string | null>(null);
   let progressionsToggling = $state(false);
   let progressionsError = $state<string | null>(null);
+
+  let presets = $state<PalettePresetEntry[]>([]);
+  let applyingPreset = $state<string | null>(null);
+  let presetError = $state<string | null>(null);
 
   const locId = $derived(effectiveLocationId());
   // head_setter+ matches the HTMX gym-settings policy at
@@ -39,11 +46,13 @@
     Promise.all([
       getLocationSettings(locId),
       getLocation(locId).catch(() => null),
+      listPalettePresets(locId).catch(() => [] as PalettePresetEntry[]),
     ])
-      .then(([s, loc]) => {
+      .then(([s, loc, ps]) => {
         if (cancelled) return;
         settings = s;
         location = loc;
+        presets = ps;
       })
       .catch((err) => {
         if (cancelled) return;
@@ -56,6 +65,20 @@
       cancelled = true;
     };
   });
+
+  async function applyPreset(name: string) {
+    if (!locId || applyingPreset) return;
+    if (!confirm('Replace your circuits + hold colors with this preset? Direct edits will be overwritten.')) return;
+    applyingPreset = name;
+    presetError = null;
+    try {
+      settings = await applyPalettePreset(locId, name);
+    } catch (err) {
+      presetError = err instanceof ApiClientError ? err.message : 'Apply failed.';
+    } finally {
+      applyingPreset = null;
+    }
+  }
 
   async function toggleProgressions(next: boolean) {
     if (!locId || progressionsToggling) return;
@@ -169,6 +192,30 @@
   {:else if error && !settings}
     <p class="error">{error}</p>
   {:else if settings}
+    {#if presets.length > 0}
+      <section class="card preset-card">
+        <h2>Palette presets</h2>
+        <p class="muted small">
+          One-click swap for both circuits and hold colors. Pick the preset
+          that matches your printer + paper combination — your direct edits
+          will be replaced.
+        </p>
+        <div class="preset-list">
+          {#each presets as p (p.name)}
+            <button
+              type="button"
+              class="preset-btn"
+              disabled={!!applyingPreset}
+              onclick={() => applyPreset(p.name)}>
+              <span class="preset-name">{p.display_name}</span>
+              <span class="muted small">{p.description}</span>
+              {#if applyingPreset === p.name}<span class="preset-pending">applying…</span>{/if}
+            </button>
+          {/each}
+        </div>
+        {#if presetError}<p class="error">{presetError}</p>{/if}
+      </section>
+    {/if}
     <form onsubmit={save}>
       <section class="card">
         <h2>Circuits</h2>
@@ -500,6 +547,41 @@
     border-radius: 6px;
     font-size: 0.9rem;
     margin: 0.5rem 0;
+  }
+  .preset-card {
+    border-color: var(--rw-border-strong);
+  }
+  .preset-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 8px;
+  }
+  .preset-btn {
+    text-align: left;
+    background: var(--rw-surface-alt);
+    border: 1px solid var(--rw-border);
+    border-radius: 8px;
+    padding: 0.85rem 1rem;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .preset-btn:hover:not(:disabled) {
+    border-color: var(--rw-accent);
+  }
+  .preset-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .preset-name {
+    font-weight: 700;
+    font-size: 0.95rem;
+  }
+  .preset-pending {
+    font-size: 0.75rem;
+    color: var(--rw-accent);
+    font-weight: 600;
   }
   .cta-card {
     border-color: var(--rw-accent);

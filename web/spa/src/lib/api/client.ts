@@ -153,6 +153,12 @@ export interface UserShape {
 export interface MeResponse {
   user: UserShape;
   memberships: MembershipShape[];
+  /**
+   * Active view-as override role from the `_rw_view_as` cookie, or "" if
+   * none. Lets staff demo lower-role views without re-authenticating.
+   * Mirrors the HTMX sidebar's view-as bar.
+   */
+  view_as_role?: string;
 }
 
 // Location is not yet in the OpenAPI spec (existing HTMX/API surface
@@ -1079,6 +1085,23 @@ export async function changePassword(
   return request('/me/password', {
     method: 'POST',
     body: { old_password: oldPassword, new_password: newPassword },
+    signal,
+  });
+}
+
+/**
+ * PUT /api/v1/me/view-as — set or clear the view-as role override.
+ * Pass `null` (or empty string) to clear. Server enforces: caller must be
+ * head_setter+ AND target rank < caller's. Returns 204; the SPA then
+ * reloads /me to pick up the new effective role.
+ */
+export async function setViewAs(
+  role: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request('/me/view-as', {
+    method: 'PUT',
+    body: { role: role ?? '' },
     signal,
   });
 }

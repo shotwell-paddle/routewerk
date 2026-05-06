@@ -8,6 +8,7 @@
     currentUser,
     effectiveRoleAt,
     roleRankAt,
+    loadMe,
   } from '$lib/stores/auth.svelte';
   import {
     locationState,
@@ -17,6 +18,7 @@
   import {
     getLocation,
     getUnreadNotificationCount,
+    setViewAs,
     type LocationShape,
   } from '$lib/api/client';
 
@@ -87,8 +89,54 @@
   // org-wide membership fallback, an org_admin (whose membership row has
   // location_id=null) would get a climber-flavored sidebar even though
   // the API treats them as admin.
-  const selectedRole = $derived(effectiveRoleAt(selectedLocId));
-  const roleRank = $derived(roleRankAt(selectedLocId));
+  // The view-as cookie can downgrade the effective role; selectedRole
+  // reflects that override so the sidebar shows what the user is actually
+  // allowed to see right now. realRole stays at the user's true highest
+  // role so the view-as bar only renders for head_setter+ and only
+  // offers downgrade options below their real rank.
+  const viewAsRole = $derived(authState().me?.view_as_role || null);
+  const realRole = $derived(effectiveRoleAt(selectedLocId));
+  const realRank = $derived(roleRankAt(selectedLocId));
+  const selectedRole = $derived(viewAsRole || realRole);
+  const roleRank = $derived.by(() => {
+    if (!viewAsRole) return realRank;
+    const RR: Record<string, number> = {
+      climber: 1, setter: 2, head_setter: 3, gym_manager: 4, org_admin: 5,
+    };
+    return Math.min(realRank, RR[viewAsRole] ?? realRank);
+  });
+
+  // View-as bar — head_setter+ at the selected location can preview
+  // lower-rank surfaces. Options are every role strictly below realRank.
+  const VIEW_AS_OPTIONS: { role: string; label: string }[] = [
+    { role: 'climber', label: 'Climber' },
+    { role: 'setter', label: 'Setter' },
+    { role: 'head_setter', label: 'Head setter' },
+    { role: 'gym_manager', label: 'Gym manager' },
+  ];
+  const VIEW_AS_RANK: Record<string, number> = {
+    climber: 1, setter: 2, head_setter: 3, gym_manager: 4,
+  };
+  const viewAsCandidates = $derived(
+    VIEW_AS_OPTIONS.filter((o) => (VIEW_AS_RANK[o.role] ?? 0) < realRank),
+  );
+  const canViewAs = $derived(realRank >= 3 && viewAsCandidates.length > 0);
+  let viewAsSwitching = $state(false);
+
+  async function pickViewAs(role: string | null) {
+    if (viewAsSwitching) return;
+    viewAsSwitching = true;
+    try {
+      await setViewAs(role);
+      // Pull /me again so view_as_role + downstream visibility update.
+      // The cookie is HttpOnly so we can't just read it client-side.
+      await loadMe();
+    } catch {
+      // Server enforces the policy; if it rejects we just stay where we were.
+    } finally {
+      viewAsSwitching = false;
+    }
+  }
 
   // Quests are gated by the location's progressions_enabled flag.
   // Only show the nav link when the selected location has it on.
@@ -192,8 +240,40 @@
           {/each}
         </select>
         {#if selectedRole}
-          <span class="role-pill">{selectedRole.replace('_', ' ')}</span>
+          <span class="role-pill" class:as-override={viewAsRole}>
+            {selectedRole.replace('_', ' ')}
+            {#if viewAsRole}
+              <span class="as-tag">view-as</span>
+            {/if}
+          </span>
         {/if}
+      </div>
+    {/if}
+
+    {#if canViewAs}
+      <div class="view-as">
+        <span class="view-as-label">View as</span>
+        <div class="view-as-options">
+          {#each viewAsCandidates as opt (opt.role)}
+            <button
+              type="button"
+              class="view-as-btn"
+              class:active={viewAsRole === opt.role}
+              disabled={viewAsSwitching}
+              onclick={() => pickViewAs(viewAsRole === opt.role ? null : opt.role)}>
+              {opt.label}
+            </button>
+          {/each}
+          {#if viewAsRole}
+            <button
+              type="button"
+              class="view-as-btn clear"
+              disabled={viewAsSwitching}
+              onclick={() => pickViewAs(null)}>
+              Clear
+            </button>
+          {/if}
+        </div>
       </div>
     {/if}
 
@@ -363,7 +443,9 @@
     color: #1c1b18;
   }
   .role-pill {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     align-self: flex-start;
     background: rgba(252, 82, 0, 0.18);
     color: var(--rw-accent);
@@ -373,6 +455,66 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
+  }
+  .role-pill.as-override {
+    background: rgba(245, 158, 11, 0.22);
+    color: #fbbf24;
+  }
+  .role-pill .as-tag {
+    background: rgba(0, 0, 0, 0.25);
+    color: rgba(255, 255, 255, 0.85);
+    padding: 0 5px;
+    border-radius: 3px;
+    font-size: 0.55rem;
+  }
+
+  .view-as {
+    margin: 0 16px 14px;
+    padding: 10px 12px;
+    background: var(--sidebar-bg-elevated);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .view-as-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--sidebar-text-faint);
+  }
+  .view-as-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .view-as-btn {
+    background: transparent;
+    color: var(--sidebar-text-muted);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .view-as-btn:hover:not(:disabled) {
+    color: var(--sidebar-text);
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+  .view-as-btn.active {
+    background: rgba(252, 82, 0, 0.25);
+    color: var(--rw-accent);
+    border-color: var(--rw-accent);
+  }
+  .view-as-btn.clear {
+    color: var(--sidebar-text-faint);
+  }
+  .view-as-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   /* Nav */

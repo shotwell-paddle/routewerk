@@ -227,6 +227,11 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 		// /login is taken by the HTMX password-auth page used by staff).
 		r.Handle("/sign-in", spa.FallbackHandler())
 		r.Handle("/sign-in/*", spa.FallbackHandler())
+		// Staff comp UI (Phase 1h). No existing /staff routes today —
+		// the existing HTMX dashboards live at /dashboard, /walls, etc.
+		// /staff is reserved for the SPA staff workflows.
+		r.Handle("/staff/comp", spa.FallbackHandler())
+		r.Handle("/staff/comp/*", spa.FallbackHandler())
 	})
 
 	// Web pages — web-specific CSP, CSRF, rate limiting, gzip, query timeout.

@@ -170,8 +170,11 @@ func (h *Handler) SessionToggleChecklist(w http.ResponseWriter, r *http.Request)
 		userID = user.ID
 	}
 
-	if err := h.sessionRepo.ToggleChecklistItem(ctx, itemID, userID); err != nil {
-		slog.Error("toggle checklist item failed", "error", err)
+	rowsAffected, err := h.sessionRepo.ToggleChecklistItem(ctx, itemID, userID)
+	if err != nil {
+		slog.Error("toggle checklist item failed", "error", err, "session_id", sessionID, "item_id", itemID)
+	} else if rowsAffected == 0 {
+		slog.Warn("toggle checklist item matched no rows", "session_id", sessionID, "item_id", itemID)
 	}
 
 	if r.Header.Get("HX-Request") != "true" {

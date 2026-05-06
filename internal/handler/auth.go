@@ -171,3 +171,109 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		"memberships": memberships,
 	})
 }
+
+// updateMeRequest patches the caller's user profile. All fields are optional;
+// only fields present in the request body are applied. avatar_url and bio
+// accept null to clear the current value (the indirection here distinguishes
+// "field omitted" from "field present but null"); display_name cannot be
+// blanked because the schema requires it.
+type updateMeRequest struct {
+	DisplayName *string `json:"display_name,omitempty"`
+	AvatarURL   *string `json:"avatar_url,omitempty"`
+	Bio         *string `json:"bio,omitempty"`
+	// Boolean flags for "explicitly clear this field" — needed because the
+	// pointer above can't disambiguate "not in JSON" from "JSON null" once
+	// json.Unmarshal has run. The SPA settings form sends these when the
+	// user blanks out an input.
+	ClearAvatarURL bool `json:"clear_avatar_url,omitempty"`
+	ClearBio       bool `json:"clear_bio,omitempty"`
+}
+
+// UpdateMe — PATCH /me. Updates editable profile fields on the calling user.
+func (h *AuthHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	var req updateMeRequest
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.DisplayName != nil {
+		trimmed := strings.TrimSpace(*req.DisplayName)
+		if trimmed == "" {
+			Error(w, http.StatusBadRequest, "display_name cannot be empty")
+			return
+		}
+		req.DisplayName = &trimmed
+	}
+
+	var avatar **string
+	if req.ClearAvatarURL {
+		var nilStr *string
+		avatar = &nilStr
+	} else if req.AvatarURL != nil {
+		avatar = &req.AvatarURL
+	}
+
+	var bio **string
+	if req.ClearBio {
+		var nilStr *string
+		bio = &nilStr
+	} else if req.Bio != nil {
+		bio = &req.Bio
+	}
+
+	user, err := h.auth.UpdateProfile(r.Context(), userID, req.DisplayName, avatar, bio)
+	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			Error(w, http.StatusNotFound, "user not found")
+			return
+		}
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	JSON(w, http.StatusOK, map[string]interface{}{"user": user})
+}
+
+type changePasswordRequest struct {
+	OldPassword string `json:"old_password"`
+	NewPassword string `json:"new_password"`
+}
+
+// ChangePassword — POST /me/password. Verifies the old password, hashes the
+// new one, and revokes outstanding refresh tokens so other sessions must
+// re-authenticate.
+func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	var req changePasswordRequest
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.OldPassword == "" || req.NewPassword == "" {
+		Error(w, http.StatusBadRequest, "old_password and new_password are required")
+		return
+	}
+	if len(req.NewPassword) < 8 {
+		Error(w, http.StatusBadRequest, "new_password must be at least 8 characters")
+		return
+	}
+
+	if err := h.auth.ChangePassword(r.Context(), userID, req.OldPassword, req.NewPassword); err != nil {
+		if errors.Is(err, service.ErrInvalidCredentials) {
+			Error(w, http.StatusUnauthorized, "old password is incorrect")
+			return
+		}
+		if errors.Is(err, service.ErrUserNotFound) {
+			Error(w, http.StatusNotFound, "user not found")
+			return
+		}
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

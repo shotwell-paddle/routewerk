@@ -506,6 +506,8 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 
 			// ── User's own data (no org context needed) ─────────────
 			r.Get("/me", authHandler.Me)
+			r.Patch("/me", authHandler.UpdateMe)
+			r.Post("/me/password", authHandler.ChangePassword)
 			r.Get("/me/ascents", ascentHandler.MyAscents)
 			r.Get("/me/stats", ascentHandler.MyStats)
 			r.Get("/me/feed", followHandler.Feed)

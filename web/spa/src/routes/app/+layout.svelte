@@ -373,8 +373,12 @@
 
 <style>
   .app-shell {
-    display: grid;
-    grid-template-columns: 260px 1fr;
+    /* Sidebar is fixed-positioned (matches the HTMX shell at
+       web/static/css/routewerk.css), so the content region just gets a
+       left padding equal to the sidebar width. No grid → the sidebar
+       never participates in the document flow and never scrolls with
+       page content. */
+    padding-left: 260px;
     min-height: 100vh;
   }
 
@@ -397,6 +401,20 @@
     flex-direction: column;
     padding: 0;
     border-right: 1px solid rgba(255, 255, 255, 0.04);
+    /* Fixed to the viewport so the sidebar stays put while page
+       content scrolls. The .nav child doesn't scroll on its own
+       (overflow visible) — the whole sidebar is the height of the
+       viewport, and on the rare height overflow the sidebar itself
+       scrolls rather than each section scrolling internally. */
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 260px;
+    z-index: 100;
+    overflow-y: auto;
+    /* Hide the scrollbar in WebKit so it only appears on rare overflow. */
+    scrollbar-width: thin;
   }
 
   .brand {
@@ -542,8 +560,10 @@
 
   /* Nav */
   .nav {
+    /* No internal scrolling — the parent .sidebar is the only thing
+       that scrolls if the rare combination of many locations + every
+       view-as option + lots of nav items overflows the viewport. */
     flex: 1;
-    overflow-y: auto;
     padding: 8px 12px;
   }
   .nav-section {
@@ -696,11 +716,11 @@
 
   @media (max-width: 768px) {
     .app-shell {
-      grid-template-columns: 1fr;
+      /* Drop the sidebar gutter on narrow viewports — sidebar slides in
+         over the content via the hamburger toggle. */
+      padding-left: 0;
     }
     .sidebar {
-      position: fixed;
-      inset: 0 auto 0 0;
       width: 280px;
       transform: translateX(-100%);
       transition: transform 200ms ease;

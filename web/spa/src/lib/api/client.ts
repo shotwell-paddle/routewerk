@@ -763,6 +763,52 @@ export async function getMyStats(signal?: AbortSignal): Promise<MyStatsShape> {
   return request('/me/stats', { signal });
 }
 
+// ── Notifications ──────────────────────────────────────────
+
+export interface NotificationShape {
+  id: number;
+  user_id: string;
+  type: string;
+  title: string;
+  body: string;
+  link?: string | null;
+  read_at?: string | null;
+  created_at: string;
+}
+
+/** GET /api/v1/me/notifications — caller's unread notifications, newest first. */
+export async function listMyNotifications(
+  limit = 50,
+  signal?: AbortSignal,
+): Promise<NotificationShape[]> {
+  const res = await request<{ notifications: NotificationShape[] }>(
+    `/me/notifications?limit=${limit}`,
+    { signal },
+  );
+  return res.notifications ?? [];
+}
+
+/** GET /api/v1/me/notifications/unread-count — cheap badge poll. */
+export async function getUnreadNotificationCount(signal?: AbortSignal): Promise<number> {
+  const res = await request<{ count: number }>('/me/notifications/unread-count', { signal });
+  return res.count ?? 0;
+}
+
+/** POST /api/v1/me/notifications/{id}/read */
+export async function markNotificationRead(
+  id: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/me/notifications/${id}/read`, { method: 'POST', signal });
+}
+
+/** POST /api/v1/me/notifications/read-all */
+export async function markAllNotificationsRead(
+  signal?: AbortSignal,
+): Promise<{ marked: number }> {
+  return request('/me/notifications/read-all', { method: 'POST', signal });
+}
+
 // ── Team management (Phase 2.7) ────────────────────────────
 
 export type MembershipRole =

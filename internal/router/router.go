@@ -223,6 +223,10 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 		r.Handle("/spa-test/*", spa.FallbackHandler())
 		r.Handle("/comp", spa.FallbackHandler())
 		r.Handle("/comp/*", spa.FallbackHandler())
+		// SPA's magic-link sign-in lives at /sign-in (not /login —
+		// /login is taken by the HTMX password-auth page used by staff).
+		r.Handle("/sign-in", spa.FallbackHandler())
+		r.Handle("/sign-in/*", spa.FallbackHandler())
 	})
 
 	// Web pages — web-specific CSP, CSRF, rate limiting, gzip, query timeout.

@@ -31,7 +31,7 @@
     const a = authState();
     if (a.loaded && a.me === null) {
       goto(
-        `/login?next=${encodeURIComponent('/comp/' + slugOrId + '/p/' + label)}`,
+        `/sign-in?next=${encodeURIComponent('/comp/' + slugOrId + '/p/' + label)}`,
       );
     }
   });

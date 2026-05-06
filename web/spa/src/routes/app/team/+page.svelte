@@ -159,16 +159,25 @@
         {#each members as m (m.membership_id)}
           {@const targetRank = ROLE_RANK[m.role] ?? 0}
           {@const canActOnTarget = callerRank > targetRank || callerRank >= 5}
-          <li class="member">
+          {@const isSelf = authState().me?.user.id === m.user_id}
+          <li class="member" class:is-self={isSelf}>
             <div class="who">
               <div class="avatar-fallback">{m.display_name?.[0]?.toUpperCase() ?? '?'}</div>
               <div>
-                <div class="name">{m.display_name}</div>
+                <div class="name">
+                  {m.display_name}
+                  {#if isSelf}<span class="self-tag">you</span>{/if}
+                </div>
                 <div class="email muted">{m.email}</div>
               </div>
             </div>
             <div class="role-cell">
-              {#if canActOnTarget && ASSIGNABLE_ROLES.length > 0}
+              {#if isSelf}
+                <!-- Self-role display: never editable on this page. The
+                     server also blocks self-demotion. To change your own
+                     role, ask another manager or org admin. -->
+                <span class="role-pill role-{m.role}">{ROLE_LABEL[m.role]}</span>
+              {:else if canActOnTarget && ASSIGNABLE_ROLES.length > 0}
                 <select
                   value={m.role}
                   disabled={mutatingId === m.membership_id}

@@ -183,6 +183,12 @@ func (h *Handler) TeamPage(w http.ResponseWriter, r *http.Request) {
 }
 
 // TeamUpdateRole changes a member's role (POST /settings/team/{membershipID}/role).
+//
+// Self-demotion guard: a head setter cannot demote themselves below their
+// current rank. Without this, a head setter who picks "setter" on their own
+// row loses access to the team page entirely. (Reported real incident.)
+// Self-removal isn't a concern here because this endpoint only sets roles,
+// not deletes memberships.
 func (h *Handler) TeamUpdateRole(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	membershipID := chi.URLParam(r, "membershipID")
@@ -208,6 +214,19 @@ func (h *Handler) TeamUpdateRole(w http.ResponseWriter, r *http.Request) {
 	if !allowedRoles[newRole] {
 		h.renderError(w, r, http.StatusForbidden, "Not allowed", "You cannot assign that role.")
 		return
+	}
+
+	// Self-demotion guard.
+	target, err := h.userRepo.GetMembershipByID(ctx, membershipID)
+	if err == nil && target != nil {
+		user := middleware.GetWebUser(ctx)
+		if user != nil && target.UserID == user.ID {
+			if middleware.RoleRankValue(newRole) < middleware.RoleRankValue(target.Role) {
+				h.renderError(w, r, http.StatusForbidden, "Not allowed",
+					"You can't demote yourself — ask another manager to change your role.")
+				return
+			}
+		}
 	}
 
 	if err := h.userRepo.UpdateMemberRole(ctx, membershipID, newRole); err != nil {
@@ -298,6 +317,19 @@ func (h *Handler) OrgTeamUpdateRole(w http.ResponseWriter, r *http.Request) {
 	if !allowedRoles[newRole] {
 		h.renderError(w, r, http.StatusForbidden, "Not allowed", "You cannot assign that role.")
 		return
+	}
+
+	// Self-demotion guard — see TeamUpdateRole above for context.
+	target, err := h.userRepo.GetMembershipByID(ctx, membershipID)
+	if err == nil && target != nil {
+		user := middleware.GetWebUser(ctx)
+		if user != nil && target.UserID == user.ID {
+			if middleware.RoleRankValue(newRole) < middleware.RoleRankValue(target.Role) {
+				h.renderError(w, r, http.StatusForbidden, "Not allowed",
+					"You can't demote yourself — ask another organization admin to change your role.")
+				return
+			}
+		}
 	}
 
 	if err := h.userRepo.UpdateMemberRole(ctx, membershipID, newRole); err != nil {

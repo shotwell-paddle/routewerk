@@ -89,8 +89,20 @@ type updateMembershipRequest struct {
 // admins); we additionally enforce here that head_setter is the highest
 // role a head_setter can assign — gym_manager and above can assign anything
 // up to gym_manager.
+//
+// Self-demotion guard: the caller cannot lower their own role. A head
+// setter who accidentally set themselves to setter would lose access to
+// the team page entirely, with no way to bounce back without a peer.
+// (Reported real incident: a head_setter clicked the role dropdown on
+// their own row, picked setter, and locked themselves out.)
 func (h *TeamHandler) UpdateMembership(w http.ResponseWriter, r *http.Request) {
 	membershipID := chi.URLParam(r, "membershipID")
+	target, err := h.users.GetMembershipByID(r.Context(), membershipID)
+	if err != nil || target == nil {
+		Error(w, http.StatusNotFound, "membership not found")
+		return
+	}
+	callerID := middleware.GetUserID(r.Context())
 	callerRole := callerRoleForMembership(r, h.users, membershipID)
 
 	var req updateMembershipRequest
@@ -103,6 +115,20 @@ func (h *TeamHandler) UpdateMembership(w http.ResponseWriter, r *http.Request) {
 	if !allowed[req.Role] {
 		Error(w, http.StatusForbidden, "you cannot assign that role")
 		return
+	}
+
+	// Self-demotion guard: forbid the caller from setting their own
+	// membership to a lower rank than they currently have. Lateral or
+	// upward moves on yourself are still blocked by allowedRolesForGrantor
+	// when the role isn't in your assignable set.
+	if target.UserID == callerID {
+		newRank := middleware.RoleRankValue(req.Role)
+		curRank := middleware.RoleRankValue(target.Role)
+		if newRank < curRank {
+			Error(w, http.StatusForbidden,
+				"you cannot demote yourself — ask another manager to change your role")
+			return
+		}
 	}
 
 	if err := h.users.UpdateMemberRole(r.Context(), membershipID, req.Role); err != nil {
@@ -120,11 +146,25 @@ func (h *TeamHandler) UpdateMembership(w http.ResponseWriter, r *http.Request) {
 
 // RemoveMembership — DELETE /memberships/{membershipID}. Soft-deletes the
 // membership. Same role gating as UpdateMembership.
+//
+// Self-removal is forbidden for the same reason as self-demotion: nobody
+// should be able to delete the only membership row that lets them manage
+// the team.
 func (h *TeamHandler) RemoveMembership(w http.ResponseWriter, r *http.Request) {
 	membershipID := chi.URLParam(r, "membershipID")
+	target, err := h.users.GetMembershipByID(r.Context(), membershipID)
+	if err != nil || target == nil {
+		Error(w, http.StatusNotFound, "membership not found")
+		return
+	}
+	callerID := middleware.GetUserID(r.Context())
 	callerRole := callerRoleForMembership(r, h.users, membershipID)
 	if middleware.RoleRankValue(callerRole) < 4 {
 		Error(w, http.StatusForbidden, "gym_manager or above required")
+		return
+	}
+	if target.UserID == callerID {
+		Error(w, http.StatusForbidden, "you cannot remove your own membership")
 		return
 	}
 

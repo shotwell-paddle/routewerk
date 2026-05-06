@@ -187,7 +187,10 @@
     <section class="card">
       <h2>Quests ({quests.length})</h2>
       {#if quests.length === 0}
-        <p class="muted">No quests yet. Build the domains + badges below first, then create quests in the existing HTMX editor at <a class="link" href="/settings/progressions/quests/new">/settings/progressions/quests/new</a>.</p>
+        <p class="muted">
+          No quests yet. Build the domains + badges below first, then
+          <a class="link" href="/app/settings/progressions/quests/new">create your first quest</a>.
+        </p>
       {:else}
         <ul class="list">
           {#each quests as q (q.id)}
@@ -199,7 +202,7 @@
                   {#if q.domain}<span class="pill" style="background:{q.domain.color ?? '#cbd5e1'}; color:#fff">{q.domain.name}</span>{/if}
                 </div>
                 <div class="actions">
-                  <a class="link" href="/settings/progressions/quests/{q.id}/edit">Edit</a>
+                  <a class="link" href="/app/settings/progressions/quests/{q.id}/edit">Edit</a>
                   <button onclick={() => duplicate(q)} disabled={mutating === q.id}>Duplicate</button>
                   {#if q.is_active}
                     <button class="danger" onclick={() => deactivate(q)} disabled={mutating === q.id}>Deactivate</button>
@@ -215,9 +218,8 @@
           {/each}
         </ul>
       {/if}
-      <p class="hint muted small">
-        Create + edit quests via the existing HTMX editor for now (the SPA list is read-only).
-        <a class="link" href="/settings/progressions/quests/new">+ Create quest</a>
+      <p class="hint">
+        <a class="link" href="/app/settings/progressions/quests/new">+ Create quest</a>
       </p>
     </section>
 

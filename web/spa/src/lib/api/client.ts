@@ -562,6 +562,14 @@ export interface TagShape {
   name: string;
 }
 
+/** GET /api/v1/orgs/{orgId}/tags — any org member. */
+export async function listOrgTags(
+  orgId: string,
+  signal?: AbortSignal,
+): Promise<TagShape[]> {
+  return request(`/orgs/${orgId}/tags`, { signal });
+}
+
 export interface RouteListResponse {
   routes: RouteShape[];
   total: number;

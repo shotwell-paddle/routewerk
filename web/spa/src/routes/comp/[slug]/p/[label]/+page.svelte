@@ -186,7 +186,7 @@
   }
   .back {
     display: inline-block;
-    color: #f97316;
+    color: var(--rw-accent);
     text-decoration: none;
     margin-bottom: 0.75rem;
     font-weight: 600;
@@ -251,8 +251,8 @@
     font-weight: 600;
   }
   .badge.active {
-    background: #f97316;
-    border-color: #f97316;
+    background: var(--rw-accent);
+    border-color: var(--rw-accent);
     color: #fff;
   }
   .actions {

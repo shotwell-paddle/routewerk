@@ -190,7 +190,7 @@
     text-transform: capitalize;
   }
   .leaderboard-link a {
-    color: #f97316;
+    color: var(--rw-accent);
     text-decoration: none;
     font-weight: 600;
   }
@@ -219,7 +219,7 @@
   .register-card button {
     width: 100%;
     padding: 0.7rem;
-    background: #f97316;
+    background: var(--rw-accent);
     color: #fff;
     border: 0;
     border-radius: 8px;

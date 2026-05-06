@@ -313,7 +313,7 @@
   }
   .back {
     display: inline-block;
-    color: #f97316;
+    color: var(--rw-accent);
     text-decoration: none;
     margin-bottom: 0.75rem;
     font-weight: 600;
@@ -449,9 +449,9 @@
     cursor: not-allowed;
   }
   button.primary {
-    background: #f97316;
+    background: var(--rw-accent);
     color: #fff;
-    border-color: #f97316;
+    border-color: var(--rw-accent);
     font-weight: 600;
   }
   button.danger {
@@ -465,7 +465,7 @@
     background: #fef2f2;
   }
   .link {
-    color: #f97316;
+    color: var(--rw-accent);
     text-decoration: none;
     font-size: 0.85rem;
     font-weight: 600;

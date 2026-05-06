@@ -128,7 +128,7 @@
   }
   .back {
     display: inline-block;
-    color: #f97316;
+    color: var(--rw-accent);
     text-decoration: none;
     margin-bottom: 0.75rem;
     font-weight: 600;
@@ -243,6 +243,6 @@
     border-radius: 8px;
   }
   a {
-    color: #f97316;
+    color: var(--rw-accent);
   }
 </style>

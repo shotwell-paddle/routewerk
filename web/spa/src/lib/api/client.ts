@@ -362,6 +362,14 @@ export async function listRegistrationAttempts(
   return request(`/registrations/${registrationId}/attempts`, { signal });
 }
 
+/** DELETE /registrations/{id} — soft withdraw (frees the bib). */
+export async function withdrawRegistration(
+  registrationId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/registrations/${registrationId}`, { method: 'DELETE', signal });
+}
+
 /**
  * POST /competitions/{id}/actions — submit one or more attempt actions.
  * Used by the climber scorecard's action queue with idempotency keys

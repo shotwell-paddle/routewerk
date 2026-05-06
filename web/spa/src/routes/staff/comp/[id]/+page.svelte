@@ -351,6 +351,7 @@
       </p>
       <p class="quick-links">
         <a href={`/staff/comp/${comp.id}/problems`}>Problems editor →</a>
+        <a href={`/staff/comp/${comp.id}/registrations`}>Registrations →</a>
         <a href={`/comp/${comp.id}`}>Climber view →</a>
         <a href={`/comp/${comp.id}/leaderboard`}>Leaderboard →</a>
       </p>

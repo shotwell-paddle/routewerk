@@ -154,6 +154,17 @@
     </section>
   {/if}
 
+  {#if roleRankAt(effectiveLocationId()) >= 3}
+    <section class="card cta-card">
+      <h2>Setter playbook</h2>
+      <p class="muted">
+        Default checklist applied to every new session. Reorder, rename,
+        and prune steps so the team has a consistent shop-day cadence.
+      </p>
+      <a class="primary-link" href="/app/settings/playbook">Edit playbook →</a>
+    </section>
+  {/if}
+
   {#if roleRankAt(effectiveLocationId()) >= 5}
     <section class="card cta-card">
       <h2>Organization</h2>

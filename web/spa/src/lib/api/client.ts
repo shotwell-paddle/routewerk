@@ -1756,6 +1756,28 @@ export async function listBadges(
   return request(`/locations/${locationId}/admin/badges`, { signal });
 }
 
+export interface BadgeShowcaseEntry {
+  id: string;
+  name: string;
+  description?: string | null;
+  icon: string;
+  color: string;
+  /** ISO timestamp when the caller earned the badge; absent when unearned. */
+  earned_at?: string;
+}
+
+/**
+ * GET /api/v1/locations/{id}/badges/showcase — climber-facing view.
+ * Returns the location's catalog with `earned_at` populated for each
+ * badge the caller has earned; unearned badges have no earned_at.
+ */
+export async function getBadgeShowcase(
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<BadgeShowcaseEntry[]> {
+  return request(`/locations/${locationId}/badges/showcase`, { signal });
+}
+
 /** POST /api/v1/locations/{id}/admin/badges. */
 export async function createBadge(
   locationId: string,

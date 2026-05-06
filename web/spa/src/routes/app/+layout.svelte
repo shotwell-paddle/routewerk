@@ -156,6 +156,7 @@
       group: 'main',
       visible: () => progressionsEnabled,
     },
+    { label: 'Archive', href: '/app/archive', minRoleRank: 0, group: 'main' },
     { label: 'Notifications', href: '/app/notifications', minRoleRank: 1, group: 'main' },
     { label: 'Profile', href: '/app/profile', minRoleRank: 1, group: 'main' },
     // Staff. Settings = head_setter+ (matches HTMX gym settings policy

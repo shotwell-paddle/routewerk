@@ -136,5 +136,5 @@ func (h *Handler) JoinGymSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Redirect to dashboard — now they have a location
-	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

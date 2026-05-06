@@ -248,9 +248,19 @@ export interface WallWriteShape {
   map_height?: number | null;
 }
 
-/** GET /locations/{locationId}/walls — non-archived walls, ascending sort. */
-export async function listWalls(locationId: string, signal?: AbortSignal): Promise<WallShape[]> {
-  return request(`/locations/${locationId}/walls`, { signal });
+/**
+ * GET /locations/{locationId}/walls — ascending by sort_order. By default
+ * returns only non-archived walls (matches climber-side expectations).
+ * Pass `includeArchived: true` to also see archived walls (staff manage
+ * page).
+ */
+export async function listWalls(
+  locationId: string,
+  opts: { includeArchived?: boolean } = {},
+  signal?: AbortSignal,
+): Promise<WallShape[]> {
+  const qs = opts.includeArchived ? '?include_archived=true' : '';
+  return request(`/locations/${locationId}/walls${qs}`, { signal });
 }
 
 /** GET /locations/{locationId}/walls/{wallId} */
@@ -288,6 +298,30 @@ export async function deleteWall(
   signal?: AbortSignal,
 ): Promise<void> {
   return request(`/locations/${locationId}/walls/${wallId}`, { method: 'DELETE', signal });
+}
+
+/** POST /locations/{locationId}/walls/{wallId}/archive — head_setter+. */
+export async function archiveWall(
+  locationId: string,
+  wallId: string,
+  signal?: AbortSignal,
+): Promise<WallShape> {
+  return request(`/locations/${locationId}/walls/${wallId}/archive`, {
+    method: 'POST',
+    signal,
+  });
+}
+
+/** POST /locations/{locationId}/walls/{wallId}/unarchive — head_setter+. */
+export async function unarchiveWall(
+  locationId: string,
+  wallId: string,
+  signal?: AbortSignal,
+): Promise<WallShape> {
+  return request(`/locations/${locationId}/walls/${wallId}/unarchive`, {
+    method: 'POST',
+    signal,
+  });
 }
 
 // ── Routes (Phase 2.3) ────────────────────────────────────

@@ -362,7 +362,10 @@
         </p>
       </div>
       {#if !editing && canManage}
-        <button onclick={() => (editing = true)}>Edit</button>
+        <div class="header-actions">
+          <a class="ghost-link" href="/app/sessions/{session.id}/photos">Photos →</a>
+          <button onclick={() => (editing = true)}>Edit</button>
+        </div>
       {/if}
     </header>
 
@@ -612,6 +615,24 @@
     justify-content: space-between;
     gap: 1rem;
     margin-bottom: 1.5rem;
+  }
+  .header-actions {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .ghost-link {
+    color: var(--rw-text);
+    text-decoration: none;
+    border: 1px solid var(--rw-border-strong);
+    padding: 0.4rem 0.85rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .ghost-link:hover {
+    border-color: var(--rw-accent);
+    color: var(--rw-accent);
   }
   h1 {
     font-size: 1.5rem;

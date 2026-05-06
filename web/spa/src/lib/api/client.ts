@@ -25,6 +25,9 @@ export type CompetitionCategory = Schemas['CompetitionCategory'];
 export type CompetitionProblem = Schemas['CompetitionProblem'];
 export type CompetitionRegistration = Schemas['CompetitionRegistration'];
 export type RegistrationCreate = Schemas['RegistrationCreate'];
+export type EventCreate = Schemas['EventCreate'];
+export type EventUpdate = Schemas['EventUpdate'];
+export type CategoryCreate = Schemas['CategoryCreate'];
 export type Aggregation = Schemas['Aggregation'];
 export type MagicLinkRequest = Schemas['MagicLinkRequest'];
 export type ApiError = Schemas['Error'];
@@ -245,6 +248,41 @@ export async function getCompetitionBySlug(
   signal?: AbortSignal,
 ): Promise<Competition> {
   return request(`/competitions/by-slug/${encodeURIComponent(slug)}`, { signal });
+}
+
+/** POST /competitions/{id}/events */
+export async function createEvent(
+  competitionId: string,
+  body: EventCreate,
+  signal?: AbortSignal,
+): Promise<CompetitionEvent> {
+  return request(`/competitions/${competitionId}/events`, {
+    method: 'POST',
+    body,
+    signal,
+  });
+}
+
+/** PATCH /events/{id} */
+export async function updateEvent(
+  eventId: string,
+  body: EventUpdate,
+  signal?: AbortSignal,
+): Promise<CompetitionEvent> {
+  return request(`/events/${eventId}`, { method: 'PATCH', body, signal });
+}
+
+/** POST /competitions/{id}/categories */
+export async function createCategory(
+  competitionId: string,
+  body: CategoryCreate,
+  signal?: AbortSignal,
+): Promise<CompetitionCategory> {
+  return request(`/competitions/${competitionId}/categories`, {
+    method: 'POST',
+    body,
+    signal,
+  });
 }
 
 /** GET /competitions/{id}/events */

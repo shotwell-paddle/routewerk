@@ -16,28 +16,28 @@
 
 <style>
   :global(:root) {
-    /* Neutrals — cool, near-neutral grays */
-    --rw-bg:           #f6f7f9;
+    /* Neutrals — warm, matching the HTMX shell at web/static/css/routewerk.css. */
+    --rw-bg:           #f7f7f5;
     --rw-surface:      #ffffff;
-    --rw-surface-alt:  #eef0f3;
-    --rw-border:       #e3e6ec;
-    --rw-border-strong:#cdd2da;
-    --rw-text:         #0f1422;
-    --rw-text-muted:   #4b5567;
-    --rw-text-faint:   #7a8497;
+    --rw-surface-alt:  #efeeeb;
+    --rw-border:       #e8e6e1;
+    --rw-border-strong:#d4d1c9;
+    --rw-text:         #1c1b18;
+    --rw-text-muted:   #5b5751;
+    --rw-text-faint:   #9b9590;
 
-    /* Accent — electric lime */
-    --rw-accent:       #c6f23c;
-    --rw-accent-hover: #b3e02a;
-    --rw-accent-ink:   #0f1422;
+    /* Accent — Strava-orange nod from the HTMX brand. */
+    --rw-accent:       #fc5200;
+    --rw-accent-hover: #e04800;
+    --rw-accent-ink:   #ffffff;
 
     /* Semantic */
     --rw-success:      #16a34a;
     --rw-warning:      #f59e0b;
     --rw-danger:       #ef4444;
-    --rw-info:         #3b82f6;
+    --rw-info:         #1565c0;
 
-    --rw-focus-ring:   rgba(198, 242, 60, 0.55);
+    --rw-focus-ring:   rgba(252, 82, 0, 0.45);
   }
 
   :global(body) {

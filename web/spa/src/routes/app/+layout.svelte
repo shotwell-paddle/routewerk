@@ -188,9 +188,12 @@
 
     {#if me}
       <div class="user-card">
-        <div class="user-name">{me.display_name}</div>
-        <div class="user-email">{me.email}</div>
-        <a class="signout-link" href="/logout">Sign out</a>
+        <div class="user-avatar">{me.display_name?.[0]?.toUpperCase() ?? '?'}</div>
+        <div class="user-info">
+          <div class="user-name">{me.display_name}</div>
+          <div class="user-email">{me.email}</div>
+        </div>
+        <a class="signout-link" href="/logout" title="Sign out">Sign out</a>
       </div>
     {/if}
   </aside>
@@ -232,123 +235,130 @@
   }
 
   /* ── Sidebar ──────────────────────────────────────────── */
+  /* Mirrors the HTMX shell at web/static/css/routewerk.css so the
+     SPA feels like one app with the HTMX surfaces, not a separate
+     visual tier. Warm-black gradient, uppercase letter-spaced brand,
+     orange accent. */
   .sidebar {
-    --sidebar-bg:          #0e1320;
-    --sidebar-bg-elevated: #161c2c;
-    --sidebar-border:      #1f2740;
-    --sidebar-text:        #e7ebf3;
-    --sidebar-text-muted:  #98a1b8;
-    --sidebar-text-faint:  #5e667c;
-    --sidebar-active-bg:   rgba(198, 242, 60, 0.12);
-    --sidebar-active-bar:  var(--rw-accent);
-    --sidebar-active-text: #ffffff;
+    --sidebar-text:        #ffffff;
+    --sidebar-text-muted:  rgba(255, 255, 255, 0.55);
+    --sidebar-text-faint:  rgba(255, 255, 255, 0.3);
+    --sidebar-bg-elevated: rgba(255, 255, 255, 0.04);
+    --sidebar-border:      rgba(255, 255, 255, 0.06);
+    --sidebar-active-bg:   rgba(255, 255, 255, 0.07);
 
-    background: var(--sidebar-bg);
+    background: linear-gradient(180deg, #161514 0%, #0e0d0c 100%);
     color: var(--sidebar-text);
     display: flex;
     flex-direction: column;
-    padding: 1rem 0.75rem;
-    border-right: 1px solid var(--sidebar-border);
+    padding: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.04);
   }
 
   .brand {
-    padding: 0.25rem 0.5rem 1rem;
+    padding: 32px 24px 16px;
+    border-bottom: 1px solid var(--sidebar-border);
   }
   .brand-link {
     display: inline-flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: 0.55rem;
     text-decoration: none;
     color: var(--sidebar-text);
-    font-weight: 700;
   }
   .brand-mark {
-    width: 30px;
-    height: 30px;
-    border-radius: 8px;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
     background: var(--rw-accent);
     color: var(--rw-accent-ink);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.8rem;
+    font-size: 0.65rem;
     font-weight: 800;
     letter-spacing: 0.5px;
   }
   .brand-name {
-    font-size: 1.05rem;
-    letter-spacing: 0.2px;
+    font-size: 0.875rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    line-height: 1;
   }
 
   /* Location picker */
   .loc-picker {
     background: var(--sidebar-bg-elevated);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    padding: 0.6rem 0.7rem;
-    margin: 0.5rem 0.25rem 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 6px;
+    padding: 0.5rem 0.65rem;
+    margin: 12px 16px 14px;
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: 0.3rem;
   }
   .loc-label {
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.08em;
     color: var(--sidebar-text-faint);
   }
   .loc-picker select {
     background: transparent;
     color: var(--sidebar-text);
     border: none;
-    font-size: 0.95rem;
+    font-size: 0.85rem;
     padding: 0;
     appearance: none;
     cursor: pointer;
-    font-weight: 600;
+    font-weight: 500;
   }
   .loc-picker select:focus-visible {
     outline: none;
   }
+  .loc-picker select option {
+    color: #1c1b18;
+  }
   .role-pill {
     display: inline-block;
     align-self: flex-start;
-    background: rgba(198, 242, 60, 0.18);
+    background: rgba(252, 82, 0, 0.18);
     color: var(--rw-accent);
     padding: 1px 8px;
     border-radius: 4px;
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.06em;
   }
 
   /* Nav */
   .nav {
     flex: 1;
     overflow-y: auto;
-    padding: 0 0.25rem;
+    padding: 8px 12px;
   }
   .nav-section {
-    margin-bottom: 1.25rem;
+    margin-bottom: 16px;
   }
   .nav-section-label {
     display: block;
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
     color: var(--sidebar-text-faint);
-    padding: 0 0.6rem 0.4rem;
+    padding: 6px 12px 8px;
   }
   .nav-link {
     display: block;
-    padding: 0.5rem 0.75rem;
-    border-radius: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
     color: var(--sidebar-text-muted);
     text-decoration: none;
-    font-size: 0.92rem;
+    font-size: 0.875rem;
     font-weight: 500;
     position: relative;
     transition: background 120ms, color 120ms;
@@ -359,43 +369,71 @@
   }
   .nav-link.active {
     background: var(--sidebar-active-bg);
-    color: var(--sidebar-active-text);
-    font-weight: 600;
+    color: var(--sidebar-text);
   }
   .nav-link.active::before {
     content: '';
     position: absolute;
-    left: -0.75rem;
+    left: -12px;
     top: 8px;
     bottom: 8px;
     width: 3px;
-    border-radius: 0 3px 3px 0;
-    background: var(--sidebar-active-bar);
+    border-radius: 0 2px 2px 0;
+    background: var(--rw-accent);
   }
 
-  /* User card at bottom */
+  /* User card at bottom — mirrors HTMX's .sidebar-footer / .user-pill. */
   .user-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     border-top: 1px solid var(--sidebar-border);
-    padding: 0.85rem 0.6rem 0.25rem;
-    margin-top: 0.5rem;
+    padding: 14px 16px;
+    margin-top: 0;
+  }
+  .user-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--rw-accent);
+    color: var(--rw-accent-ink);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+  }
+  .user-card .user-info {
+    flex: 1;
+    min-width: 0;
   }
   .user-name {
     color: var(--sidebar-text);
     font-weight: 600;
-    font-size: 0.92rem;
+    font-size: 0.85rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .user-email {
-    color: var(--sidebar-text-muted);
-    font-size: 0.78rem;
-    margin-bottom: 0.5rem;
+    color: var(--sidebar-text-faint);
+    font-size: 0.7rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .signout-link {
-    color: var(--sidebar-text-faint);
-    font-size: 0.8rem;
+    color: var(--sidebar-text-muted);
+    font-size: 0.75rem;
     text-decoration: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
   }
   .signout-link:hover {
-    color: var(--rw-accent);
+    color: var(--sidebar-text);
+    border-color: rgba(255, 255, 255, 0.2);
   }
 
   /* ── Content region ──────────────────────────────────── */

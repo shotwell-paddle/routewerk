@@ -3,17 +3,19 @@
   import { goto } from '$app/navigation';
   import {
     listCompetitions,
-    getLocation,
+    listOrgLocations,
     type Competition,
     type LocationShape,
     ApiClientError,
   } from '$lib/api/client';
   import { authState, isAuthenticated, currentUser } from '$lib/stores/auth.svelte';
+  import { effectiveRoleAt, roleRankAt } from '$lib/stores/auth.svelte';
 
-  // A "staff location" = a location the user can manage comps at.
-  // Server enforces head_setter+ for create; we filter the same way
-  // client-side so the UI only shows locations they can act on.
-  const STAFF_ROLES = new Set(['head_setter', 'gym_manager', 'org_admin']);
+  // A "staff location" = a location the user can manage comps at, i.e. their
+  // effective role there is head_setter+ (rank 3+). We resolve the effective
+  // role via the shared helper so org-wide memberships (location_id null)
+  // and is_app_admin both promote correctly — without that, an org_admin
+  // whose row has no location_id sees "you don't have head_setter anywhere".
 
   interface Section {
     location: LocationShape;
@@ -43,23 +45,66 @@
       const me = a.me;
       if (!me) return;
 
-      // Pick memberships at head_setter+ that have a location_id.
-      const staffLocations = me.memberships
-        .filter((m) => STAFF_ROLES.has(m.role) && m.location_id)
-        .map((m) => ({ location_id: m.location_id as string, role: m.role }));
+      // Build the candidate location set. Location-scoped memberships
+      // contribute their own location_id; org-wide memberships need an
+      // extra fetch to enumerate the org's locations (so an org_admin
+      // sees every gym in their org, not just an empty list).
+      const locationIds = new Set<string>();
+      const orgIdsForOrgWide = new Set<string>();
+      for (const m of me.memberships) {
+        if (m.location_id) {
+          locationIds.add(m.location_id);
+        } else {
+          orgIdsForOrgWide.add(m.org_id);
+        }
+      }
+      // is_app_admin: list every org the user touches via memberships and
+      // pull every location. We don't have a global "list all orgs"
+      // endpoint, so this only sees orgs the user has any membership in
+      // — which is correct for a "manage *your* gyms" UX even at app-admin
+      // level.
+      if (me.user.is_app_admin) {
+        for (const m of me.memberships) orgIdsForOrgWide.add(m.org_id);
+      }
+      const orgLocLists = await Promise.all(
+        Array.from(orgIdsForOrgWide).map((orgId) =>
+          listOrgLocations(orgId).catch(() => [] as LocationShape[]),
+        ),
+      );
+      for (const list of orgLocLists) {
+        for (const loc of list) locationIds.add(loc.id);
+      }
+
+      // Filter to locations where the caller is head_setter+ (rank 3+).
+      const staffIds = Array.from(locationIds).filter((id) => roleRankAt(id) >= 3);
 
       // Load location metadata + comps in parallel per location.
       const built = await Promise.all(
-        staffLocations.map(async (m) => {
-          const [loc, comps] = await Promise.all([
-            getLocation(m.location_id),
-            listCompetitions(m.location_id).catch(() => []),
-          ]);
+        staffIds.map(async (id) => {
+          const role = effectiveRoleAt(id) ?? '';
+          // Reuse the org list responses where possible; if the location
+          // came from a location-scoped membership we don't have its row
+          // cached, so resolve via getLocation.
+          let loc: LocationShape | null = null;
+          for (const list of orgLocLists) {
+            const found = list.find((l) => l.id === id);
+            if (found) {
+              loc = found;
+              break;
+            }
+          }
+          if (!loc) {
+            const { getLocation } = await import('$lib/api/client');
+            loc = await getLocation(id);
+          }
           if (!loc) return null;
-          return { location: loc, role: m.role, comps } satisfies Section;
+          const comps = await listCompetitions(id).catch(() => []);
+          return { location: loc, role, comps } satisfies Section;
         }),
       );
-      sections = built.filter((s): s is Section => s !== null);
+      sections = built
+        .filter((s): s is Section => s !== null)
+        .sort((a, b) => a.location.name.localeCompare(b.location.name));
     } catch (err) {
       error = err instanceof ApiClientError ? err.message : 'Could not load competitions.';
     } finally {

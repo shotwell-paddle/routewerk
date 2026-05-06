@@ -4,14 +4,14 @@
   import {
     createCompetition,
     getLocation,
+    listOrgLocations,
     type CompetitionCreate,
     type CompetitionFormat,
     type LocationShape,
     ApiClientError,
   } from '$lib/api/client';
-  import { authState, isAuthenticated } from '$lib/stores/auth.svelte';
+  import { authState, isAuthenticated, roleRankAt } from '$lib/stores/auth.svelte';
 
-  const STAFF_ROLES = new Set(['head_setter', 'gym_manager', 'org_admin']);
   const SCORERS = ['top_zone', 'fixed', 'decay'] as const;
 
   interface LocationOption {
@@ -52,15 +52,39 @@
     try {
       const me = authState().me;
       if (!me) return;
-      const staffMembers = me.memberships.filter(
-        (m) => STAFF_ROLES.has(m.role) && m.location_id,
+
+      // Build candidate locations: location-scoped memberships + every
+      // location in any org where the user has an org-wide membership
+      // (or app-admin). Mirrors the discovery in /staff/comp/+page.svelte.
+      const candidates = new Map<string, LocationShape>();
+      const orgIds = new Set<string>();
+      for (const m of me.memberships) {
+        if (m.location_id) {
+          // Resolve metadata for location-scoped memberships.
+          const loc = await getLocation(m.location_id);
+          if (loc) candidates.set(loc.id, loc);
+        } else {
+          orgIds.add(m.org_id);
+        }
+      }
+      if (me.user.is_app_admin) {
+        for (const m of me.memberships) orgIds.add(m.org_id);
+      }
+      const orgLocLists = await Promise.all(
+        Array.from(orgIds).map((orgId) =>
+          listOrgLocations(orgId).catch(() => [] as LocationShape[]),
+        ),
       );
-      const locs = await Promise.all(
-        staffMembers.map((m) => getLocation(m.location_id as string)),
-      );
-      locations = locs
-        .filter((l): l is LocationShape => l !== null)
-        .map((l) => ({ id: l.id, name: l.name }));
+      for (const list of orgLocLists) {
+        for (const loc of list) candidates.set(loc.id, loc);
+      }
+
+      // Filter to head_setter+ — server enforces; UI just hides what
+      // wouldn't work anyway.
+      locations = Array.from(candidates.values())
+        .filter((l) => roleRankAt(l.id) >= 3)
+        .map((l) => ({ id: l.id, name: l.name }))
+        .sort((a, b) => a.name.localeCompare(b.name));
       if (locations.length > 0) {
         locationId = locations[0].id;
       }

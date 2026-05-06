@@ -158,7 +158,7 @@
   .btn {
     display: inline-block;
     padding: 0.6rem 1rem;
-    background: #f97316;
+    background: var(--rw-accent);
     color: #fff;
     border-radius: 8px;
     text-decoration: none;
@@ -187,7 +187,7 @@
     color: inherit;
   }
   .comp-row:hover {
-    border-color: #f97316;
+    border-color: var(--rw-accent);
   }
   .comp-name {
     font-weight: 600;
@@ -238,6 +238,6 @@
     border-radius: 8px;
   }
   a {
-    color: #f97316;
+    color: var(--rw-accent);
   }
 </style>

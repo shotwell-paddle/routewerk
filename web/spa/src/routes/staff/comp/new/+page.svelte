@@ -288,9 +288,9 @@
   }
   input:focus,
   select:focus {
-    outline: 2px solid #f97316;
+    outline: 2px solid var(--rw-accent);
     outline-offset: -1px;
-    border-color: #f97316;
+    border-color: var(--rw-accent);
   }
   .hint {
     font-size: 0.85rem;
@@ -307,7 +307,7 @@
   }
   button[type='submit'] {
     padding: 0.85rem 1rem;
-    background: #f97316;
+    background: var(--rw-accent);
     color: #fff;
     border: 0;
     border-radius: 8px;
@@ -337,6 +337,6 @@
     font-size: 0.9em;
   }
   a {
-    color: #f97316;
+    color: var(--rw-accent);
   }
 </style>

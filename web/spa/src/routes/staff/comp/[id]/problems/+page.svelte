@@ -379,7 +379,7 @@
   }
   .back {
     display: inline-block;
-    color: #f97316;
+    color: var(--rw-accent);
     text-decoration: none;
     margin-bottom: 0.75rem;
     font-weight: 600;
@@ -536,14 +536,14 @@
     cursor: not-allowed;
   }
   button.primary {
-    background: #f97316;
+    background: var(--rw-accent);
     color: #fff;
-    border-color: #f97316;
+    border-color: var(--rw-accent);
     font-weight: 600;
   }
   button.add {
-    border-color: #f97316;
-    color: #f97316;
+    border-color: var(--rw-accent);
+    color: var(--rw-accent);
     font-weight: 600;
     font-size: 0.85rem;
     padding: 0.3rem 0.65rem;
@@ -556,7 +556,7 @@
   button.link {
     border: none;
     background: transparent;
-    color: #f97316;
+    color: var(--rw-accent);
     padding: 0.2rem 0.4rem;
     font-weight: 600;
     font-size: 0.85rem;

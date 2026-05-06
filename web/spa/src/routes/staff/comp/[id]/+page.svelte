@@ -630,7 +630,7 @@
     font-weight: 600;
   }
   .quick-links a {
-    color: #f97316;
+    color: var(--rw-accent);
     text-decoration: none;
   }
   .quick-links a:hover {
@@ -679,7 +679,7 @@
   .btn-link {
     background: none;
     border: 0;
-    color: #f97316;
+    color: var(--rw-accent);
     font-weight: 600;
     cursor: pointer;
     font-size: 0.9rem;
@@ -748,7 +748,7 @@
     border-radius: 8px;
   }
   a {
-    color: #f97316;
+    color: var(--rw-accent);
   }
   .field {
     margin-bottom: 0.75rem;
@@ -781,7 +781,7 @@
   }
   .form-actions .btn-primary {
     padding: 0.55rem 1rem;
-    background: #f97316;
+    background: var(--rw-accent);
     color: #fff;
     border: 0;
     border-radius: 6px;

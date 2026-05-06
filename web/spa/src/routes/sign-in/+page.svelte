@@ -96,12 +96,13 @@
     display: grid;
     place-items: center;
     padding: 1rem;
-    background: #f8fafc;
+    background: var(--rw-bg);
   }
   .card {
-    background: #fff;
+    background: var(--rw-surface);
+    border: 1px solid var(--rw-border);
     border-radius: 12px;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+    box-shadow: 0 1px 3px rgba(15, 20, 34, 0.06);
     padding: 2rem;
     width: 100%;
     max-width: 380px;
@@ -109,9 +110,11 @@
   h1 {
     margin: 0 0 0.5rem;
     font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
   }
   .hint {
-    color: #475569;
+    color: var(--rw-text-muted);
     font-size: 0.95rem;
     margin: 0 0 1.5rem;
   }
@@ -119,42 +122,47 @@
     display: block;
     font-size: 0.85rem;
     font-weight: 600;
-    color: #334155;
+    color: var(--rw-text-muted);
     margin-bottom: 0.4rem;
   }
   input[type='email'] {
     width: 100%;
     padding: 0.7rem 0.85rem;
-    border: 1px solid #cbd5e1;
+    border: 1px solid var(--rw-border-strong);
     border-radius: 8px;
     font-size: 1rem;
     box-sizing: border-box;
+    background: var(--rw-surface);
+    color: var(--rw-text);
   }
   input[type='email']:focus {
-    outline: 2px solid #f97316;
-    outline-offset: -1px;
-    border-color: #f97316;
+    outline: none;
+    border-color: var(--rw-accent);
   }
   button[type='submit'] {
     margin-top: 1rem;
     width: 100%;
     padding: 0.8rem 1rem;
-    background: #f97316;
-    color: #fff;
-    border: 0;
+    background: var(--rw-accent);
+    color: var(--rw-accent-ink);
+    border: 1px solid var(--rw-accent);
     border-radius: 8px;
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
   }
+  button[type='submit']:hover:not(:disabled) {
+    background: var(--rw-accent-hover);
+    border-color: var(--rw-accent-hover);
+  }
   button[type='submit']:disabled {
-    background: #fbbf24;
+    opacity: 0.5;
     cursor: not-allowed;
   }
   .success {
     color: #166534;
-    background: #f0fdf4;
-    border: 1px solid #bbf7d0;
+    background: rgba(22, 163, 74, 0.08);
+    border: 1px solid rgba(22, 163, 74, 0.25);
     padding: 0.85rem;
     border-radius: 8px;
     margin: 0 0 1rem;
@@ -171,8 +179,10 @@
   .link {
     background: none;
     border: 0;
-    color: #f97316;
+    color: var(--rw-text);
     text-decoration: underline;
+    text-decoration-color: var(--rw-accent);
+    text-underline-offset: 3px;
     cursor: pointer;
     padding: 0;
     font: inherit;

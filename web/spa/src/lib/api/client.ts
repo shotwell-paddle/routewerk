@@ -36,6 +36,10 @@ export type ActionsResponse = Schemas['ActionsResponse'];
 export type AttemptState = Schemas['AttemptState'];
 export type ActionRejectedReason = Schemas['ActionRejected']['reason'];
 
+// Leaderboard types (Phase 1g.3).
+export type Leaderboard = Schemas['Leaderboard'];
+export type LeaderboardEntry = Schemas['LeaderboardEntry'];
+
 /**
  * ApiClientError is thrown for any non-2xx response. The caller can
  * catch and inspect `status` + `body` to render an appropriate message.

@@ -174,6 +174,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	notifRepo := repository.NewNotificationRepo(db)
 	notifHandler := handler.NewNotificationHandler(notifRepo)
 	dashboardHandler := handler.NewDashboardHandler(analyticsRepo)
+	settingsHandler := handler.NewSettingsHandler(settingsRepo)
 
 	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, questRepo, badgeRepo, activityRepo, routeSkillTagRepo, notifRepo, deps.QuestSvc, deps.EventBus, authService, storageSvc, cardGen, cardBatchRepo, batchSvc, auditService, sessionMgr, cfg, db)
 
@@ -764,6 +765,15 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 				r.Group(func(r chi.Router) {
 					r.Use(authz.RequireLocationRole("setter"))
 					r.Get("/dashboard", dashboardHandler.Stats)
+				})
+
+				// Location settings (circuits, hold-colors, grading, display,
+				// session defaults). gym_manager+ only — matches the HTMX
+				// /settings page policy.
+				r.Group(func(r chi.Router) {
+					r.Use(authz.RequireLocationRole("gym_manager"))
+					r.Get("/settings", settingsHandler.GetLocationSettings)
+					r.Put("/settings", settingsHandler.UpdateLocationSettings)
 				})
 			})
 

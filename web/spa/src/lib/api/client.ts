@@ -533,6 +533,99 @@ export async function updateSession(
   });
 }
 
+// ── Card batches (Phase 2.5) ──────────────────────────────
+//
+// Hand-written shapes — card batches aren't in the OpenAPI spec yet.
+// Mirror `internal/handler/card_batch.go::batchResponse` and the
+// `internal/model/card_batch.go` constants.
+
+export type CardBatchStatus = 'pending' | 'ready' | 'failed';
+export type CardTheme = 'block_and_info' | 'full_color' | 'minimal' | 'trading_card';
+export type CutterProfile = 'silhouette_type2';
+
+export interface CardBatchShape {
+  id: string;
+  location_id: string;
+  created_by: string;
+  route_ids: string[];
+  theme: CardTheme;
+  cutter_profile: CutterProfile;
+  status: CardBatchStatus;
+  storage_key?: string | null;
+  error_message?: string | null;
+  page_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CardBatchCreateShape {
+  route_ids: string[];
+  theme?: CardTheme;
+  cutter_profile?: CutterProfile;
+}
+
+export const CARD_THEMES: { value: CardTheme; label: string }[] = [
+  { value: 'trading_card', label: 'Trading card' },
+  { value: 'block_and_info', label: 'Block + info' },
+  { value: 'full_color', label: 'Full color' },
+  { value: 'minimal', label: 'Minimal' },
+];
+
+export const CUTTER_PROFILES: { value: CutterProfile; label: string }[] = [
+  { value: 'silhouette_type2', label: 'Silhouette Cameo (Type 2)' },
+];
+
+/** GET /locations/{locationId}/card-batches — setter+. */
+export async function listCardBatches(
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<CardBatchShape[]> {
+  const res = await request<{ batches: CardBatchShape[] }>(
+    `/locations/${locationId}/card-batches`,
+    { signal },
+  );
+  return res.batches ?? [];
+}
+
+/** GET /locations/{locationId}/card-batches/{batchId} — setter+. */
+export async function getCardBatch(
+  locationId: string,
+  batchId: string,
+  signal?: AbortSignal,
+): Promise<CardBatchShape> {
+  return request(`/locations/${locationId}/card-batches/${batchId}`, { signal });
+}
+
+/** POST /locations/{locationId}/card-batches — setter+. */
+export async function createCardBatch(
+  locationId: string,
+  body: CardBatchCreateShape,
+  signal?: AbortSignal,
+): Promise<CardBatchShape> {
+  return request(`/locations/${locationId}/card-batches`, {
+    method: 'POST',
+    body,
+    signal,
+  });
+}
+
+/** DELETE /locations/{locationId}/card-batches/{batchId} — setter+. */
+export async function deleteCardBatch(
+  locationId: string,
+  batchId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/locations/${locationId}/card-batches/${batchId}`, {
+    method: 'DELETE',
+    signal,
+  });
+}
+
+/** Resolve the absolute download URL for a card batch's PDF. */
+export function cardBatchDownloadUrl(locationId: string, batchId: string): string {
+  return `/api/v1/locations/${locationId}/card-batches/${batchId}/pdf`;
+}
+
 /**
  * GET /api/v1/me — returns the authenticated user + their memberships.
  * Resolves with `null` on 401 (caller should redirect to login).

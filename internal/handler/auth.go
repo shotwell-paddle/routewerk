@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
+	"github.com/shotwell-paddle/routewerk/internal/rbac"
 	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
@@ -14,11 +16,12 @@ import (
 var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
 
 type AuthHandler struct {
-	auth *service.AuthService
+	auth   *service.AuthService
+	secure bool // Sets the Secure flag on outbound cookies (false in dev).
 }
 
-func NewAuthHandler(authService *service.AuthService) *AuthHandler {
-	return &AuthHandler{auth: authService}
+func NewAuthHandler(authService *service.AuthService, secure bool) *AuthHandler {
+	return &AuthHandler{auth: authService, secure: secure}
 }
 
 type registerRequest struct {
@@ -166,9 +169,18 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Surface the active view-as role (if any) so the SPA can render a
+	// "viewing as X" badge + clear-button without having to read the
+	// HttpOnly cookie. Empty string means no override is active.
+	var viewAs string
+	if c, err := r.Cookie(middleware.ViewAsCookieName); err == nil {
+		viewAs = c.Value
+	}
+
 	JSON(w, http.StatusOK, map[string]interface{}{
-		"user":        user,
-		"memberships": memberships,
+		"user":         user,
+		"memberships":  memberships,
+		"view_as_role": viewAs,
 	})
 }
 
@@ -275,5 +287,99 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// SetViewAs — PUT /me/view-as { role?: string }.
+//
+// JSON wrapper around the existing /switch-view-as form endpoint. Sets
+// (or clears, with empty/missing role) the same _rw_view_as cookie that
+// the cookie-or-JWT auth middleware honors. Authorization rules mirror
+// switchers.go: caller's real role must be head_setter+ AND the target
+// role must rank strictly below the caller's. Body shape:
+//
+//	{ "role": "climber" }   // downgrade
+//	{ "role": "" }          // clear (or just send {})
+//
+// Returns 204 on success, 4xx on policy violation.
+type setViewAsRequest struct {
+	Role string `json:"role"`
+}
+
+func (h *AuthHandler) SetViewAs(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		Error(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	var req setViewAsRequest
+	// Empty body is fine (means "clear"); decode errors only when body is
+	// non-empty and malformed.
+	if r.ContentLength > 0 {
+		if err := Decode(r, &req); err != nil {
+			Error(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+	}
+
+	// Compute the caller's true max role across memberships (matches the
+	// HTMX bestRole logic). is_app_admin promotes to org_admin.
+	_, memberships, err := h.auth.GetProfile(r.Context(), userID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	realRank := 0
+	realRole := ""
+	for _, m := range memberships {
+		rank := rbac.RankValue(m.Role)
+		if rank > realRank {
+			realRank = rank
+			realRole = m.Role
+		}
+	}
+	if realRank < rbac.RankValue(rbac.RoleHeadSetter) {
+		Error(w, http.StatusForbidden, "view-as requires head_setter or above")
+		return
+	}
+
+	target := strings.TrimSpace(req.Role)
+	if target == "" {
+		// Clear override.
+		http.SetCookie(w, &http.Cookie{
+			Name:     middleware.ViewAsCookieName,
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   h.secure,
+			SameSite: http.SameSiteLaxMode,
+		})
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Validate target role exists in the allowed set (climber..gym_manager)
+	// and ranks strictly below the caller's real role.
+	targetRank := rbac.RankValue(target)
+	if targetRank == 0 || target == rbac.RoleOrgAdmin {
+		Error(w, http.StatusBadRequest, "invalid view-as role")
+		return
+	}
+	if targetRank >= realRank {
+		Error(w, http.StatusForbidden, "view-as can only target roles below your own ("+realRole+")")
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     middleware.ViewAsCookieName,
+		Value:    target,
+		Path:     "/",
+		MaxAge:   int((1 * time.Hour).Seconds()),
+		HttpOnly: true,
+		Secure:   h.secure,
+		SameSite: http.SameSiteLaxMode,
+	})
 	w.WriteHeader(http.StatusNoContent)
 }

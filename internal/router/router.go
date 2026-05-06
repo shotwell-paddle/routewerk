@@ -124,7 +124,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	// Handlers
 	storageSvc := service.NewStorageService(cfg)
 	healthHandler := handler.NewHealthHandler(db, storageSvc)
-	authHandler := handler.NewAuthHandler(authService)
+	authHandler := handler.NewAuthHandler(authService, !cfg.IsDev())
 	magicAuthHandler := handler.NewMagicAuthHandler(magicLinkSvc)
 	magicVerifyHandler := webhandler.NewMagicVerifyHandler(magicLinkSvc, webSessionRepo, userRepo, sessionMgr, cfg)
 	orgHandler := handler.NewOrgHandler(orgRepo, auditService)
@@ -522,6 +522,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			r.Get("/me", authHandler.Me)
 			r.Patch("/me", authHandler.UpdateMe)
 			r.Post("/me/password", authHandler.ChangePassword)
+			r.Put("/me/view-as", authHandler.SetViewAs)
 			r.Get("/me/ascents", ascentHandler.MyAscents)
 			r.Get("/me/stats", ascentHandler.MyStats)
 			r.Get("/me/quests", questHandler.MyQuests)

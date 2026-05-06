@@ -184,6 +184,9 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	// is stateless so a fresh instance here is fine; both filters share
 	// the same blocklist source.
 	routeTagHandler := handler.NewRouteTagHandler(routeRepo, userTagRepo, service.NewProfanityFilter())
+	// Climber difficulty consensus — same difficulty_votes table as the
+	// HTMX feedback flow.
+	routeDifficultyHandler := handler.NewRouteDifficultyHandler(routeRepo, difficultyRepo)
 
 	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, questRepo, badgeRepo, activityRepo, routeSkillTagRepo, notifRepo, deps.QuestSvc, deps.EventBus, authService, storageSvc, cardGen, cardBatchRepo, batchSvc, auditService, sessionMgr, cfg, db)
 
@@ -676,6 +679,12 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 							r.Use(authz.RequireLocationRole("head_setter"))
 							r.Delete("/tags/all", routeTagHandler.Moderate)
 						})
+
+						// Difficulty consensus vote — easy / right / hard.
+						// Any member with location access; one vote per
+						// (user, route), upserted on resubmit.
+						r.Get("/difficulty", routeDifficultyHandler.Get)
+						r.Post("/difficulty", routeDifficultyHandler.Vote)
 
 						// Edit route — setter or above
 						r.Group(func(r chi.Router) {

@@ -798,6 +798,50 @@ export async function moderateCommunityTag(
   });
 }
 
+// ── Difficulty consensus ────────────────────────────────────
+
+export type DifficultyVote = 'easy' | 'right' | 'hard';
+
+export interface DifficultyConsensusShape {
+  easy_count: number;
+  right_count: number;
+  hard_count: number;
+  total_votes: number;
+  /** Whole-percent breakdown that sums to ~100 (rounding may drop a point). */
+  easy_pct: number;
+  right_pct: number;
+  hard_pct: number;
+  /** Caller's prior vote, or "" if they haven't voted. */
+  my_vote: '' | DifficultyVote;
+}
+
+/** GET /locations/{locationId}/routes/{routeId}/difficulty — any member. */
+export async function getRouteDifficulty(
+  locationId: string,
+  routeId: string,
+  signal?: AbortSignal,
+): Promise<DifficultyConsensusShape> {
+  return request(`/locations/${locationId}/routes/${routeId}/difficulty`, { signal });
+}
+
+/**
+ * POST /locations/{locationId}/routes/{routeId}/difficulty — vote
+ * easy/right/hard. One row per (user, route); resubmits upsert. Returns
+ * the updated consensus + the caller's new vote.
+ */
+export async function voteRouteDifficulty(
+  locationId: string,
+  routeId: string,
+  vote: DifficultyVote,
+  signal?: AbortSignal,
+): Promise<DifficultyConsensusShape> {
+  return request(`/locations/${locationId}/routes/${routeId}/difficulty`, {
+    method: 'POST',
+    body: { vote },
+    signal,
+  });
+}
+
 export type AscentType = 'send' | 'flash' | 'attempt';
 
 export interface LogAscentShape {

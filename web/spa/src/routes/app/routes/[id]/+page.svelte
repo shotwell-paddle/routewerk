@@ -19,6 +19,8 @@
     addCommunityTag,
     removeCommunityTag,
     moderateCommunityTag,
+    getRouteDifficulty,
+    voteRouteDifficulty,
     ApiClientError,
     type RouteShape,
     type RouteStatus,
@@ -30,6 +32,8 @@
     type LocationSettingsShape,
     type RoutePhotoShape,
     type CommunityTagShape,
+    type DifficultyConsensusShape,
+    type DifficultyVote,
   } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
   import { roleRankAt } from '$lib/stores/auth.svelte';
@@ -43,6 +47,7 @@
   let ratings = $state<RouteRatingShape[]>([]);
   let photos = $state<RoutePhotoShape[]>([]);
   let communityTags = $state<CommunityTagShape[]>([]);
+  let consensus = $state<DifficultyConsensusShape | null>(null);
 
   // New-tag input + per-row mutating state. Two requests can fly in
   // parallel without stomping each other because we key the loading
@@ -51,6 +56,9 @@
   let tagSubmitting = $state(false);
   let tagError = $state<string | null>(null);
   let tagBusy = $state<string | null>(null);
+
+  let voteSubmitting = $state(false);
+  let voteError = $state<string | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
 
@@ -112,8 +120,9 @@
       getLocationSettings(locId).catch(() => null),
       listRoutePhotos(locId, routeId).catch(() => [] as RoutePhotoShape[]),
       listCommunityTags(locId, routeId).catch(() => [] as CommunityTagShape[]),
+      getRouteDifficulty(locId, routeId).catch(() => null),
     ])
-      .then(([r, wls, asc, rt, st, ph, tg]) => {
+      .then(([r, wls, asc, rt, st, ph, tg, cons]) => {
         if (cancelled) return;
         route = r;
         walls = wls;
@@ -122,6 +131,7 @@
         settings = st;
         photos = ph;
         communityTags = tg;
+        consensus = cons;
       })
       .catch((err) => {
         if (cancelled) return;
@@ -362,6 +372,19 @@
   // HTMX moderation endpoint). The server enforces the same gate.
   const canModerateTags = $derived(roleRankAt(locId) >= 3);
 
+  async function submitVote(v: DifficultyVote) {
+    if (!locId || !routeId || voteSubmitting) return;
+    voteSubmitting = true;
+    voteError = null;
+    try {
+      consensus = await voteRouteDifficulty(locId, routeId, v);
+    } catch (err) {
+      voteError = err instanceof ApiClientError ? err.message : 'Could not save vote.';
+    } finally {
+      voteSubmitting = false;
+    }
+  }
+
   function fmtDate(iso: string | null | undefined): string {
     if (!iso) return '—';
     return new Date(iso).toLocaleDateString();
@@ -586,6 +609,52 @@
         {/if}
         {#if tagError}<p class="error tag-err">{tagError}</p>{/if}
       </section>
+
+      {#if consensus}
+        <section class="card">
+          <h2>Difficulty consensus</h2>
+          {#if consensus.total_votes === 0}
+            <p class="muted">
+              No one has rated the difficulty yet. Vote so the next climber knows
+              what to expect for {route.grade}.
+            </p>
+          {:else}
+            <div class="consensus-bar" aria-label="Vote breakdown">
+              {#if consensus.easy_pct > 0}
+                <span class="seg easy" style="width: {consensus.easy_pct}%" title="{consensus.easy_count} climbers said easier"></span>
+              {/if}
+              {#if consensus.right_pct > 0}
+                <span class="seg right" style="width: {consensus.right_pct}%" title="{consensus.right_count} climbers said right on"></span>
+              {/if}
+              {#if consensus.hard_pct > 0}
+                <span class="seg hard" style="width: {consensus.hard_pct}%" title="{consensus.hard_count} climbers said harder"></span>
+              {/if}
+            </div>
+            <p class="muted small consensus-counts">
+              <span class="dot easy" aria-hidden="true"></span>{consensus.easy_count} easier ·
+              <span class="dot right" aria-hidden="true"></span>{consensus.right_count} right on ·
+              <span class="dot hard" aria-hidden="true"></span>{consensus.hard_count} harder
+              ({consensus.total_votes} {consensus.total_votes === 1 ? 'vote' : 'votes'})
+            </p>
+          {/if}
+          {#if route.status !== 'archived'}
+            <div class="vote-row">
+              <span class="muted small">Your vote:</span>
+              {#each [['easy', 'Easier'], ['right', 'Right on'], ['hard', 'Harder']] as [v, label]}
+                <button
+                  type="button"
+                  class="vote-btn vote-{v}"
+                  class:active={consensus.my_vote === v}
+                  disabled={voteSubmitting}
+                  onclick={() => submitVote(v as DifficultyVote)}>
+                  {label}
+                </button>
+              {/each}
+            </div>
+            {#if voteError}<p class="error tag-err">{voteError}</p>{/if}
+          {/if}
+        </section>
+      {/if}
 
       {#if route.status !== 'archived'}
         <section class="card climber-actions">
@@ -1048,6 +1117,90 @@
   }
   .tag-err {
     margin-top: 8px;
+  }
+  .consensus-bar {
+    display: flex;
+    height: 12px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--rw-surface-alt);
+    margin: 8px 0 6px;
+  }
+  .consensus-bar .seg {
+    display: block;
+    height: 100%;
+  }
+  .consensus-bar .easy {
+    background: #3b82f6;
+  }
+  .consensus-bar .right {
+    background: var(--rw-success);
+  }
+  .consensus-bar .hard {
+    background: var(--rw-danger);
+  }
+  .consensus-counts {
+    margin: 0 0 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .consensus-counts .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  .consensus-counts .dot.easy {
+    background: #3b82f6;
+  }
+  .consensus-counts .dot.right {
+    background: var(--rw-success);
+  }
+  .consensus-counts .dot.hard {
+    background: var(--rw-danger);
+  }
+  .vote-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .vote-btn {
+    padding: 0.4rem 0.85rem;
+    border: 1px solid var(--rw-border-strong);
+    background: var(--rw-surface);
+    color: var(--rw-text);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .vote-btn:hover:not(:disabled) {
+    border-color: var(--rw-accent);
+  }
+  .vote-btn.vote-easy.active {
+    background: rgba(59, 130, 246, 0.12);
+    border-color: #3b82f6;
+    color: #1d4ed8;
+  }
+  .vote-btn.vote-right.active {
+    background: rgba(22, 163, 74, 0.12);
+    border-color: var(--rw-success);
+    color: #15803d;
+  }
+  .vote-btn.vote-hard.active {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: var(--rw-danger);
+    color: #b91c1c;
+  }
+  .vote-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
   .histogram {
     display: flex;

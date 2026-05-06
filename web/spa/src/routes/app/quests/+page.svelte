@@ -124,6 +124,7 @@
           </button>
         </div>
         <a class="badges-link" href="/app/quests/badges">Badges →</a>
+        <a class="badges-link" href="/app/quests/activity">Activity →</a>
       </div>
     {/if}
   </header>

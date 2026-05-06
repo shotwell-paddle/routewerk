@@ -19,6 +19,7 @@ export type Competition = Schemas['Competition'];
 export type CompetitionCreate = Schemas['CompetitionCreate'];
 export type CompetitionUpdate = Schemas['CompetitionUpdate'];
 export type CompetitionStatus = Schemas['CompetitionStatus'];
+export type CompetitionFormat = Schemas['CompetitionFormat'];
 export type CompetitionEvent = Schemas['CompetitionEvent'];
 export type CompetitionCategory = Schemas['CompetitionCategory'];
 export type CompetitionProblem = Schemas['CompetitionProblem'];
@@ -147,6 +148,39 @@ export interface UserShape {
 export interface MeResponse {
   user: UserShape;
   memberships: MembershipShape[];
+}
+
+// Location is not yet in the OpenAPI spec (existing HTMX/API surface
+// hasn't been migrated). Hand-written shape mirrors what the server
+// returns from GET /api/v1/locations/{id}.
+export interface LocationShape {
+  id: string;
+  org_id: string;
+  name: string;
+  slug: string;
+  timezone: string;
+  address?: string | null;
+  website_url?: string | null;
+  phone?: string | null;
+  custom_domain?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * GET /api/v1/locations/{id} — returns location metadata. Caller must
+ * be a member of the location's org (server-side enforced). Resolves
+ * with `null` on 404 (e.g. caller has no membership).
+ */
+export async function getLocation(id: string, signal?: AbortSignal): Promise<LocationShape | null> {
+  try {
+    return await request<LocationShape>(`/locations/${id}`, { signal });
+  } catch (err) {
+    if (err instanceof ApiClientError && (err.status === 404 || err.status === 403)) {
+      return null;
+    }
+    throw err;
+  }
 }
 
 /**

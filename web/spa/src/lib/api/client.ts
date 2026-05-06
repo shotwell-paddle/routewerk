@@ -728,6 +728,76 @@ export async function deleteRoutePhoto(
   );
 }
 
+// ── Community tags ──────────────────────────────────────────
+
+export interface CommunityTagShape {
+  tag_name: string;
+  count: number;
+  /** True when the current viewer added this tag. Drives the chip's "voted" state. */
+  user_added: boolean;
+}
+
+/** GET /locations/{locationId}/routes/{routeId}/tags — any member. */
+export async function listCommunityTags(
+  locationId: string,
+  routeId: string,
+  signal?: AbortSignal,
+): Promise<CommunityTagShape[]> {
+  return request(`/locations/${locationId}/routes/${routeId}/tags`, { signal });
+}
+
+/**
+ * POST /locations/{locationId}/routes/{routeId}/tags — any member adds a
+ * tag. Server normalizes (trim/lowercase/collapse whitespace), enforces
+ * 1–30 runes, runs the profanity filter; duplicates are a no-op.
+ * Returns the updated aggregated list so the SPA can swap state in one
+ * round-trip.
+ */
+export async function addCommunityTag(
+  locationId: string,
+  routeId: string,
+  tagName: string,
+  signal?: AbortSignal,
+): Promise<CommunityTagShape[]> {
+  return request(`/locations/${locationId}/routes/${routeId}/tags`, {
+    method: 'POST',
+    body: { tag_name: tagName },
+    signal,
+  });
+}
+
+/** DELETE /locations/{locationId}/routes/{routeId}/tags — drops the caller's vote. */
+export async function removeCommunityTag(
+  locationId: string,
+  routeId: string,
+  tagName: string,
+  signal?: AbortSignal,
+): Promise<CommunityTagShape[]> {
+  return request(`/locations/${locationId}/routes/${routeId}/tags`, {
+    method: 'DELETE',
+    body: { tag_name: tagName },
+    signal,
+  });
+}
+
+/**
+ * DELETE /locations/{locationId}/routes/{routeId}/tags/all — head_setter+
+ * scrubs every vote for a tag from a route. Used by moderators to remove
+ * misleading or off-topic tags entirely.
+ */
+export async function moderateCommunityTag(
+  locationId: string,
+  routeId: string,
+  tagName: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/locations/${locationId}/routes/${routeId}/tags/all`, {
+    method: 'DELETE',
+    body: { tag_name: tagName },
+    signal,
+  });
+}
+
 export type AscentType = 'send' | 'flash' | 'attempt';
 
 export interface LogAscentShape {

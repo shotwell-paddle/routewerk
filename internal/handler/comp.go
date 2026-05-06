@@ -193,7 +193,7 @@ func (h *CompHandler) Get(w http.ResponseWriter, r *http.Request) {
 // ── Create ─────────────────────────────────────────────────
 
 // Create handles POST /api/v1/locations/{locationID}/competitions.
-// Caller must be authorized as gym_manager+ at the location (enforced
+// Caller must be authorized as head_setter+ at the location (enforced
 // by middleware in router.go).
 func (h *CompHandler) Create(w http.ResponseWriter, r *http.Request) {
 	locationID := chi.URLParam(r, "locationID")
@@ -236,7 +236,9 @@ func (h *CompHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // Update handles PATCH /api/v1/competitions/{id}. All fields are
 // optional; only provided fields are applied. Authorization
-// (gym_manager+ at the comp's location) is enforced by middleware.
+// (head_setter+ at the comp's location) is enforced by the inline
+// requireCompRole helper below (middleware can't run since the route
+// doesn't carry {locationID}).
 func (h *CompHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isUUID(id) {
@@ -258,7 +260,7 @@ func (h *CompHandler) Update(w http.ResponseWriter, r *http.Request) {
 	// /competitions/{id} doesn't carry a {locationID} path param, so the
 	// chi-mounted RequireLocationRole middleware can't run here. Use the
 	// shared requireCompRole helper to do the inline lookup + role check.
-	if !h.requireCompRole(w, r, existing, rbac.RoleGymManager) {
+	if !h.requireCompRole(w, r, existing, rbac.RoleHeadSetter) {
 		return
 	}
 

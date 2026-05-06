@@ -44,7 +44,7 @@ export interface paths {
         put?: never;
         /**
          * Create a competition
-         * @description Requires `gym_manager+` role at the location.
+         * @description Requires `head_setter+` role at the location.
          */
         post: operations["createCompetition"];
         delete?: never;
@@ -97,7 +97,7 @@ export interface paths {
         head?: never;
         /**
          * Update a competition
-         * @description Requires `gym_manager+` role at the comp's location. All fields
+         * @description Requires `head_setter+` role at the comp's location. All fields
          *     are optional; only provided fields are updated.
          */
         patch: operations["updateCompetition"];
@@ -165,7 +165,7 @@ export interface paths {
         put?: never;
         /**
          * Create a category
-         * @description Requires `gym_manager+` role at the comp's location.
+         * @description Requires `head_setter+` role at the comp's location.
          */
         post: operations["createCategory"];
         delete?: never;

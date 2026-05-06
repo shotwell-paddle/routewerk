@@ -710,13 +710,13 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 					r.Get("/setter-productivity", analyticsHandler.SetterProductivity)
 				})
 
-				// Competitions — list any member; create gym_manager+.
+				// Competitions — list any member; create head_setter+.
 				// Read/update by id live below at /competitions/{id}.
 				r.Route("/competitions", func(r chi.Router) {
 					r.Get("/", compHandler.List)
 
 					r.Group(func(r chi.Router) {
-						r.Use(authz.RequireLocationRole("gym_manager"))
+						r.Use(authz.RequireLocationRole("head_setter"))
 						r.Post("/", compHandler.Create)
 					})
 				})

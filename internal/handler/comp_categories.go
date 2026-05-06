@@ -20,7 +20,7 @@ import (
 //
 // Routes (wired in router.go):
 //   GET  /api/v1/competitions/{id}/categories      any auth
-//   POST /api/v1/competitions/{id}/categories      gym_manager+
+//   POST /api/v1/competitions/{id}/categories      head_setter+
 
 // ListCategories handles GET /api/v1/competitions/{id}/categories.
 func (h *CompHandler) ListCategories(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +62,7 @@ func (h *CompHandler) CreateCategory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !h.requireCompRole(w, r, comp, rbac.RoleGymManager) {
+	if !h.requireCompRole(w, r, comp, rbac.RoleHeadSetter) {
 		return
 	}
 	var body api.CategoryCreate

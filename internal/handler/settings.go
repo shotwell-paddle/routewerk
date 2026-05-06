@@ -58,3 +58,70 @@ func (h *SettingsHandler) UpdateLocationSettings(w http.ResponseWriter, r *http.
 	}
 	JSON(w, http.StatusOK, saved)
 }
+
+type palettePresetEntry struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+	Description string `json:"description"`
+}
+
+// ListPalettePresets — GET /api/v1/settings/palette-presets.
+//
+// Returns the catalog of named palette presets so the SPA can render
+// them as one-click apply buttons. Public (any authenticated user)
+// because the catalog itself is global; the apply endpoint is gated.
+func (h *SettingsHandler) ListPalettePresets(w http.ResponseWriter, r *http.Request) {
+	out := make([]palettePresetEntry, 0, len(model.PalettePresets))
+	for _, p := range model.PalettePresets {
+		out = append(out, palettePresetEntry{
+			Name:        p.Name,
+			DisplayName: p.DisplayName,
+			Description: p.Description,
+		})
+	}
+	JSON(w, http.StatusOK, out)
+}
+
+type applyPalettePresetRequest struct {
+	Preset string `json:"preset"`
+}
+
+// ApplyPalettePreset — POST /api/v1/locations/{id}/settings/palette-preset.
+//
+// Replaces the gym's circuits + hold-color lists with the named preset
+// in one shot. head_setter+ matches the HTMX policy at
+// internal/handler/web/settings.go::GymSettingsApplyPalettePreset.
+// Returns the post-apply settings so the SPA can refresh inline.
+func (h *SettingsHandler) ApplyPalettePreset(w http.ResponseWriter, r *http.Request) {
+	locationID := chi.URLParam(r, "locationID")
+	var req applyPalettePresetRequest
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	preset := model.LookupPalettePreset(req.Preset)
+	if preset == nil {
+		Error(w, http.StatusBadRequest, "unknown preset")
+		return
+	}
+
+	settings, err := h.settings.GetLocationSettings(r.Context(), locationID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "could not load settings")
+		return
+	}
+	// Clone to avoid sharing backing storage between locations.
+	settings.Circuits.Colors = append([]model.CircuitColor(nil), preset.Circuits...)
+	settings.HoldColors.Colors = append([]model.HoldColor(nil), preset.HoldColors...)
+
+	if err := h.settings.UpdateLocationSettings(r.Context(), locationID, settings); err != nil {
+		Error(w, http.StatusInternalServerError, "failed to save settings")
+		return
+	}
+	saved, err := h.settings.GetLocationSettings(r.Context(), locationID)
+	if err != nil {
+		JSON(w, http.StatusOK, settings)
+		return
+	}
+	JSON(w, http.StatusOK, saved)
+}

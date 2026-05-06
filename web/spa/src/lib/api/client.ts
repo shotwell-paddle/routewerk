@@ -188,6 +188,89 @@ export async function getLocation(id: string, signal?: AbortSignal): Promise<Loc
   }
 }
 
+// ── Walls (Phase 2.2) ─────────────────────────────────────
+//
+// Hand-written shapes — wall handlers haven't been migrated to the
+// OpenAPI spec yet. Mirror `internal/model/models.go::Wall` and
+// `internal/handler/wall.go::createWallRequest`.
+
+export type WallType = 'boulder' | 'route';
+
+export interface WallShape {
+  id: string;
+  location_id: string;
+  name: string;
+  wall_type: WallType;
+  angle?: string | null;
+  height_meters?: number | null;
+  num_anchors?: number | null;
+  surface_type?: string | null;
+  sort_order: number;
+  map_x?: number | null;
+  map_y?: number | null;
+  map_width?: number | null;
+  map_height?: number | null;
+  created_at: string;
+  updated_at: string;
+  archived_at?: string | null;
+}
+
+export interface WallWriteShape {
+  name: string;
+  wall_type: WallType;
+  angle?: string | null;
+  height_meters?: number | null;
+  num_anchors?: number | null;
+  surface_type?: string | null;
+  sort_order: number;
+  map_x?: number | null;
+  map_y?: number | null;
+  map_width?: number | null;
+  map_height?: number | null;
+}
+
+/** GET /locations/{locationId}/walls — non-archived walls, ascending sort. */
+export async function listWalls(locationId: string, signal?: AbortSignal): Promise<WallShape[]> {
+  return request(`/locations/${locationId}/walls`, { signal });
+}
+
+/** GET /locations/{locationId}/walls/{wallId} */
+export async function getWall(
+  locationId: string,
+  wallId: string,
+  signal?: AbortSignal,
+): Promise<WallShape> {
+  return request(`/locations/${locationId}/walls/${wallId}`, { signal });
+}
+
+/** POST /locations/{locationId}/walls — setter+ at the location. */
+export async function createWall(
+  locationId: string,
+  body: WallWriteShape,
+  signal?: AbortSignal,
+): Promise<WallShape> {
+  return request(`/locations/${locationId}/walls`, { method: 'POST', body, signal });
+}
+
+/** PUT /locations/{locationId}/walls/{wallId} — setter+ at the location. */
+export async function updateWall(
+  locationId: string,
+  wallId: string,
+  body: WallWriteShape,
+  signal?: AbortSignal,
+): Promise<WallShape> {
+  return request(`/locations/${locationId}/walls/${wallId}`, { method: 'PUT', body, signal });
+}
+
+/** DELETE /locations/{locationId}/walls/{wallId} — head_setter+ at the location. */
+export async function deleteWall(
+  locationId: string,
+  wallId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/locations/${locationId}/walls/${wallId}`, { method: 'DELETE', signal });
+}
+
 /**
  * GET /api/v1/me — returns the authenticated user + their memberships.
  * Resolves with `null` on 401 (caller should redirect to login).

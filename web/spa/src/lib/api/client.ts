@@ -478,6 +478,52 @@ export async function listRouteRatings(
   return request(`/locations/${locationId}/routes/${routeId}/ratings`, { signal });
 }
 
+export type AscentType = 'send' | 'flash' | 'attempt';
+
+export interface LogAscentShape {
+  ascent_type: AscentType;
+  attempts: number;
+  notes?: string | null;
+  /** ISO date or datetime; server defaults to now if omitted. */
+  climbed_at?: string | null;
+}
+
+/** POST /locations/{locationId}/routes/{routeId}/ascent — any member. */
+export async function logAscent(
+  locationId: string,
+  routeId: string,
+  body: LogAscentShape,
+  signal?: AbortSignal,
+): Promise<AscentShape> {
+  return request(`/locations/${locationId}/routes/${routeId}/ascent`, {
+    method: 'POST',
+    body,
+    signal,
+  });
+}
+
+export interface RateRouteShape {
+  rating: number;
+  comment?: string | null;
+}
+
+/**
+ * POST /locations/{locationId}/routes/{routeId}/rate — any member. Server
+ * upserts on (user, route) so re-rating overwrites the prior rating.
+ */
+export async function rateRoute(
+  locationId: string,
+  routeId: string,
+  body: RateRouteShape,
+  signal?: AbortSignal,
+): Promise<RouteRatingShape> {
+  return request(`/locations/${locationId}/routes/${routeId}/rate`, {
+    method: 'POST',
+    body,
+    signal,
+  });
+}
+
 // ── Setting sessions (Phase 2.4) ──────────────────────────
 //
 // Hand-written shapes — sessions aren't in the OpenAPI spec yet.

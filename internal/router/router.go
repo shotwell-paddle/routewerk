@@ -232,6 +232,12 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 		// /staff is reserved for the SPA staff workflows.
 		r.Handle("/staff/comp", spa.FallbackHandler())
 		r.Handle("/staff/comp/*", spa.FallbackHandler())
+		// Phase 2 (rebuild): the new SPA shell lives at /app while we
+		// migrate the existing HTMX surfaces page-by-page. Once a page
+		// has a SPA equivalent ready, its old HTMX route can be swapped
+		// to point here as well.
+		r.Handle("/app", spa.FallbackHandler())
+		r.Handle("/app/*", spa.FallbackHandler())
 	})
 
 	// Web pages — web-specific CSP, CSRF, rate limiting, gzip, query timeout.

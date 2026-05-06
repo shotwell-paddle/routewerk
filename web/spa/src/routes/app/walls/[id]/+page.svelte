@@ -11,6 +11,7 @@
     type WallWriteShape,
   } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
+  import { roleRankAt } from '$lib/stores/auth.svelte';
   import WallForm from '$lib/components/WallForm.svelte';
 
   let wall = $state<WallShape | null>(null);
@@ -24,6 +25,8 @@
 
   const wallId = $derived(page.params.id ?? '');
   const locId = $derived(effectiveLocationId());
+  const canEdit = $derived(roleRankAt(locId) >= 2);
+  const canDelete = $derived(roleRankAt(locId) >= 3);
 
   $effect(() => {
     if (!locId || !wallId) return;
@@ -96,7 +99,7 @@
         <span class="type-badge type-{wall.wall_type}">{wall.wall_type}</span>
         <h1>{wall.name}</h1>
       </div>
-      {#if !editing}
+      {#if !editing && canEdit}
         <div class="header-actions">
           <button onclick={() => (editing = true)}>Edit</button>
         </div>
@@ -142,17 +145,19 @@
         </p>
       </section>
 
-      <section class="card danger-zone">
-        <h2>Danger zone</h2>
-        <p class="muted">
-          Deletion is permanent. Routes on this wall must be reassigned or
-          deleted first. Requires head_setter or above.
-        </p>
-        {#if saveError}<p class="error">{saveError}</p>{/if}
-        <button class="danger" disabled={deleting} onclick={handleDelete}>
-          {deleting ? 'Deleting…' : 'Delete wall'}
-        </button>
-      </section>
+      {#if canDelete}
+        <section class="card danger-zone">
+          <h2>Danger zone</h2>
+          <p class="muted">
+            Deletion is permanent. Routes on this wall must be reassigned or
+            deleted first. Requires head_setter or above.
+          </p>
+          {#if saveError}<p class="error">{saveError}</p>{/if}
+          <button class="danger" disabled={deleting} onclick={handleDelete}>
+            {deleting ? 'Deleting…' : 'Delete wall'}
+          </button>
+        </section>
+      {/if}
     {/if}
   {/if}
 </div>

@@ -2,14 +2,17 @@
   import {
     listQuests,
     listMyQuests,
+    getLocation,
     ApiClientError,
     type QuestListItemShape,
     type ClimberQuestShape,
+    type LocationShape,
   } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
 
   let catalog = $state<QuestListItemShape[]>([]);
   let myQuests = $state<ClimberQuestShape[]>([]);
+  let location = $state<LocationShape | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
 
@@ -17,18 +20,30 @@
   let view = $state<'browse' | 'mine'>('browse');
 
   const locId = $derived(effectiveLocationId());
+  // Defer to the server's progressions_enabled flag — the same one the
+  // HTMX side gates on (see progressions_climber.go::progressionsGated).
+  // If a user types /app/quests at a location that hasn't enabled the
+  // feature, render a "not enabled" panel instead of attempting the
+  // catalog fetch (which the server would 403 anyway).
+  const enabled = $derived(location ? !!location.progressions_enabled : null);
 
   $effect(() => {
     if (!locId) return;
     let cancelled = false;
     loading = true;
     error = null;
+    // Resolve the location first so we can decide whether to fetch the
+    // quest catalog at all. Both fetches in parallel — if the location
+    // turns out to have progressions disabled, we'll show a panel and
+    // ignore the (possibly empty) catalog response.
     Promise.all([
-      listQuests(locId),
-      listMyQuests(),
+      getLocation(locId),
+      listQuests(locId).catch(() => [] as QuestListItemShape[]),
+      listMyQuests().catch(() => [] as ClimberQuestShape[]),
     ])
-      .then(([cat, mine]) => {
+      .then(([loc, cat, mine]) => {
         if (cancelled) return;
+        location = loc;
         catalog = cat;
         myQuests = mine;
       })
@@ -85,20 +100,30 @@
       <h1>Quests</h1>
       <p class="lede">Pick a challenge, log your progress, earn badges.</p>
     </div>
-    <div class="view-toggle">
-      <button class:active={view === 'browse'} onclick={() => (view = 'browse')}>
-        Browse
-      </button>
-      <button class:active={view === 'mine'} onclick={() => (view = 'mine')}>
-        My quests ({myQuests.length})
-      </button>
-    </div>
+    {#if enabled}
+      <div class="view-toggle">
+        <button class:active={view === 'browse'} onclick={() => (view = 'browse')}>
+          Browse
+        </button>
+        <button class:active={view === 'mine'} onclick={() => (view = 'mine')}>
+          My quests ({myQuests.length})
+        </button>
+      </div>
+    {/if}
   </header>
 
   {#if !locId}
     <p class="muted">Pick a location from the sidebar to see its quest catalog.</p>
   {:else if loading}
     <p class="muted">Loading quests…</p>
+  {:else if enabled === false}
+    <div class="empty-card">
+      <h3>Quests aren't enabled here</h3>
+      <p>
+        This location hasn't turned on the progressions / quests feature yet.
+        A gym manager can enable it in the gym settings.
+      </p>
+    </div>
   {:else if error}
     <p class="error">{error}</p>
   {:else if view === 'browse'}

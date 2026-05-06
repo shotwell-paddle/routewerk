@@ -1,12 +1,15 @@
 <script lang="ts">
   import { listWalls, ApiClientError, type WallShape } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
+  import { roleRankAt } from '$lib/stores/auth.svelte';
 
   let walls = $state<WallShape[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
 
   const locId = $derived(effectiveLocationId());
+  // Setter+ may add walls; the API enforces it.
+  const canManage = $derived(roleRankAt(locId) >= 2);
 
   // Re-fetch any time the user picks a different location from the sidebar.
   $effect(() => {
@@ -41,7 +44,7 @@
       <h1>Walls</h1>
       <p class="lede">Manage the physical walls climbers route on.</p>
     </div>
-    {#if locId}
+    {#if locId && canManage}
       <a class="btn-primary" href="/app/walls/new">+ New wall</a>
     {/if}
   </header>
@@ -55,8 +58,12 @@
   {:else if walls.length === 0}
     <div class="empty-card">
       <h3>No walls yet</h3>
-      <p>Create your first wall to start adding routes.</p>
-      <a class="btn-primary" href="/app/walls/new">Create wall</a>
+      {#if canManage}
+        <p>Create your first wall to start adding routes.</p>
+        <a class="btn-primary" href="/app/walls/new">Create wall</a>
+      {:else}
+        <p>This location hasn't published its walls yet. Check back soon.</p>
+      {/if}
     </div>
   {:else}
     <div class="grid">

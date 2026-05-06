@@ -76,3 +76,44 @@ export function clear() {
   state.loaded = true;
   state.error = null;
 }
+
+// Role rank — mirrors internal/middleware/authz.go::RankValue. Climber-only
+// roles return 1, app admin promotes to org_admin (5).
+const ROLE_RANK: Record<string, number> = {
+  climber: 1,
+  setter: 2,
+  head_setter: 3,
+  gym_manager: 4,
+  org_admin: 5,
+};
+
+/**
+ * Best role the current user has at the given location. Mirrors
+ * internal/middleware/websession.go::bestRole + the app-admin promotion
+ * applied in the SPA layout. Pages outside the layout (e.g. route detail)
+ * use this to gate write affordances client-side; the server is still the
+ * source of truth.
+ */
+export function effectiveRoleAt(locationId: string | null | undefined): string | null {
+  const me = state.me;
+  if (!me) return null;
+  let best: string | null = null;
+  let bestRank = 0;
+  for (const m of me.memberships) {
+    // Org-wide memberships always count; location-scoped only when matched.
+    if (m.location_id != null && m.location_id !== locationId) continue;
+    const rank = ROLE_RANK[m.role] ?? 0;
+    if (rank > bestRank) {
+      best = m.role;
+      bestRank = rank;
+    }
+  }
+  if (me.user.is_app_admin && bestRank < 5) return 'org_admin';
+  return best;
+}
+
+/** Numeric rank of `effectiveRoleAt`; 0 if no membership. */
+export function roleRankAt(locationId: string | null | undefined): number {
+  const r = effectiveRoleAt(locationId);
+  return r ? (ROLE_RANK[r] ?? 0) : 0;
+}

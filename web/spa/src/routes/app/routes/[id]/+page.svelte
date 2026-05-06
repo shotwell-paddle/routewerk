@@ -18,6 +18,7 @@
     type RouteRatingShape,
   } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
+  import { roleRankAt } from '$lib/stores/auth.svelte';
   import RouteForm from '$lib/components/RouteForm.svelte';
 
   let route = $state<RouteShape | null>(null);
@@ -35,6 +36,11 @@
 
   const routeId = $derived(page.params.id ?? '');
   const locId = $derived(effectiveLocationId());
+  // Setter+ may edit + flip status; head_setter+ may delete. Server enforces
+  // both — UI hides the affordances so climbers don't see actionable cards
+  // they can't actually use.
+  const canEdit = $derived(roleRankAt(locId) >= 2);
+  const canDelete = $derived(roleRankAt(locId) >= 3);
 
   const wallName = $derived.by(() => {
     if (!route) return '—';
@@ -159,7 +165,7 @@
           </p>
         </div>
       </div>
-      {#if !editing}
+      {#if !editing && canEdit}
         <div class="header-actions">
           <button onclick={() => (editing = true)}>Edit</button>
         </div>
@@ -185,17 +191,19 @@
           <p class="status-current">
             Currently <span class="status-pill status-{route.status}">{route.status}</span>
           </p>
-          <div class="status-actions">
-            {#each ['active', 'flagged', 'archived'] as RouteStatus[] as s}
-              <button
-                disabled={statusUpdating || route.status === s}
-                class:active={route.status === s}
-                onclick={() => setStatus(s)}>
-                {s}
-              </button>
-            {/each}
-          </div>
-          {#if saveError}<p class="error">{saveError}</p>{/if}
+          {#if canEdit}
+            <div class="status-actions">
+              {#each ['active', 'flagged', 'archived'] as RouteStatus[] as s}
+                <button
+                  disabled={statusUpdating || route.status === s}
+                  class:active={route.status === s}
+                  onclick={() => setStatus(s)}>
+                  {s}
+                </button>
+              {/each}
+            </div>
+            {#if saveError}<p class="error">{saveError}</p>{/if}
+          {/if}
         </section>
 
         <section class="card stats-card">
@@ -263,6 +271,7 @@
         {/if}
       </section>
 
+      {#if canDelete}
       <section class="card danger-zone">
         <h2>Danger zone</h2>
         <p class="muted">
@@ -273,6 +282,7 @@
           {deleting ? 'Deleting…' : 'Delete route'}
         </button>
       </section>
+      {/if}
     {/if}
   {/if}
 </div>

@@ -10,15 +10,19 @@
   let submitted = $state(false);
   let error = $state<string | null>(null);
 
-  // Read ?next= so /login can preserve a target route through the magic
-  // link flow. /verify-magic is the server-side redirect target; it
-  // takes a `next` query param too.
+  // Read ?next= so /sign-in preserves the target route through the
+  // magic-link round trip. /verify-magic is the server-side redirect
+  // target after the user clicks the email link; it accepts the same
+  // `next` query param.
+  //
+  // The page is the SPA's magic-link entry point. The HTMX /login
+  // (password auth, used by staff today) is unchanged.
   onMount(() => {
     const params = new URLSearchParams(window.location.search);
     next = params.get('next') ?? '';
 
-    // If we're already authenticated by the time we hit /login, send
-    // the user straight to the comp scorecard (or wherever next points).
+    // If we're already authenticated by the time we hit /sign-in,
+    // skip the form and send the user where they were going.
     if (isAuthenticated()) {
       goto(next || '/');
     }

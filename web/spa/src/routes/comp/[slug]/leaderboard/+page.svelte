@@ -23,7 +23,7 @@
     const a = authState();
     if (a.loaded && a.me === null) {
       goto(
-        `/login?next=${encodeURIComponent('/comp/' + slugOrId + '/leaderboard')}`,
+        `/sign-in?next=${encodeURIComponent('/comp/' + slugOrId + '/leaderboard')}`,
       );
     }
   });

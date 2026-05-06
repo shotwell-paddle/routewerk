@@ -98,18 +98,14 @@
           <span class="muted">· {themeLabel(batch.theme)} · created {fmtDate(batch.created_at)}</span>
         </p>
       </div>
-      {#if batch.status === 'ready'}
+      {#if batch.status !== 'failed'}
         <a class="btn-primary" href={cardBatchDownloadUrl(locId, batch.id)} target="_blank" rel="noreferrer">
           Download PDF
         </a>
       {/if}
     </header>
 
-    {#if batch.status === 'pending'}
-      <p class="hint muted">
-        PDF rendering is in progress. Reload in a moment for the download link.
-      </p>
-    {:else if batch.status === 'failed' && batch.error_message}
+    {#if batch.status === 'failed' && batch.error_message}
       <div class="error">{batch.error_message}</div>
     {/if}
 

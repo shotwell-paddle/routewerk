@@ -372,7 +372,10 @@ func (r *SessionRepo) ListStripTargets(ctx context.Context, sessionID string) ([
 	}
 	defer rows.Close()
 
-	var targets []StripTargetDetail
+	// Initialize as empty slice (not nil) so a JSON encoder serializes as
+	// `[]`, not `null` — the SPA renders against `.length` and crashes on
+	// null. (Repro 2026-05-06: sessions detail page hung in "Loading…".)
+	targets := make([]StripTargetDetail, 0)
 	for rows.Next() {
 		var t StripTargetDetail
 		if err := rows.Scan(
@@ -610,7 +613,9 @@ func (r *SessionRepo) ListChecklistItems(ctx context.Context, sessionID string) 
 	}
 	defer rows.Close()
 
-	var items []ChecklistItemWithUser
+	// Empty slice (not nil) so JSON serializes `[]`, not `null` — see
+	// the matching note in ListStripTargets above.
+	items := make([]ChecklistItemWithUser, 0)
 	for rows.Next() {
 		var item ChecklistItemWithUser
 		if err := rows.Scan(

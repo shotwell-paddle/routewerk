@@ -800,6 +800,142 @@ export async function removeMembership(
   return request(`/memberships/${membershipId}`, { method: 'DELETE', signal });
 }
 
+// ── Quests (Phase 2.8) ─────────────────────────────────────
+//
+// Hand-written shapes — quests aren't in the OpenAPI spec.
+// Mirror internal/model/quest.go + internal/repository/quest.go::QuestListItem.
+
+export type ClimberQuestStatus = 'active' | 'completed' | 'abandoned';
+
+export interface QuestDomainShape {
+  id: string;
+  name: string;
+  color?: string | null;
+  icon?: string | null;
+}
+
+export interface QuestShape {
+  id: string;
+  location_id: string;
+  domain_id: string;
+  badge_id?: string | null;
+  name: string;
+  description: string;
+  quest_type: string;
+  completion_criteria: string;
+  target_count?: number | null;
+  suggested_duration_days?: number | null;
+  available_from?: string | null;
+  available_until?: string | null;
+  skill_level: string;
+  requires_certification?: string | null;
+  route_tag_filter?: string[];
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  domain?: QuestDomainShape | null;
+}
+
+export interface QuestListItemShape extends QuestShape {
+  active_count: number;
+  completed_count: number;
+}
+
+export interface ClimberQuestShape {
+  id: string;
+  user_id: string;
+  quest_id: string;
+  status: ClimberQuestStatus;
+  progress_count: number;
+  started_at: string;
+  completed_at?: string | null;
+  quest?: QuestShape | null;
+}
+
+export interface QuestLogShape {
+  id: string;
+  climber_quest_id: string;
+  log_type: string;
+  route_id?: string | null;
+  notes?: string | null;
+  rating?: number | null;
+  logged_at: string;
+}
+
+/** GET /api/v1/locations/{locationId}/quests — active catalog at this location. */
+export async function listQuests(
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<QuestListItemShape[]> {
+  const res = await request<{ quests: QuestListItemShape[] }>(
+    `/locations/${locationId}/quests`,
+    { signal },
+  );
+  return res.quests ?? [];
+}
+
+/** GET /api/v1/me/quests — caller's enrollments, optional status filter. */
+export async function listMyQuests(
+  status?: ClimberQuestStatus,
+  signal?: AbortSignal,
+): Promise<ClimberQuestShape[]> {
+  const qs = status ? `?status=${status}` : '';
+  const res = await request<{ quests: ClimberQuestShape[] }>(`/me/quests${qs}`, { signal });
+  return res.quests ?? [];
+}
+
+/** GET /api/v1/quests/{questId} — quest detail (no enrollment context). */
+export async function getQuest(questId: string, signal?: AbortSignal): Promise<QuestShape> {
+  return request(`/quests/${questId}`, { signal });
+}
+
+export interface StartQuestResponse {
+  enrollment?: ClimberQuestShape;
+  already_enrolled?: boolean;
+}
+
+/** POST /api/v1/quests/{questId}/start — enroll caller. */
+export async function startQuest(
+  questId: string,
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<StartQuestResponse> {
+  return request(`/quests/${questId}/start`, {
+    method: 'POST',
+    body: { location_id: locationId },
+    signal,
+  });
+}
+
+export interface LogQuestProgressShape {
+  log_type?: string;
+  notes?: string | null;
+  route_id?: string | null;
+  rating?: number | null;
+}
+
+/** POST /api/v1/climber-quests/{climberQuestId}/log */
+export async function logQuestProgress(
+  climberQuestId: string,
+  body: LogQuestProgressShape,
+  signal?: AbortSignal,
+): Promise<QuestLogShape> {
+  const res = await request<{ log: QuestLogShape }>(
+    `/climber-quests/${climberQuestId}/log`,
+    { method: 'POST', body, signal },
+  );
+  return res.log;
+}
+
+/** DELETE /api/v1/climber-quests/{climberQuestId} — abandon. */
+export async function abandonQuest(
+  climberQuestId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/climber-quests/${climberQuestId}`, { method: 'DELETE', signal });
+}
+
 /** GET /competitions/{id} */
 export async function getCompetition(id: string, signal?: AbortSignal): Promise<Competition> {
   return request(`/competitions/${id}`, { signal });

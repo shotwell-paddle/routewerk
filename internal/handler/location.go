@@ -155,3 +155,26 @@ func (h *LocationHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	JSON(w, http.StatusOK, loc)
 }
+
+type progressionsToggleRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+// SetProgressions — POST /locations/{locationID}/progressions-toggle.
+//
+// Flips the climber-facing progressions feature for a location.
+// Mirrors the HTMX endpoint at internal/handler/web/settings.go::ProgressionsToggle.
+// gym_manager+ enforced by router middleware (matches HTMX policy).
+func (h *LocationHandler) SetProgressions(w http.ResponseWriter, r *http.Request) {
+	locationID := chi.URLParam(r, "locationID")
+	var req progressionsToggleRequest
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.locations.SetProgressionsEnabled(r.Context(), locationID, req.Enabled); err != nil {
+		Error(w, http.StatusInternalServerError, "failed to toggle progressions")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

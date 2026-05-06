@@ -619,6 +619,13 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 					r.Put("/", locationHandler.Update)
 				})
 
+				// Progressions feature flag — gym_manager+ matches the
+				// HTMX policy at internal/handler/web/settings.go::ProgressionsToggle.
+				r.Group(func(r chi.Router) {
+					r.Use(authz.RequireLocationRole("gym_manager"))
+					r.Post("/progressions-toggle", locationHandler.SetProgressions)
+				})
+
 				// Walls — setter or above to manage, any member to view
 				r.Route("/walls", func(r chi.Router) {
 					r.Get("/", wallHandler.List)

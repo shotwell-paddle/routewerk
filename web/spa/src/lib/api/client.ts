@@ -194,6 +194,19 @@ export async function getLocation(id: string, signal?: AbortSignal): Promise<Loc
   }
 }
 
+/**
+ * GET /api/v1/orgs/{orgId}/locations — every location in an org. Any
+ * member of the org can list. The SPA uses this to discover which
+ * locations an org-wide membership (location_id null) gives access to,
+ * since /me only returns membership rows, not the org's full footprint.
+ */
+export async function listOrgLocations(
+  orgId: string,
+  signal?: AbortSignal,
+): Promise<LocationShape[]> {
+  return request(`/orgs/${orgId}/locations`, { signal });
+}
+
 // ── Walls (Phase 2.2) ─────────────────────────────────────
 //
 // Hand-written shapes — wall handlers haven't been migrated to the

@@ -143,6 +143,27 @@
     </section>
   {/if}
 
+  {#if roleRankAt(effectiveLocationId()) >= 3}
+    <section class="card cta-card">
+      <h2>Progressions admin</h2>
+      <p class="muted">
+        Quests, badges, and quest domains. Build out the catalog before
+        flipping the gym setting that exposes them to climbers.
+      </p>
+      <a class="primary-link" href="/app/settings/progressions">Manage progressions →</a>
+    </section>
+  {/if}
+
+  {#if roleRankAt(effectiveLocationId()) >= 5}
+    <section class="card cta-card">
+      <h2>Organization</h2>
+      <p class="muted">
+        Org-wide settings, locations, and the team admin. Org admin only.
+      </p>
+      <a class="primary-link" href="/app/settings/org">Manage organization →</a>
+    </section>
+  {/if}
+
   <section class="card">
     <h2>Profile</h2>
     <form onsubmit={saveProfile}>

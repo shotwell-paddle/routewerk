@@ -72,11 +72,15 @@
       .then(([s, wls, tm, st, cl, rt]) => {
         if (cancelled) return;
         session = s;
-        walls = wls;
-        team = tm.members;
-        stripTargets = st;
-        checklist = cl;
-        activeRoutes = rt.routes;
+        // Defensively default arrays — older API builds returned `null`
+        // for empty result sets, which crashes any `.length` access. The
+        // server fix shipped 2026-05-06 normalizes these to `[]`, but
+        // keep the fallbacks so a stale build can't hang the page again.
+        walls = wls ?? [];
+        team = tm.members ?? [];
+        stripTargets = st ?? [];
+        checklist = cl ?? [];
+        activeRoutes = rt.routes ?? [];
       })
       .catch((err) => {
         if (cancelled) return;

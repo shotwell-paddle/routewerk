@@ -829,13 +829,17 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			// {id} routes — chi matches in registration order and
 			// "by-slug" would otherwise be caught by the {id} pattern.
 			r.Get("/competitions/by-slug/{slug}", compHandler.GetBySlug)
-			r.Get("/competitions/{id}", compHandler.Get)
-			r.Patch("/competitions/{id}", compHandler.Update)
 
-			// Comp child resources (events, categories, problems —
-			// Phase 1f wave 2). Authz at the comp level happens
-			// inside each handler.
+			// Everything under /competitions/{id} lives in one sub-router.
+			// Chi can't have both `r.Get("/competitions/{id}", h)` AND
+			// `r.Route("/competitions/{id}", ...)` registered at the same
+			// node — the sub-router takes over the subtree and the bare
+			// GET 404s. Put the bare GET/PATCH inside the sub-router as
+			// "/" instead. (Reproduced 2026-05-06: comp detail page 404'd
+			// while child resources like /events and /categories worked.)
 			r.Route("/competitions/{id}", func(r chi.Router) {
+				r.Get("/", compHandler.Get)
+				r.Patch("/", compHandler.Update)
 				r.Get("/events", compHandler.ListEvents)
 				r.Post("/events", compHandler.CreateEvent)
 				r.Get("/categories", compHandler.ListCategories)

@@ -85,7 +85,7 @@
             </span>
             <span class="created muted">{fmtDate(b.created_at)}</span>
           </a>
-          {#if b.status === 'ready'}
+          {#if b.status !== 'failed'}
             <a class="dl-link" href={cardBatchDownloadUrl(locId, b.id)} target="_blank" rel="noreferrer">
               Download PDF
             </a>

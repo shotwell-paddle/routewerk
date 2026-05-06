@@ -7,7 +7,7 @@
     type TeamMemberShape,
     type MembershipRole,
   } from '$lib/api/client';
-  import { authState } from '$lib/stores/auth.svelte';
+  import { authState, effectiveRoleAt } from '$lib/stores/auth.svelte';
   import { effectiveLocationId, locationState } from '$lib/stores/location.svelte';
 
   let members = $state<TeamMemberShape[]>([]);
@@ -21,15 +21,14 @@
 
   // Caller's role at the selected location — drives which actions are
   // visible. The server is the source of truth; this just hides
-  // affordances the caller can't use.
+  // affordances the caller can't use. Use the shared effectiveRoleAt
+  // helper so org-wide memberships (location_id null) and is_app_admin
+  // both promote correctly — without this an org_admin's "manage team"
+  // affordances would be hidden because their row has no location_id.
   const callerRole = $derived.by((): MembershipRole | null => {
-    const me = authState().me;
-    if (!me) return null;
     const sel = locationState().selectedId;
     if (!sel) return null;
-    return (
-      (me.memberships.find((m) => m.location_id === sel)?.role as MembershipRole) ?? null
-    );
+    return (effectiveRoleAt(sel) as MembershipRole | null) ?? null;
   });
   const ROLE_RANK: Record<MembershipRole, number> = {
     climber: 1,

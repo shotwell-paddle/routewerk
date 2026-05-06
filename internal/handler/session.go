@@ -13,10 +13,14 @@ import (
 
 type SessionHandler struct {
 	sessions *repository.SessionRepo
+	// Used by Publish to archive routes targeted by strip-targets
+	// before flipping the session to complete. Mirrors the HTMX
+	// flow at internal/handler/web/sessions_lifecycle.go.
+	routes *repository.RouteRepo
 }
 
-func NewSessionHandler(sessions *repository.SessionRepo) *SessionHandler {
-	return &SessionHandler{sessions: sessions}
+func NewSessionHandler(sessions *repository.SessionRepo, routes *repository.RouteRepo) *SessionHandler {
+	return &SessionHandler{sessions: sessions, routes: routes}
 }
 
 type createSessionRequest struct {
@@ -225,6 +229,77 @@ func (h *SessionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Publish — POST /sessions/{sessionID}/publish.
+//
+// One-shot completion: archives any strip-targets (whole-wall +
+// individual routes), then activates every draft route on the session,
+// then flips the session to status=complete. Mirrors the HTMX flow
+// (internal/handler/web/sessions_lifecycle.go::SessionPublish).
+//
+// head_setter+ enforced by router middleware. Returns the route counts
+// + new session status so the SPA can show a confirmation summary
+// without re-fetching.
+type publishResult struct {
+	StrippedRouteCount int    `json:"stripped_route_count"`
+	PublishedRoutes    int    `json:"published_routes"`
+	Status             string `json:"status"`
+}
+
+func (h *SessionHandler) Publish(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+	if !isUUID(sessionID) {
+		Error(w, http.StatusBadRequest, "invalid session id")
+		return
+	}
+
+	// Order matters: archive THEN publish, otherwise a whole-wall strip
+	// would catch the freshly-published routes too.
+	stripTargets, err := h.sessions.ListStripTargets(r.Context(), sessionID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "could not load strip targets")
+		return
+	}
+	stripped := 0
+	var routeIDs []string
+	for _, t := range stripTargets {
+		if t.RouteID == nil {
+			n, archErr := h.routes.BulkArchiveByWall(r.Context(), t.WallID)
+			if archErr != nil {
+				Error(w, http.StatusInternalServerError, "failed to archive wall routes")
+				return
+			}
+			stripped += n
+		} else {
+			routeIDs = append(routeIDs, *t.RouteID)
+		}
+	}
+	if len(routeIDs) > 0 {
+		n, archErr := h.routes.BulkArchive(r.Context(), routeIDs)
+		if archErr != nil {
+			Error(w, http.StatusInternalServerError, "failed to archive routes")
+			return
+		}
+		stripped += n
+	}
+
+	published, err := h.sessions.PublishSessionRoutes(r.Context(), sessionID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to publish routes")
+		return
+	}
+
+	if err := h.sessions.UpdateStatus(r.Context(), sessionID, "complete"); err != nil {
+		Error(w, http.StatusInternalServerError, "failed to update session status")
+		return
+	}
+
+	JSON(w, http.StatusOK, publishResult{
+		StrippedRouteCount: stripped,
+		PublishedRoutes:    published,
+		Status:             "complete",
+	})
 }
 
 // ── Strip targets ────────────────────────────────────────

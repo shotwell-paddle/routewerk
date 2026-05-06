@@ -16,6 +16,7 @@
     listSessionChecklist,
     toggleChecklistItem,
     listRoutes,
+    publishSession,
     ApiClientError,
     type SessionShape,
     type SessionStatus,
@@ -144,6 +145,40 @@
     } catch (err) {
       mutateError = err instanceof ApiClientError ? err.message : 'Delete failed.';
       mutating = false;
+    }
+  }
+
+  // Publish summary surfaced after a successful one-shot. Shows for a
+  // few seconds then auto-clears so the page returns to its normal
+  // "complete" view.
+  let publishResult = $state<{ stripped: number; published: number } | null>(null);
+  let publishing = $state(false);
+  let publishError = $state<string | null>(null);
+
+  async function handlePublish() {
+    if (!locId || !sessionId || !session) return;
+    const stripCount = stripTargets.length;
+    const summary =
+      stripCount > 0
+        ? `Publish this session?\n\nThis will:\n• archive ${stripCount} strip-target${stripCount === 1 ? '' : 's'} (whole walls + individual routes)\n• activate every draft route in this session\n• flip the session to complete\n\nThis can't be undone in one click.`
+        : 'Publish this session? Drafts will be activated and the session flipped to complete.';
+    if (!confirm(summary)) return;
+
+    publishing = true;
+    publishError = null;
+    try {
+      const res = await publishSession(locId, sessionId);
+      publishResult = {
+        stripped: res.stripped_route_count,
+        published: res.published_routes,
+      };
+      // Refresh the session + strip targets so the UI reflects the new
+      // empty state.
+      await refresh();
+    } catch (err) {
+      publishError = err instanceof ApiClientError ? err.message : 'Publish failed.';
+    } finally {
+      publishing = false;
     }
   }
 
@@ -352,19 +387,31 @@
         </section>
       {/if}
 
-      {#if canManage && allowedTransitions.length > 0}
+      {#if canManage && (allowedTransitions.length > 0 || session.status !== 'complete')}
         <section class="card">
           <h2>Status</h2>
           <p class="muted small">
             Currently <strong>{STATUS_LABEL[session.status as SessionStatus]}</strong>.
             {#if session.status !== 'complete'}
-              For final publish (which strips routes + publishes drafts),
-              use <a class="link" href="/sessions/{session.id}/complete">the existing complete view</a>.
+              The Publish button below archives every strip-target, activates
+              every draft route, and flips the session to complete in one shot.
             {/if}
           </p>
+          {#if publishResult}
+            <p class="ok">
+              Published. {publishResult.published} draft{publishResult.published === 1 ? '' : 's'} activated;
+              {publishResult.stripped} route{publishResult.stripped === 1 ? '' : 's'} archived.
+            </p>
+          {/if}
+          {#if publishError}<p class="error">{publishError}</p>{/if}
           <div class="status-actions">
+            {#if session.status !== 'complete'}
+              <button class="primary" disabled={publishing || mutating} onclick={handlePublish}>
+                {publishing ? 'Publishing…' : 'Publish session'}
+              </button>
+            {/if}
             {#each allowedTransitions as next}
-              <button disabled={mutating} onclick={() => changeStatus(next)}>
+              <button disabled={mutating || publishing} onclick={() => changeStatus(next)}>
                 Move to {STATUS_LABEL[next]}
               </button>
             {/each}
@@ -808,6 +855,15 @@
     background: #fef2f2;
     border: 1px solid #fecaca;
     color: #991b1b;
+    padding: 0.55rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    margin: 0.5rem 0;
+  }
+  .ok {
+    background: rgba(22, 163, 74, 0.1);
+    border: 1px solid rgba(22, 163, 74, 0.3);
+    color: #15803d;
     padding: 0.55rem 0.75rem;
     border-radius: 6px;
     font-size: 0.9rem;

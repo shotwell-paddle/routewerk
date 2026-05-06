@@ -132,6 +132,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	wallHandler := handler.NewWallHandler(wallRepo, auditService)
 	routeHandler := handler.NewRouteHandler(routeRepo, auditService)
 	teamHandler := handler.NewTeamHandler(userRepo)
+	questHandler := handler.NewQuestHandler(deps.QuestSvc)
 	ascentHandler := handler.NewAscentHandler(ascentRepo)
 	ratingHandler := handler.NewRatingHandler(ratingRepo)
 	sessionHandler := handler.NewSessionHandler(sessionRepo)
@@ -511,6 +512,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			r.Post("/me/password", authHandler.ChangePassword)
 			r.Get("/me/ascents", ascentHandler.MyAscents)
 			r.Get("/me/stats", ascentHandler.MyStats)
+			r.Get("/me/quests", questHandler.MyQuests)
 			r.Get("/me/feed", followHandler.Feed)
 			r.Get("/me/labor", laborHandler.MyLabor)
 			r.Get("/me/training-plans", trainingHandler.MyPlans)
@@ -731,6 +733,10 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 					r.Use(authz.RequireLocationRole("head_setter"))
 					r.Get("/", teamHandler.List)
 				})
+
+				// Quests catalog — Phase 2.8. Any location member can browse
+				// the active quests at this location.
+				r.Get("/quests", questHandler.ListAvailable)
 			})
 
 			// Membership writes (Phase 2.7) — no location prefix because the
@@ -740,6 +746,13 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			// the write. gym_manager+ minimum.
 			r.Patch("/memberships/{membershipID}", teamHandler.UpdateMembership)
 			r.Delete("/memberships/{membershipID}", teamHandler.RemoveMembership)
+
+			// Quest enrollment + log entries (Phase 2.8). Each handler
+			// verifies the caller owns the enrollment before mutating.
+			r.Get("/quests/{questID}", questHandler.Get)
+			r.Post("/quests/{questID}/start", questHandler.Start)
+			r.Post("/climber-quests/{climberQuestID}/log", questHandler.LogProgress)
+			r.Delete("/climber-quests/{climberQuestID}", questHandler.Abandon)
 
 			// ── Competitions by id (no location prefix) ─────────────
 			// Read is open to any authenticated user; the leaderboard

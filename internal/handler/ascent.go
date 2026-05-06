@@ -111,3 +111,76 @@ func (h *AscentHandler) RouteAscents(w http.ResponseWriter, r *http.Request) {
 
 	JSON(w, http.StatusOK, ascents)
 }
+
+type updateAscentRequest struct {
+	AscentType string  `json:"ascent_type"`
+	Attempts   int     `json:"attempts"`
+	Notes      *string `json:"notes,omitempty"`
+}
+
+// Update — PATCH /api/v1/me/ascents/{ascentID}.
+//
+// Owner-only edit of a previously logged ascent. Mirrors the HTMX
+// per-tick edit at internal/handler/web/climber_tick.go::TickEdit. Type,
+// attempt count, and notes are mutable; route + climbed_at are not (use
+// a fresh log entry for a different climb).
+func (h *AscentHandler) UpdateMine(w http.ResponseWriter, r *http.Request) {
+	ascentID := chi.URLParam(r, "ascentID")
+	if !isUUID(ascentID) {
+		Error(w, http.StatusBadRequest, "invalid ascent id")
+		return
+	}
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		Error(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	var req updateAscentRequest
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.AscentType != "send" && req.AscentType != "flash" && req.AscentType != "attempt" && req.AscentType != "project" {
+		Error(w, http.StatusBadRequest, "ascent_type must be 'send', 'flash', 'attempt', or 'project'")
+		return
+	}
+	if req.Attempts <= 0 {
+		req.Attempts = 1
+	}
+
+	a := &model.Ascent{
+		ID:         ascentID,
+		UserID:     userID,
+		AscentType: req.AscentType,
+		Attempts:   req.Attempts,
+		Notes:      req.Notes,
+	}
+	if err := h.ascents.Update(r.Context(), a); err != nil {
+		// Update returns a non-sentinel error when the row is missing or
+		// owned by someone else; surface as 404 to avoid existence
+		// disclosure.
+		Error(w, http.StatusNotFound, "ascent not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// DeleteMine — DELETE /api/v1/me/ascents/{ascentID}. Owner-only.
+func (h *AscentHandler) DeleteMine(w http.ResponseWriter, r *http.Request) {
+	ascentID := chi.URLParam(r, "ascentID")
+	if !isUUID(ascentID) {
+		Error(w, http.StatusBadRequest, "invalid ascent id")
+		return
+	}
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		Error(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	if err := h.ascents.Delete(r.Context(), ascentID, userID); err != nil {
+		Error(w, http.StatusNotFound, "ascent not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

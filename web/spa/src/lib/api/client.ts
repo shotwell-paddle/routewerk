@@ -842,7 +842,7 @@ export async function voteRouteDifficulty(
   });
 }
 
-export type AscentType = 'send' | 'flash' | 'attempt';
+export type AscentType = 'send' | 'flash' | 'attempt' | 'project';
 
 export interface LogAscentShape {
   ascent_type: AscentType;
@@ -1324,6 +1324,33 @@ export async function listMyAscents(
 ): Promise<MyAscentsResponse> {
   const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   return request(`/me/ascents?${qs}`, { signal });
+}
+
+export interface UpdateAscentShape {
+  ascent_type: AscentType;
+  attempts: number;
+  notes?: string | null;
+}
+
+/**
+ * PATCH /api/v1/me/ascents/{ascentId} — owner-only edit. Type, attempt
+ * count, and notes are mutable; route + climbed_at are not (start a
+ * fresh log entry for a different climb).
+ */
+export async function updateMyAscent(
+  ascentId: string,
+  body: UpdateAscentShape,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/me/ascents/${ascentId}`, { method: 'PATCH', body, signal });
+}
+
+/** DELETE /api/v1/me/ascents/{ascentId} — owner-only delete. */
+export async function deleteMyAscent(
+  ascentId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/me/ascents/${ascentId}`, { method: 'DELETE', signal });
 }
 
 export interface GradePyramidEntryShape {

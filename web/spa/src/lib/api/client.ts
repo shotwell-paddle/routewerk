@@ -1246,6 +1246,24 @@ export async function deleteCardBatch(
   });
 }
 
+/**
+ * PATCH /locations/{locationId}/card-batches/{batchId} — creator or
+ * head_setter+. Replaces the batch's route_ids; the next download
+ * re-renders against the new selection.
+ */
+export async function updateCardBatch(
+  locationId: string,
+  batchId: string,
+  routeIds: string[],
+  signal?: AbortSignal,
+): Promise<CardBatchShape> {
+  return request(`/locations/${locationId}/card-batches/${batchId}`, {
+    method: 'PATCH',
+    body: { route_ids: routeIds },
+    signal,
+  });
+}
+
 /** Resolve the absolute download URL for a card batch's PDF. */
 export function cardBatchDownloadUrl(locationId: string, batchId: string): string {
   return `/api/v1/locations/${locationId}/card-batches/${batchId}/pdf`;

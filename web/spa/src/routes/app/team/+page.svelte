@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     listTeam,
+    listOrgTeam,
     updateMembership,
     removeMembership,
     ApiClientError,
@@ -49,12 +50,36 @@
   });
   const canRemove = $derived(callerRank >= 4);
 
+  // Scope toggle: location vs org-wide. Only org_admins (rank 5) get
+  // the org option since the server enforces org_admin on the org-wide
+  // endpoint. Selecting "org" resolves the org via the selected
+  // location's membership row.
+  let scope = $state<'location' | 'org'>('location');
+  const canSeeOrgScope = $derived(callerRank >= 5);
+  const orgIdForScope = $derived.by(() => {
+    const me = authState().me;
+    const sel = locationState().selectedId;
+    if (!me || !sel) return null;
+    // Find the org for the selected location via memberships, then
+    // fall back to the first org_admin row (covers org-wide rows where
+    // location_id is null).
+    const loc = me.memberships.find((m) => m.location_id === sel);
+    if (loc) return loc.org_id;
+    const orgWide = me.memberships.find((m) => !m.location_id && m.role === 'org_admin');
+    return orgWide?.org_id ?? null;
+  });
+
   $effect(() => {
     if (!locId) return;
     let cancelled = false;
     loading = true;
     error = null;
-    listTeam(locId, { q: q.trim() || undefined, role: roleFilter || undefined })
+    const filters = { q: q.trim() || undefined, role: roleFilter || undefined };
+    const fetcher =
+      scope === 'org' && orgIdForScope
+        ? listOrgTeam(orgIdForScope, filters)
+        : listTeam(locId, filters);
+    fetcher
       .then((res) => {
         if (!cancelled) members = res.members;
       })
@@ -114,8 +139,32 @@
   <header class="page-header">
     <div>
       <h1>Team</h1>
-      <p class="lede">Manage who can set, manage, and admin at this location.</p>
+      <p class="lede">
+        {scope === 'org'
+          ? 'Members across every gym in this organization.'
+          : 'Manage who can set, manage, and admin at this location.'}
+      </p>
     </div>
+    {#if canSeeOrgScope && orgIdForScope}
+      <div class="scope-toggle" role="tablist" aria-label="Team scope">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={scope === 'location'}
+          class:active={scope === 'location'}
+          onclick={() => (scope = 'location')}>
+          This gym
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={scope === 'org'}
+          class:active={scope === 'org'}
+          onclick={() => (scope = 'org')}>
+          Whole org
+        </button>
+      </div>
+    {/if}
   </header>
 
   {#if !locId}
@@ -215,6 +264,33 @@
   }
   .page-header {
     margin-bottom: 1.5rem;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .scope-toggle {
+    display: inline-flex;
+    border: 1px solid var(--rw-border-strong);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .scope-toggle button {
+    background: var(--rw-surface);
+    color: var(--rw-text-muted);
+    border: 0;
+    padding: 0.45rem 0.95rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .scope-toggle button + button {
+    border-left: 1px solid var(--rw-border-strong);
+  }
+  .scope-toggle button.active {
+    background: var(--rw-accent);
+    color: var(--rw-accent-ink);
   }
   h1 {
     font-size: 1.6rem;

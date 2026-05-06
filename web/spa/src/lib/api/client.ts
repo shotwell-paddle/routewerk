@@ -1518,6 +1518,22 @@ export async function listTeam(
   return request(`/locations/${locationId}/team${suffix}`, { signal });
 }
 
+/**
+ * GET /api/v1/orgs/{orgId}/team — org_admin only. Org-wide member list,
+ * same response shape as listTeam so the SPA can swap source URL.
+ */
+export async function listOrgTeam(
+  orgId: string,
+  filters: { q?: string; role?: MembershipRole } = {},
+  signal?: AbortSignal,
+): Promise<TeamListResponse> {
+  const qs = new URLSearchParams();
+  if (filters.q) qs.set('q', filters.q);
+  if (filters.role) qs.set('role', filters.role);
+  const suffix = qs.toString() ? `?${qs}` : '';
+  return request(`/orgs/${orgId}/team${suffix}`, { signal });
+}
+
 /** PATCH /api/v1/memberships/{membershipId} — gym_manager+ to assign elevated roles. */
 export async function updateMembership(
   membershipId: string,

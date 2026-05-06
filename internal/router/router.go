@@ -789,14 +789,14 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 				// Location settings (circuits, hold-colors, grading, display,
 				// session defaults). Read for setter+ so the SPA route form
 				// can restrict grading systems / color pickers to what this
-				// gym actually stocks; write stays gym_manager+ since these
-				// values shape every climber-facing card.
+				// gym actually stocks; write for head_setter+ to match the
+				// HTMX gym-settings policy at internal/handler/web/settings.go.
 				r.Group(func(r chi.Router) {
 					r.Use(authz.RequireLocationRole("setter"))
 					r.Get("/settings", settingsHandler.GetLocationSettings)
 				})
 				r.Group(func(r chi.Router) {
-					r.Use(authz.RequireLocationRole("gym_manager"))
+					r.Use(authz.RequireLocationRole("head_setter"))
 					r.Put("/settings", settingsHandler.UpdateLocationSettings)
 				})
 

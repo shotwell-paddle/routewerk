@@ -459,6 +459,80 @@ export async function listRouteRatings(
   return request(`/locations/${locationId}/routes/${routeId}/ratings`, { signal });
 }
 
+// ── Setting sessions (Phase 2.4) ──────────────────────────
+//
+// Hand-written shapes — sessions aren't in the OpenAPI spec yet.
+// Mirror `internal/model/SettingSession` + handler/session.go.
+
+export type SessionStatus = 'planning' | 'in_progress' | 'complete' | 'cancelled';
+
+export interface SessionAssignmentShape {
+  id: string;
+  session_id: string;
+  setter_id: string;
+  wall_id?: string | null;
+  target_grades?: string[];
+  notes?: string | null;
+}
+
+export interface SessionShape {
+  id: string;
+  location_id: string;
+  scheduled_date: string;
+  status: SessionStatus;
+  notes?: string | null;
+  created_by: string;
+  assignments?: SessionAssignmentShape[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SessionWriteShape {
+  /** ISO date (YYYY-MM-DD). */
+  scheduled_date: string;
+  notes?: string | null;
+}
+
+/** GET /locations/{locationId}/sessions — setter+. */
+export async function listSessions(
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<SessionShape[]> {
+  return request(`/locations/${locationId}/sessions`, { signal });
+}
+
+/** GET /locations/{locationId}/sessions/{sessionId} — setter+. */
+export async function getSession(
+  locationId: string,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<SessionShape> {
+  return request(`/locations/${locationId}/sessions/${sessionId}`, { signal });
+}
+
+/** POST /locations/{locationId}/sessions — head_setter+. */
+export async function createSession(
+  locationId: string,
+  body: SessionWriteShape,
+  signal?: AbortSignal,
+): Promise<SessionShape> {
+  return request(`/locations/${locationId}/sessions`, { method: 'POST', body, signal });
+}
+
+/** PUT /locations/{locationId}/sessions/{sessionId} — head_setter+. */
+export async function updateSession(
+  locationId: string,
+  sessionId: string,
+  body: SessionWriteShape,
+  signal?: AbortSignal,
+): Promise<SessionShape> {
+  return request(`/locations/${locationId}/sessions/${sessionId}`, {
+    method: 'PUT',
+    body,
+    signal,
+  });
+}
+
 /**
  * GET /api/v1/me — returns the authenticated user + their memberships.
  * Resolves with `null` on 401 (caller should redirect to login).

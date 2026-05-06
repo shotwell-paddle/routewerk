@@ -134,6 +134,58 @@ func (h *CompHandler) CreateRegistration(w http.ResponseWriter, r *http.Request)
 	JSON(w, http.StatusCreated, out)
 }
 
+// ListRegistrationAttempts handles GET /api/v1/registrations/{id}/attempts.
+//
+// Returns the per-problem state for the registration, projected to the
+// slim AttemptState shape the action endpoint emits. Used by the SPA
+// scorecard to hydrate on first load and after page refresh.
+//
+// Authorization: caller must be the registration's user OR staff
+// (gym_manager+) at the comp's location.
+func (h *CompHandler) ListRegistrationAttempts(w http.ResponseWriter, r *http.Request) {
+	regID := chi.URLParam(r, "id")
+	if !isUUID(regID) {
+		Error(w, http.StatusBadRequest, "invalid registration id")
+		return
+	}
+	reg, err := h.regRepo.GetByID(r.Context(), regID)
+	if errors.Is(err, repository.ErrRegistrationNotFound) {
+		Error(w, http.StatusNotFound, "registration not found")
+		return
+	}
+	if err != nil {
+		slog.Error("get registration", "id", regID, "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	callerID := middleware.GetUserID(r.Context())
+	if callerID == "" {
+		Error(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	if reg.UserID != callerID {
+		comp, ok := h.loadComp(w, r, reg.CompetitionID)
+		if !ok {
+			return
+		}
+		if !h.requireCompRole(w, r, comp, rbac.RoleGymManager) {
+			return
+		}
+	}
+
+	attempts, err := h.attemptRepo.ListByRegistration(r.Context(), regID)
+	if err != nil {
+		slog.Error("list attempts by registration", "id", regID, "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	out := make([]api.AttemptState, 0, len(attempts))
+	for i := range attempts {
+		out = append(out, attemptToAPIState(&attempts[i]))
+	}
+	JSON(w, http.StatusOK, out)
+}
+
 // WithdrawRegistration handles DELETE /api/v1/registrations/{id}.
 func (h *CompHandler) WithdrawRegistration(w http.ResponseWriter, r *http.Request) {
 	regID := chi.URLParam(r, "id")

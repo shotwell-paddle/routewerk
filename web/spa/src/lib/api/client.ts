@@ -19,9 +19,22 @@ export type Competition = Schemas['Competition'];
 export type CompetitionCreate = Schemas['CompetitionCreate'];
 export type CompetitionUpdate = Schemas['CompetitionUpdate'];
 export type CompetitionStatus = Schemas['CompetitionStatus'];
+export type CompetitionEvent = Schemas['CompetitionEvent'];
+export type CompetitionCategory = Schemas['CompetitionCategory'];
+export type CompetitionProblem = Schemas['CompetitionProblem'];
+export type CompetitionRegistration = Schemas['CompetitionRegistration'];
+export type RegistrationCreate = Schemas['RegistrationCreate'];
 export type Aggregation = Schemas['Aggregation'];
 export type MagicLinkRequest = Schemas['MagicLinkRequest'];
 export type ApiError = Schemas['Error'];
+
+// Action endpoint types (Phase 1g.2 onward).
+export type ActionType = Schemas['ActionType'];
+export type ActionItem = Schemas['ActionItem'];
+export type ActionsRequest = Schemas['ActionsRequest'];
+export type ActionsResponse = Schemas['ActionsResponse'];
+export type AttemptState = Schemas['AttemptState'];
+export type ActionRejectedReason = Schemas['ActionRejected']['reason'];
 
 /**
  * ApiClientError is thrown for any non-2xx response. The caller can
@@ -182,4 +195,86 @@ export async function updateCompetition(
   signal?: AbortSignal,
 ): Promise<Competition> {
   return request(`/competitions/${id}`, { method: 'PATCH', body, signal });
+}
+
+/**
+ * GET /competitions/by-slug/{slug} — resolve by slug across the user's
+ * accessible locations. Used when a magic-link URL has a slug but no
+ * location context.
+ */
+export async function getCompetitionBySlug(
+  slug: string,
+  signal?: AbortSignal,
+): Promise<Competition> {
+  return request(`/competitions/by-slug/${encodeURIComponent(slug)}`, { signal });
+}
+
+/** GET /competitions/{id}/events */
+export async function listEvents(
+  competitionId: string,
+  signal?: AbortSignal,
+): Promise<CompetitionEvent[]> {
+  return request(`/competitions/${competitionId}/events`, { signal });
+}
+
+/** GET /competitions/{id}/categories */
+export async function listCategories(
+  competitionId: string,
+  signal?: AbortSignal,
+): Promise<CompetitionCategory[]> {
+  return request(`/competitions/${competitionId}/categories`, { signal });
+}
+
+/** GET /events/{id}/problems */
+export async function listProblems(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<CompetitionProblem[]> {
+  return request(`/events/${eventId}/problems`, { signal });
+}
+
+/** GET /competitions/{id}/registrations */
+export async function listRegistrations(
+  competitionId: string,
+  signal?: AbortSignal,
+): Promise<CompetitionRegistration[]> {
+  return request(`/competitions/${competitionId}/registrations`, { signal });
+}
+
+/** POST /competitions/{id}/registrations */
+export async function createRegistration(
+  competitionId: string,
+  body: RegistrationCreate,
+  signal?: AbortSignal,
+): Promise<CompetitionRegistration> {
+  return request(`/competitions/${competitionId}/registrations`, {
+    method: 'POST',
+    body,
+    signal,
+  });
+}
+
+/** GET /registrations/{id}/attempts */
+export async function listRegistrationAttempts(
+  registrationId: string,
+  signal?: AbortSignal,
+): Promise<AttemptState[]> {
+  return request(`/registrations/${registrationId}/attempts`, { signal });
+}
+
+/**
+ * POST /competitions/{id}/actions — submit one or more attempt actions.
+ * Used by the climber scorecard's action queue with idempotency keys
+ * for retry-safe writes.
+ */
+export async function submitActions(
+  competitionId: string,
+  body: ActionsRequest,
+  signal?: AbortSignal,
+): Promise<ActionsResponse> {
+  return request(`/competitions/${competitionId}/actions`, {
+    method: 'POST',
+    body,
+    signal,
+  });
 }

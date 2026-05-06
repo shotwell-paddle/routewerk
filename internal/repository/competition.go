@@ -80,6 +80,49 @@ func (r *CompetitionRepo) GetByID(ctx context.Context, id string) (*model.Compet
 	return c, nil
 }
 
+// FindBySlugForUser searches across every location the user has org
+// membership at and returns the first comp whose slug matches. Used by
+// the SPA when a magic-link URL like /comp/league-2026 lands without a
+// location context to disambiguate the slug.
+//
+// One round-trip: joins competitions → locations → user_memberships.
+// The user has access to a comp's location via org-level membership
+// (the same rule the location middleware enforces).
+func (r *CompetitionRepo) FindBySlugForUser(ctx context.Context, userID, slug string) (*model.Competition, error) {
+	ctx, cancel := database.QueryTimeout(ctx, database.TimeoutFast)
+	defer cancel()
+
+	c := &model.Competition{}
+	err := r.db.QueryRow(ctx, `
+		SELECT c.id, c.location_id, c.name, c.slug, c.format, c.aggregation,
+			c.scoring_rule, c.scoring_config, c.status, c.leaderboard_visibility,
+			c.starts_at, c.ends_at, c.registration_opens_at, c.registration_closes_at,
+			c.created_at, c.updated_at
+		FROM competitions c
+		JOIN locations l ON l.id = c.location_id AND l.deleted_at IS NULL
+		JOIN user_memberships um
+			ON um.org_id = l.org_id
+			AND um.user_id = $1
+			AND um.deleted_at IS NULL
+		WHERE c.slug = $2
+		ORDER BY c.starts_at DESC
+		LIMIT 1`,
+		userID, slug,
+	).Scan(
+		&c.ID, &c.LocationID, &c.Name, &c.Slug, &c.Format, &c.Aggregation,
+		&c.ScoringRule, &c.ScoringConfig, &c.Status, &c.LeaderboardVis,
+		&c.StartsAt, &c.EndsAt, &c.RegistrationOpensAt, &c.RegistrationClosesAt,
+		&c.CreatedAt, &c.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrCompetitionNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find competition by slug for user: %w", err)
+	}
+	return c, nil
+}
+
 // GetBySlug looks up a comp by (location, slug) — the public URL key.
 func (r *CompetitionRepo) GetBySlug(ctx context.Context, locationID, slug string) (*model.Competition, error) {
 	ctx, cancel := database.QueryTimeout(ctx, database.TimeoutFast)

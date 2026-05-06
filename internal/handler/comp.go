@@ -128,6 +128,42 @@ func (h *CompHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // ── Get ────────────────────────────────────────────────────
 
+// GetBySlug handles GET /api/v1/competitions/by-slug/{slug}.
+//
+// Searches across the user's accessible locations and returns the first
+// comp matching the slug. Used by the SPA so magic-link URLs like
+// /comp/league-2026 can land without the SPA needing to know which
+// location the comp lives at first.
+func (h *CompHandler) GetBySlug(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	if slug == "" || !slugPattern.MatchString(slug) {
+		Error(w, http.StatusBadRequest, "invalid slug")
+		return
+	}
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		Error(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	comp, err := h.repo.FindBySlugForUser(r.Context(), userID, slug)
+	if errors.Is(err, repository.ErrCompetitionNotFound) {
+		Error(w, http.StatusNotFound, "competition not found")
+		return
+	}
+	if err != nil {
+		slog.Error("find competition by slug", "slug", slug, "user_id", userID, "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	out, err := modelToAPI(comp)
+	if err != nil {
+		slog.Error("competition serialization", "id", comp.ID, "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	JSON(w, http.StatusOK, out)
+}
+
 // Get handles GET /api/v1/competitions/{id}.
 func (h *CompHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

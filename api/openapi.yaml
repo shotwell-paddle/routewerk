@@ -122,6 +122,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /competitions/by-slug/{slug}:
+    parameters:
+      - in: path
+        name: slug
+        required: true
+        description: |
+          The comp's URL-safe slug. Resolved across every location the
+          authenticated user has membership at; first match wins. Use
+          this when the SPA has a slug from a magic-link URL but no
+          location context.
+        schema:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
+    get:
+      tags: [competitions]
+      operationId: getCompetitionBySlug
+      summary: Resolve a competition by slug across the user's locations
+      responses:
+        '200':
+          description: The competition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Competition'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /competitions/{id}:
     parameters:
       - $ref: '#/components/parameters/CompetitionId'
@@ -398,6 +426,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+
+  /registrations/{id}/attempts:
+    parameters:
+      - $ref: '#/components/parameters/RegistrationId'
+    get:
+      tags: [competitions]
+      operationId: listRegistrationAttempts
+      summary: Per-problem state for a registration
+      description: |
+        Returns the climber's current per-problem attempt state, in the
+        same shape the action endpoint emits. Used by the SPA scorecard
+        to hydrate on first load (and after a refresh).
+
+        Caller must be the registration's user OR `gym_manager+` at the
+        comp's location.
+      responses:
+        '200':
+          description: Per-problem attempt state.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AttemptState'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /registrations/{id}:
     parameters:

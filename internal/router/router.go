@@ -713,6 +713,11 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			// resources. Write authz happens inside the handler via the
 			// shared requireCompRole helper since the {locationID} chi
 			// param isn't on these URLs.
+			//
+			// /competitions/by-slug/{slug} MUST register before the
+			// {id} routes — chi matches in registration order and
+			// "by-slug" would otherwise be caught by the {id} pattern.
+			r.Get("/competitions/by-slug/{slug}", compHandler.GetBySlug)
 			r.Get("/competitions/{id}", compHandler.Get)
 			r.Patch("/competitions/{id}", compHandler.Update)
 
@@ -737,6 +742,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			})
 			r.Patch("/problems/{id}", compHandler.UpdateProblem)
 			r.Delete("/registrations/{id}", compHandler.WithdrawRegistration)
+			r.Get("/registrations/{id}/attempts", compHandler.ListRegistrationAttempts)
 
 			// Phase 1f wave 4: staff verify/override + leaderboard read.
 			// Verify/override authz happens inside the handler since the

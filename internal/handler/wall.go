@@ -82,7 +82,15 @@ func (h *WallHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *WallHandler) List(w http.ResponseWriter, r *http.Request) {
 	locationID := chi.URLParam(r, "locationID")
 
-	walls, err := h.walls.ListByLocation(r.Context(), locationID)
+	includeArchived := r.URL.Query().Get("include_archived") == "true"
+
+	var walls []model.Wall
+	var err error
+	if includeArchived {
+		walls, err = h.walls.ListByLocationAll(r.Context(), locationID)
+	} else {
+		walls, err = h.walls.ListByLocation(r.Context(), locationID)
+	}
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "internal error")
 		return
@@ -197,4 +205,45 @@ func (h *WallHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	})
 
 	JSON(w, http.StatusNoContent, nil)
+}
+
+// Archive sets archived_at on the wall (soft hide). Mirrors the HTMX
+// POST /walls/{id}/archive at handler/web/walls.go::WallArchive.
+// Routes on the wall stay intact; archived walls don't show up in
+// climber browsers but still resolve via direct URL for staff.
+func (h *WallHandler) Archive(w http.ResponseWriter, r *http.Request) {
+	h.setArchived(w, r, true)
+}
+
+// Unarchive clears archived_at, restoring the wall to climber views.
+func (h *WallHandler) Unarchive(w http.ResponseWriter, r *http.Request) {
+	h.setArchived(w, r, false)
+}
+
+func (h *WallHandler) setArchived(w http.ResponseWriter, r *http.Request, archive bool) {
+	wallID := chi.URLParam(r, "wallID")
+
+	wall, err := h.walls.GetByID(r.Context(), wallID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if wall == nil {
+		Error(w, http.StatusNotFound, "wall not found")
+		return
+	}
+
+	if archive {
+		err = h.walls.Archive(r.Context(), wallID)
+	} else {
+		err = h.walls.Unarchive(r.Context(), wallID)
+	}
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to update wall")
+		return
+	}
+
+	// Re-fetch so the response reflects the new archived_at.
+	wall, _ = h.walls.GetByID(r.Context(), wallID)
+	JSON(w, http.StatusOK, wall)
 }

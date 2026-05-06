@@ -604,6 +604,8 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 						r.Group(func(r chi.Router) {
 							r.Use(authz.RequireLocationRole("head_setter"))
 							r.Delete("/", wallHandler.Delete)
+							r.Post("/archive", wallHandler.Archive)
+							r.Post("/unarchive", wallHandler.Unarchive)
 						})
 					})
 				})

@@ -6,6 +6,8 @@
     getWall,
     updateWall,
     deleteWall,
+    archiveWall,
+    unarchiveWall,
     ApiClientError,
     type WallShape,
     type WallWriteShape,
@@ -22,6 +24,7 @@
   let saving = $state(false);
   let saveError = $state<string | null>(null);
   let deleting = $state(false);
+  let archiving = $state(false);
 
   const wallId = $derived(page.params.id ?? '');
   const locId = $derived(effectiveLocationId());
@@ -80,6 +83,25 @@
       deleting = false;
     }
   }
+
+  // Archive / unarchive — preferred to delete because it's reversible and
+  // keeps route history. Mirrors POST /walls/{id}/archive on the HTMX side.
+  async function toggleArchive() {
+    if (!locId || !wallId || !wall) return;
+    archiving = true;
+    saveError = null;
+    try {
+      if (wall.archived_at) {
+        wall = await unarchiveWall(locId, wallId);
+      } else {
+        wall = await archiveWall(locId, wallId);
+      }
+    } catch (err) {
+      saveError = err instanceof ApiClientError ? err.message : 'Could not update archive state.';
+    } finally {
+      archiving = false;
+    }
+  }
 </script>
 
 <svelte:head>
@@ -97,6 +119,7 @@
     <header class="page-header">
       <div>
         <span class="type-badge type-{wall.wall_type}">{wall.wall_type}</span>
+        {#if wall.archived_at}<span class="archived-badge">archived</span>{/if}
         <h1>{wall.name}</h1>
       </div>
       {#if !editing && canEdit}
@@ -146,13 +169,33 @@
       </section>
 
       {#if canDelete}
+        <section class="card archive-card">
+          <h2>{wall.archived_at ? 'Restore' : 'Archive'}</h2>
+          <p class="muted">
+            {#if wall.archived_at}
+              This wall is archived — climbers and setters don't see it.
+              Restore to bring it back.
+            {:else}
+              Archive hides this wall from climbers + setters but keeps its
+              route history intact. Reversible (unlike delete).
+            {/if}
+          </p>
+          {#if saveError}<p class="error">{saveError}</p>{/if}
+          <button disabled={archiving} onclick={toggleArchive}>
+            {archiving
+              ? '…'
+              : wall.archived_at
+                ? 'Restore wall'
+                : 'Archive wall'}
+          </button>
+        </section>
+
         <section class="card danger-zone">
           <h2>Danger zone</h2>
           <p class="muted">
-            Deletion is permanent. Routes on this wall must be reassigned or
-            deleted first. Requires head_setter or above.
+            Deletion is permanent. Prefer archive if you may want this wall
+            back. Routes on this wall must be reassigned or deleted first.
           </p>
-          {#if saveError}<p class="error">{saveError}</p>{/if}
           <button class="danger" disabled={deleting} onclick={handleDelete}>
             {deleting ? 'Deleting…' : 'Delete wall'}
           </button>
@@ -242,6 +285,25 @@
     margin: 0;
     color: var(--rw-text);
     font-weight: 500;
+  }
+  .archived-badge {
+    display: inline-block;
+    margin-left: 6px;
+    background: var(--rw-surface-alt);
+    color: var(--rw-text-muted);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 700;
+  }
+  .archive-card {
+    border-color: rgba(245, 158, 11, 0.35);
+    background: rgba(245, 158, 11, 0.04);
+  }
+  .archive-card h2 {
+    color: #92590a;
   }
   .danger-zone {
     border-color: #fde2e2;

@@ -10,6 +10,12 @@
   const locId = $derived(effectiveLocationId());
   // Setter+ may add walls; the API enforces it.
   const canManage = $derived(roleRankAt(locId) >= 2);
+  // head_setter+ sees archived walls so they can restore them. Climbers
+  // and setters get the climber-side filtered view.
+  const canSeeArchived = $derived(roleRankAt(locId) >= 3);
+
+  const activeWalls = $derived(walls.filter((w) => !w.archived_at));
+  const archivedWalls = $derived(walls.filter((w) => !!w.archived_at));
 
   // Re-fetch any time the user picks a different location from the sidebar.
   $effect(() => {
@@ -17,7 +23,7 @@
     let cancelled = false;
     loading = true;
     error = null;
-    listWalls(locId)
+    listWalls(locId, { includeArchived: canSeeArchived })
       .then((res) => {
         if (!cancelled) walls = res;
       })
@@ -67,7 +73,7 @@
     </div>
   {:else}
     <div class="grid">
-      {#each walls as w (w.id)}
+      {#each activeWalls as w (w.id)}
         <a class="card" href="/app/walls/{w.id}">
           <div class="card-head">
             <span class="type-badge type-{w.wall_type}">{w.wall_type}</span>
@@ -87,6 +93,21 @@
         </a>
       {/each}
     </div>
+
+    {#if canSeeArchived && archivedWalls.length > 0}
+      <h2 class="archived-title">Archived</h2>
+      <div class="grid archived-grid">
+        {#each archivedWalls as w (w.id)}
+          <a class="card archived" href="/app/walls/{w.id}">
+            <div class="card-head">
+              <span class="type-badge type-{w.wall_type}">{w.wall_type}</span>
+              <h3 class="name">{w.name}</h3>
+            </div>
+            <p class="archived-hint muted">Hidden from climbers + setters. Restore from the wall page.</p>
+          </a>
+        {/each}
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -221,6 +242,24 @@
     border-radius: 12px;
     padding: 2.5rem 1.5rem;
     text-align: center;
+  }
+  .archived-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--rw-text-muted);
+    margin: 1.75rem 0 0.85rem;
+  }
+  .card.archived {
+    background: var(--rw-surface-alt);
+    border-style: dashed;
+    color: var(--rw-text-muted);
+  }
+  .card.archived:hover {
+    border-color: var(--rw-accent);
+  }
+  .archived-hint {
+    font-size: 0.8rem;
+    margin: 0;
   }
   .empty-card h3 {
     margin: 0 0 0.4rem;

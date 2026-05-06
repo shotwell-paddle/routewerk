@@ -672,12 +672,23 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 
 					r.Get("/", sessionHandler.List)
 					r.Get("/{sessionID}", sessionHandler.Get)
+					r.Get("/{sessionID}/strip-targets", sessionHandler.ListStripTargets)
+					r.Get("/{sessionID}/checklist", sessionHandler.ListChecklist)
+					// Setter+ can tick checklist items off (own assignments,
+					// shared shop tasks, etc.). The HTMX side has the same
+					// permission level.
+					r.Post("/{sessionID}/checklist/{itemID}/toggle", sessionHandler.ToggleChecklistItem)
 
 					r.Group(func(r chi.Router) {
 						r.Use(authz.RequireLocationRole("head_setter"))
 						r.Post("/", sessionHandler.Create)
 						r.Put("/{sessionID}", sessionHandler.Update)
+						r.Delete("/{sessionID}", sessionHandler.Delete)
+						r.Post("/{sessionID}/status", sessionHandler.UpdateStatus)
 						r.Post("/{sessionID}/assignments", sessionHandler.Assign)
+						r.Delete("/{sessionID}/assignments/{assignmentID}", sessionHandler.Unassign)
+						r.Post("/{sessionID}/strip-targets", sessionHandler.AddStripTarget)
+						r.Delete("/{sessionID}/strip-targets/{targetID}", sessionHandler.RemoveStripTarget)
 					})
 				})
 

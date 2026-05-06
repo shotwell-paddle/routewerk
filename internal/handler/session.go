@@ -168,3 +168,144 @@ func (h *SessionHandler) Assign(w http.ResponseWriter, r *http.Request) {
 
 	JSON(w, http.StatusCreated, assignment)
 }
+
+// Unassign — DELETE /sessions/{sessionID}/assignments/{assignmentID}.
+// head_setter+ enforced by router middleware.
+func (h *SessionHandler) Unassign(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "assignmentID")
+	if err := h.sessions.RemoveAssignment(r.Context(), id); err != nil {
+		Error(w, http.StatusInternalServerError, "failed to remove assignment")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type sessionStatusRequest struct {
+	Status string `json:"status"`
+}
+
+// UpdateStatus — POST /sessions/{sessionID}/status. Body: {status}. Allowed
+// status flips: planning → in_progress → complete (or back). Note that
+// the HTMX SessionPublish endpoint additionally publishes draft routes +
+// runs strip targets when transitioning to complete; this JSON endpoint
+// is the simple state flip only. The SPA can call this for plain
+// planning/in_progress/cancelled transitions; for full publish-and-strip
+// the SPA should redirect to the existing /sessions/{id}/complete HTMX
+// view (which has the multi-step flow).
+func (h *SessionHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+	var req sessionStatusRequest
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	allowed := map[string]bool{
+		"planning":    true,
+		"in_progress": true,
+		"complete":    true,
+		"cancelled":   true,
+	}
+	if !allowed[req.Status] {
+		Error(w, http.StatusBadRequest, "invalid status")
+		return
+	}
+	if err := h.sessions.UpdateStatus(r.Context(), sessionID, req.Status); err != nil {
+		Error(w, http.StatusInternalServerError, "failed to update status")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// Delete — DELETE /sessions/{sessionID}. Soft delete (deleted_at).
+// head_setter+ enforced by router middleware.
+func (h *SessionHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+	if err := h.sessions.Delete(r.Context(), sessionID); err != nil {
+		Error(w, http.StatusInternalServerError, "failed to delete session")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ── Strip targets ────────────────────────────────────────
+
+// ListStripTargets — GET /sessions/{sessionID}/strip-targets.
+func (h *SessionHandler) ListStripTargets(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+	targets, err := h.sessions.ListStripTargets(r.Context(), sessionID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	JSON(w, http.StatusOK, targets)
+}
+
+type addStripTargetRequest struct {
+	WallID  string  `json:"wall_id"`
+	RouteID *string `json:"route_id,omitempty"`
+}
+
+// AddStripTarget — POST /sessions/{sessionID}/strip-targets. wall_id is
+// required; route_id is optional (nil means "strip the whole wall").
+// head_setter+ enforced by router middleware.
+func (h *SessionHandler) AddStripTarget(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+	var req addStripTargetRequest
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.WallID == "" {
+		Error(w, http.StatusBadRequest, "wall_id is required")
+		return
+	}
+	target := &model.SessionStripTarget{
+		SessionID: sessionID,
+		WallID:    req.WallID,
+		RouteID:   req.RouteID,
+	}
+	if err := h.sessions.AddStripTarget(r.Context(), target); err != nil {
+		Error(w, http.StatusInternalServerError, "failed to add strip target")
+		return
+	}
+	JSON(w, http.StatusCreated, target)
+}
+
+// RemoveStripTarget — DELETE /sessions/{sessionID}/strip-targets/{targetID}.
+func (h *SessionHandler) RemoveStripTarget(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "targetID")
+	if err := h.sessions.RemoveStripTarget(r.Context(), id); err != nil {
+		Error(w, http.StatusInternalServerError, "failed to remove strip target")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ── Checklist ────────────────────────────────────────────
+
+// ListChecklist — GET /sessions/{sessionID}/checklist. Returns the
+// session's checklist items joined with the user who completed each
+// (NULL for items that aren't done yet).
+func (h *SessionHandler) ListChecklist(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+	items, err := h.sessions.ListChecklistItems(r.Context(), sessionID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	JSON(w, http.StatusOK, items)
+}
+
+// ToggleChecklistItem — POST /sessions/{sessionID}/checklist/{itemID}/toggle.
+// Marks an item done/undone for the calling user. Returns the new
+// completion count.
+func (h *SessionHandler) ToggleChecklistItem(w http.ResponseWriter, r *http.Request) {
+	itemID := chi.URLParam(r, "itemID")
+	userID := middleware.GetUserID(r.Context())
+	count, err := h.sessions.ToggleChecklistItem(r.Context(), itemID, userID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to toggle item")
+		return
+	}
+	JSON(w, http.StatusOK, map[string]interface{}{"completion_count": count})
+}

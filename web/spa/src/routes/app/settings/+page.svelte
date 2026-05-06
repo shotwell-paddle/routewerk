@@ -5,7 +5,8 @@
     ApiClientError,
     type UpdateMeShape,
   } from '$lib/api/client';
-  import { authState, currentUser, loadMe } from '$lib/stores/auth.svelte';
+  import { authState, currentUser, loadMe, roleRankAt } from '$lib/stores/auth.svelte';
+  import { effectiveLocationId } from '$lib/stores/location.svelte';
 
   // Profile form is seeded once /me is loaded. We watch authState() and
   // re-seed if it changes (e.g. user just signed in).
@@ -130,6 +131,17 @@
 <div class="page">
   <a class="back" href="/app/profile">← Profile</a>
   <h1>Settings</h1>
+
+  {#if roleRankAt(effectiveLocationId()) >= 4}
+    <section class="card cta-card">
+      <h2>Gym settings</h2>
+      <p class="muted">
+        Circuits, hold colors, grading defaults, and what climbers see on
+        cards. Per-location.
+      </p>
+      <a class="primary-link" href="/app/settings/gym">Manage gym settings →</a>
+    </section>
+  {/if}
 
   <section class="card">
     <h2>Profile</h2>
@@ -270,6 +282,24 @@
     border-color: var(--rw-accent);
   }
   button.primary:hover:not(:disabled) {
+    background: var(--rw-accent-hover);
+  }
+  .cta-card {
+    border-color: var(--rw-accent);
+  }
+  .primary-link {
+    display: inline-block;
+    background: var(--rw-accent);
+    color: var(--rw-accent-ink);
+    padding: 0.55rem 1rem;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.9rem;
+    border: 1px solid var(--rw-accent);
+    margin-top: 0.5rem;
+  }
+  .primary-link:hover {
     background: var(--rw-accent-hover);
   }
   .hint {

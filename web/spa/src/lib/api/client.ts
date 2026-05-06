@@ -207,6 +207,76 @@ export async function listOrgLocations(
   return request(`/orgs/${orgId}/locations`, { signal });
 }
 
+// ── Location settings (gym-level) ─────────────────────────
+//
+// Hand-written shapes mirroring internal/model/settings.go::LocationSettings.
+// Settings live in a single JSONB column on locations and are read+written
+// as one struct.
+
+export interface CircuitColor {
+  name: string;
+  hex: string;
+  sort_order: number;
+}
+
+export interface HoldColor {
+  name: string;
+  hex: string;
+}
+
+export interface GradingSettings {
+  boulder_method: string;
+  route_grade_format: string;
+  show_grades_on_circuit: boolean;
+  v_scale_range?: string[];
+  yds_range?: string[];
+}
+
+export interface CircuitSettings {
+  colors: CircuitColor[];
+}
+
+export interface HoldColorSettings {
+  colors: HoldColor[];
+}
+
+export interface DisplaySettings {
+  show_setter_name: boolean;
+  show_route_age: boolean;
+  show_difficulty_consensus: boolean;
+  default_strip_age_days: number;
+}
+
+export interface SessionSettings {
+  default_playbook_enabled: boolean;
+  require_route_photo: boolean;
+}
+
+export interface LocationSettingsShape {
+  grading: GradingSettings;
+  circuits: CircuitSettings;
+  hold_colors: HoldColorSettings;
+  display: DisplaySettings;
+  sessions: SessionSettings;
+}
+
+/** GET /locations/{locationId}/settings — gym_manager+. */
+export async function getLocationSettings(
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<LocationSettingsShape> {
+  return request(`/locations/${locationId}/settings`, { signal });
+}
+
+/** PUT /locations/{locationId}/settings — gym_manager+. Replaces the full struct. */
+export async function updateLocationSettings(
+  locationId: string,
+  body: LocationSettingsShape,
+  signal?: AbortSignal,
+): Promise<LocationSettingsShape> {
+  return request(`/locations/${locationId}/settings`, { method: 'PUT', body, signal });
+}
+
 // ── Walls (Phase 2.2) ─────────────────────────────────────
 //
 // Hand-written shapes — wall handlers haven't been migrated to the

@@ -855,6 +855,47 @@ export async function markAllNotificationsRead(
   return request('/me/notifications/read-all', { method: 'POST', signal });
 }
 
+// ── Setter dashboard ───────────────────────────────────────
+
+export interface DashboardStatsShape {
+  active_routes: number;
+  active_delta: number;
+  total_sends_30d: number;
+  avg_rating: number;
+  due_for_strip: number;
+  set_this_week: number;
+  set_last_week: number;
+}
+
+export interface DashboardActivityShape {
+  user_name: string;
+  ascent_type: string;
+  time: string;
+  route_color: string;
+  route_grade: string;
+  route_grading_system: string;
+  route_circuit_color?: string | null;
+  route_name?: string | null;
+}
+
+export interface DashboardSummaryShape {
+  stats: DashboardStatsShape;
+  recent_activity: DashboardActivityShape[];
+}
+
+/**
+ * GET /api/v1/locations/{locationId}/dashboard — setter+. Combined stats
+ * + recent activity for the SPA setter dashboard at /app. The HTMX
+ * dashboard composes the same numbers inline; this endpoint surfaces
+ * them as JSON.
+ */
+export async function getDashboardSummary(
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<DashboardSummaryShape> {
+  return request(`/locations/${locationId}/dashboard`, { signal });
+}
+
 // ── Team management (Phase 2.7) ────────────────────────────
 
 export type MembershipRole =

@@ -277,6 +277,72 @@ export async function updateLocationSettings(
   return request(`/locations/${locationId}/settings`, { method: 'PUT', body, signal });
 }
 
+// ── Organizations (org admin surface) ─────────────────────
+
+export interface OrgShape {
+  id: string;
+  name: string;
+  slug: string;
+  logo_url?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** GET /api/v1/orgs — orgs the caller is a member of. */
+export async function listMyOrgs(signal?: AbortSignal): Promise<OrgShape[]> {
+  return request('/orgs', { signal });
+}
+
+/** GET /api/v1/orgs/{orgId} — any member of the org. */
+export async function getOrg(orgId: string, signal?: AbortSignal): Promise<OrgShape> {
+  return request(`/orgs/${orgId}`, { signal });
+}
+
+export interface OrgUpdateShape {
+  name: string;
+  slug: string;
+  logo_url?: string | null;
+}
+
+/** PUT /api/v1/orgs/{orgId} — org_admin only. */
+export async function updateOrg(
+  orgId: string,
+  body: OrgUpdateShape,
+  signal?: AbortSignal,
+): Promise<OrgShape> {
+  return request(`/orgs/${orgId}`, { method: 'PUT', body, signal });
+}
+
+export interface LocationCreateShape {
+  name: string;
+  slug?: string;
+  address?: string | null;
+  timezone?: string;
+  website_url?: string | null;
+  phone?: string | null;
+  day_pass_info?: string | null;
+  waiver_url?: string | null;
+  allow_shared_setters?: boolean;
+}
+
+/** POST /api/v1/orgs/{orgId}/locations — org_admin only. */
+export async function createLocation(
+  orgId: string,
+  body: LocationCreateShape,
+  signal?: AbortSignal,
+): Promise<LocationShape> {
+  return request(`/orgs/${orgId}/locations`, { method: 'POST', body, signal });
+}
+
+/** PUT /api/v1/locations/{id} — org_admin only. */
+export async function updateLocation(
+  locationId: string,
+  body: LocationCreateShape,
+  signal?: AbortSignal,
+): Promise<LocationShape> {
+  return request(`/locations/${locationId}`, { method: 'PUT', body, signal });
+}
+
 // ── Walls (Phase 2.2) ─────────────────────────────────────
 //
 // Hand-written shapes — wall handlers haven't been migrated to the

@@ -79,6 +79,51 @@ func (h *TeamHandler) List(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListOrg — GET /orgs/{orgID}/team. Org-wide member list, mirrors the
+// HTMX `/settings/organization/team` page (org_admin+, enforced by
+// router middleware). Same response shape as List so the SPA can swap
+// the source URL without changing how it renders rows.
+func (h *TeamHandler) ListOrg(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "orgID")
+	q := r.URL.Query()
+
+	limit := 200
+	if v := q.Get("limit"); v != "" {
+		var n int
+		_, err := fmt.Sscanf(v, "%d", &n)
+		if err == nil && n > 0 && n <= 500 {
+			limit = n
+		}
+	}
+
+	res, err := h.users.SearchMembersByOrg(r.Context(), orgID, repository.MemberSearchParams{
+		Query:      q.Get("q"),
+		RoleFilter: q.Get("role"),
+		Limit:      limit,
+		Offset:     0,
+	})
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	out := make([]teamMember, len(res.Members))
+	for i, m := range res.Members {
+		out[i] = teamMember{
+			MembershipID: m.MembershipID,
+			UserID:       m.UserID,
+			DisplayName:  m.DisplayName,
+			Email:        m.Email,
+			Role:         m.Role,
+		}
+	}
+
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"members":     out,
+		"total_count": res.TotalCount,
+	})
+}
+
 type updateMembershipRequest struct {
 	Role string `json:"role"`
 }

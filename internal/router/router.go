@@ -571,6 +571,14 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 					r.Get("/analytics/overview", analyticsHandler.OrgOverview)
 				})
 
+				// Org-wide team list — org_admin only. Same response
+				// shape as the location-scoped /locations/{id}/team so
+				// the SPA can swap the source URL without rerendering.
+				r.Group(func(r chi.Router) {
+					r.Use(authz.RequireOrgRole("org_admin"))
+					r.Get("/team", teamHandler.ListOrg)
+				})
+
 				// Locations (nested under org for creation)
 				r.Route("/locations", func(r chi.Router) {
 					r.Get("/", locationHandler.List) // any member can list

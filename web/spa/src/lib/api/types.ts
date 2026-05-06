@@ -53,6 +53,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/competitions/by-slug/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description The comp's URL-safe slug. Resolved across every location the
+                 *     authenticated user has membership at; first match wins. Use
+                 *     this when the SPA has a slug from a magic-link URL but no
+                 *     location context.
+                 */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        /** Resolve a competition by slug across the user's locations */
+        get: operations["getCompetitionBySlug"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/competitions/{id}": {
         parameters: {
             query?: never;
@@ -220,6 +245,34 @@ export interface paths {
          *     to register someone else.
          */
         post: operations["createRegistration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registrations/{id}/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition registration UUID. */
+                id: components["parameters"]["RegistrationId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Per-problem state for a registration
+         * @description Returns the climber's current per-problem attempt state, in the
+         *     same shape the action endpoint emits. Used by the SPA scorecard
+         *     to hydrate on first load (and after a refresh).
+         *
+         *     Caller must be the registration's user OR `gym_manager+` at the
+         *     comp's location.
+         */
+        get: operations["listRegistrationAttempts"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1000,6 +1053,37 @@ export interface operations {
             };
         };
     };
+    getCompetitionBySlug: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description The comp's URL-safe slug. Resolved across every location the
+                 *     authenticated user has membership at; first match wins. Use
+                 *     this when the SPA has a slug from a magic-link URL but no
+                 *     location context.
+                 */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The competition. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Competition"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     getCompetition: {
         parameters: {
             query?: never;
@@ -1349,6 +1433,32 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    listRegistrationAttempts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Competition registration UUID. */
+                id: components["parameters"]["RegistrationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-problem attempt state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttemptState"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     withdrawRegistration: {

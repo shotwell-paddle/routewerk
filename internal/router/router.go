@@ -137,7 +137,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	// for the web handler bundle.
 	ascentHandler := handler.NewAscentHandler(ascentRepo)
 	ratingHandler := handler.NewRatingHandler(ratingRepo)
-	sessionHandler := handler.NewSessionHandler(sessionRepo)
+	sessionHandler := handler.NewSessionHandler(sessionRepo, routeRepo)
 	laborHandler := handler.NewLaborHandler(laborRepo)
 	tagHandler := handler.NewTagHandler(tagRepo, auditService)
 	followHandler := handler.NewFollowHandler(followRepo)
@@ -738,6 +738,9 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 						r.Delete("/{sessionID}/assignments/{assignmentID}", sessionHandler.Unassign)
 						r.Post("/{sessionID}/strip-targets", sessionHandler.AddStripTarget)
 						r.Delete("/{sessionID}/strip-targets/{targetID}", sessionHandler.RemoveStripTarget)
+						// Combined publish: archives strip-targets, activates
+						// drafts, flips status. Mirrors HTMX /sessions/{id}/publish.
+						r.Post("/{sessionID}/publish", sessionHandler.Publish)
 					})
 				})
 

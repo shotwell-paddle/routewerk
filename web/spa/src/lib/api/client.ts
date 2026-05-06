@@ -993,6 +993,30 @@ export async function updateSessionStatus(
   });
 }
 
+export interface SessionPublishResultShape {
+  stripped_route_count: number;
+  published_routes: number;
+  status: SessionStatus;
+}
+
+/**
+ * POST /locations/{locationId}/sessions/{sessionId}/publish — head_setter+.
+ *
+ * One-shot completion: archives strip-targets, activates drafts, flips
+ * status to complete. Returns counts so the SPA can show a confirmation
+ * summary without re-fetching. Mirrors HTMX `/sessions/{id}/publish`.
+ */
+export async function publishSession(
+  locationId: string,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<SessionPublishResultShape> {
+  return request(`/locations/${locationId}/sessions/${sessionId}/publish`, {
+    method: 'POST',
+    signal,
+  });
+}
+
 /** POST /locations/{locationId}/sessions/{sessionId}/assignments — head_setter+. */
 export async function addSessionAssignment(
   locationId: string,

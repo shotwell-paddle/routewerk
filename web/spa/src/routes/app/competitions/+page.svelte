@@ -30,7 +30,7 @@
   $effect(() => {
     const a = authState();
     if (a.loaded && a.me === null) {
-      goto('/sign-in?next=' + encodeURIComponent('/staff/comp'));
+      goto('/sign-in?next=' + encodeURIComponent('/app/competitions'));
     }
   });
 
@@ -150,7 +150,7 @@
     </div>
   {:else}
     <p class="actions">
-      <a class="btn" href="/staff/comp/new">+ New competition</a>
+      <a class="btn" href="/app/competitions/new">+ New competition</a>
     </p>
     {#each sections as section (section.location.id)}
       <section class="loc">
@@ -161,7 +161,7 @@
           <ul class="comps">
             {#each section.comps as comp (comp.id)}
               <li>
-                <a class="comp-row" href={`/staff/comp/${comp.id}`}>
+                <a class="comp-row" href={`/app/competitions/${comp.id}`}>
                   <div>
                     <div class="comp-name">{comp.name}</div>
                     <div class="comp-meta muted">

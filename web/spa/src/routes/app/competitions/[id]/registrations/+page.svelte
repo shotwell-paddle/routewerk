@@ -29,7 +29,7 @@
   $effect(() => {
     const a = authState();
     if (a.loaded && a.me === null) {
-      goto('/sign-in?next=' + encodeURIComponent('/staff/comp/' + id + '/registrations'));
+      goto('/sign-in?next=' + encodeURIComponent('/app/competitions/' + id + '/registrations'));
     }
   });
 
@@ -172,10 +172,10 @@
   {:else if error}
     <h1>Couldn't load competition</h1>
     <p class="error">{error}</p>
-    <p><a href="/staff/comp">← Back to competitions</a></p>
+    <p><a href="/app/competitions">← Back to competitions</a></p>
   {:else if comp}
     <header>
-      <a class="back" href="/staff/comp/{id}">← {comp.name}</a>
+      <a class="back" href="/app/competitions/{id}">← {comp.name}</a>
       <h1>Registrations</h1>
       <p class="meta">
         {registrations.filter((r) => !r.withdrawn_at).length} active ·

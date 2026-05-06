@@ -50,7 +50,7 @@
   $effect(() => {
     const a = authState();
     if (a.loaded && a.me === null) {
-      goto('/sign-in?next=' + encodeURIComponent('/staff/comp/' + id));
+      goto('/sign-in?next=' + encodeURIComponent('/app/competitions/' + id));
     }
   });
 
@@ -331,7 +331,7 @@
 </svelte:head>
 
 <main>
-  <p><a href="/staff/comp">← Back to competitions</a></p>
+  <p><a href="/app/competitions">← Back to competitions</a></p>
 
   {#if loading}
     <p class="muted">Loading…</p>
@@ -350,8 +350,8 @@
         {fmtDateTime(comp.starts_at)} → {fmtDateTime(comp.ends_at)}
       </p>
       <p class="quick-links">
-        <a href={`/staff/comp/${comp.id}/problems`}>Problems editor →</a>
-        <a href={`/staff/comp/${comp.id}/registrations`}>Registrations →</a>
+        <a href={`/app/competitions/${comp.id}/problems`}>Problems editor →</a>
+        <a href={`/app/competitions/${comp.id}/registrations`}>Registrations →</a>
         <a href={`/comp/${comp.id}`}>Climber view →</a>
         <a href={`/comp/${comp.id}/leaderboard`}>Leaderboard →</a>
       </p>

@@ -39,7 +39,7 @@
   $effect(() => {
     const a = authState();
     if (a.loaded && a.me === null) {
-      goto('/sign-in?next=' + encodeURIComponent('/staff/comp/new'));
+      goto('/sign-in?next=' + encodeURIComponent('/app/competitions/new'));
     }
   });
 
@@ -55,7 +55,7 @@
 
       // Build candidate locations: location-scoped memberships + every
       // location in any org where the user has an org-wide membership
-      // (or app-admin). Mirrors the discovery in /staff/comp/+page.svelte.
+      // (or app-admin). Mirrors the discovery in /app/competitions/+page.svelte.
       const candidates = new Map<string, LocationShape>();
       const orgIds = new Set<string>();
       for (const m of me.memberships) {
@@ -161,7 +161,7 @@
     submitting = true;
     try {
       const created = await createCompetition(locationId, body);
-      goto(`/staff/comp/${created.id}`);
+      goto(`/app/competitions/${created.id}`);
     } catch (err) {
       error = err instanceof ApiClientError ? err.message : 'Could not create competition.';
     } finally {
@@ -175,7 +175,7 @@
 </svelte:head>
 
 <main>
-  <p><a href="/staff/comp">← Back to competitions</a></p>
+  <p><a href="/app/competitions">← Back to competitions</a></p>
   <h1>New competition</h1>
 
   {#if loading}

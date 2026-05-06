@@ -1,5 +1,6 @@
 <script lang="ts">
   import type {
+    LocationSettingsShape,
     RouteShape,
     RouteWriteShape,
     RouteType,
@@ -9,6 +10,7 @@
   let {
     initial,
     walls,
+    settings = null,
     submitLabel,
     onSubmit,
     onCancel,
@@ -17,6 +19,14 @@
   }: {
     initial?: RouteShape | null;
     walls: WallShape[];
+    /**
+     * Gym settings — circuits, hold colors, grading defaults. When provided,
+     * the form restricts pickers to what the gym actually stocks (matches
+     * the HTMX setter form at internal/handler/web/route_form.go). Falls
+     * back to a permissive list if null (e.g. the fetch failed or the
+     * endpoint isn't readable for this user).
+     */
+    settings?: LocationSettingsShape | null;
     submitLabel: string;
     onSubmit: (body: RouteWriteShape) => void | Promise<void>;
     onCancel?: () => void;
@@ -27,14 +37,14 @@
   // svelte-ignore state_referenced_locally
   const seed = initial;
 
-  // Mirror the HTMX form's grade pick lists. Keep the source-of-truth
-  // copy here in sync with internal/handler/web/route_form.go — should
-  // pull from a JSON endpoint eventually.
-  const V_GRADES = [
+  // Default grade lists — used when the gym hasn't customized v_scale_range
+  // / yds_range, or when settings aren't available. Keep in sync with
+  // internal/handler/web/route_form.go.
+  const DEFAULT_V_GRADES = [
     'VB', 'V0', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7',
     'V8', 'V9', 'V10', 'V11', 'V12',
   ];
-  const YDS_GRADES = [
+  const DEFAULT_YDS_GRADES = [
     '5.5', '5.6', '5.7', '5.8-', '5.8', '5.8+',
     '5.9-', '5.9', '5.9+',
     '5.10-', '5.10', '5.10+',
@@ -43,13 +53,25 @@
     '5.13-', '5.13', '5.13+',
     '5.14-', '5.14',
   ];
-  const CIRCUIT_COLORS = [
-    'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'white', 'black',
+  const DEFAULT_CIRCUIT_COLORS = [
+    { name: 'Red', hex: '#ef4444' },
+    { name: 'Orange', hex: '#f59e0b' },
+    { name: 'Yellow', hex: '#eab308' },
+    { name: 'Green', hex: '#22c55e' },
+    { name: 'Blue', hex: '#3b82f6' },
+    { name: 'Purple', hex: '#a855f7' },
+    { name: 'Pink', hex: '#ec4899' },
+    { name: 'White', hex: '#ffffff' },
+    { name: 'Black', hex: '#000000' },
   ];
 
+  // svelte-ignore state_referenced_locally
   let form = $state({
     wall_id: seed?.wall_id ?? '',
     route_type: (seed?.route_type ?? 'boulder') as RouteType,
+    // Defaults to V-scale; the snap-to-allowed effect below picks the
+    // gym's preference once settings load. Routes use YDS via a separate
+    // branch in the template.
     grading_system: seed?.grading_system ?? 'V-scale',
     grade: seed?.grade ?? '',
     name: seed?.name ?? '',
@@ -68,6 +90,60 @@
     return input.slice(0, 10);
   }
 
+  function addDays(iso: string, days: number): string {
+    if (!iso || !days) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  }
+
+  // Gym-defined options (fall back to defaults when settings missing).
+  const circuits = $derived(
+    settings?.circuits.colors && settings.circuits.colors.length > 0
+      ? settings.circuits.colors
+      : DEFAULT_CIRCUIT_COLORS,
+  );
+  const holdColors = $derived(settings?.hold_colors.colors ?? []);
+  const stripAgeDays = $derived(settings?.display.default_strip_age_days ?? 0);
+
+  // The boulder grading systems the gym allows climbers to set under.
+  // - 'circuits' → only circuit; setters can't fall back to V-scale.
+  // - 'v-scale'  → V-scale only.
+  // - default    → both, gym hasn't expressed a preference.
+  // Routes (not boulders) always allow YDS regardless.
+  const allowedBoulderSystems = $derived.by((): string[] => {
+    const m = settings?.grading.boulder_method;
+    if (m === 'circuits') return ['circuit'];
+    if (m === 'v-scale') return ['V-scale'];
+    return ['V-scale', 'circuit'];
+  });
+
+  // If the gym only allows one boulder system and the current selection
+  // isn't it, snap to the allowed one. Keeps a stale seed (or a manual
+  // toggle to a hidden option) from leaving the form in an unsubmittable
+  // state.
+  $effect(() => {
+    if (form.route_type !== 'boulder') return;
+    if (allowedBoulderSystems.length === 0) return;
+    if (!allowedBoulderSystems.includes(form.grading_system)) {
+      form.grading_system = allowedBoulderSystems[0];
+    }
+  });
+
+  // Auto-fill projected_strip_date as date_set + default_strip_age_days
+  // unless the user has already typed one in. Only runs on date_set
+  // changes; respects an existing seed value.
+  let stripUserDirty = $state(!!seed?.projected_strip_date);
+  $effect(() => {
+    if (stripUserDirty) return;
+    if (!stripAgeDays) return;
+    const next = addDays(form.date_set, stripAgeDays);
+    if (next && next !== form.projected_strip_date) {
+      form.projected_strip_date = next;
+    }
+  });
+
   function buildBody(): RouteWriteShape | null {
     if (!form.wall_id) {
       localError = 'Wall is required.';
@@ -81,6 +157,15 @@
       localError = 'Hold color is required.';
       return null;
     }
+    // For circuit boulders, the user picks a circuit name from the gym's
+    // configured set; that pick doubles as both `grade` and `circuit_color`
+    // so card layout, leaderboards, and downstream filtering behave the
+    // same as the HTMX form (see internal/handler/web/setter_routes.go).
+    const circuitColor =
+      form.grading_system === 'circuit'
+        ? form.grade || null
+        : form.circuit_color || null;
+
     return {
       wall_id: form.wall_id,
       route_type: form.route_type,
@@ -92,7 +177,7 @@
       photo_url: form.photo_url.trim() || null,
       date_set: form.date_set || null,
       projected_strip_date: form.projected_strip_date || null,
-      circuit_color: form.circuit_color || null,
+      circuit_color: circuitColor,
     };
   }
 
@@ -104,10 +189,22 @@
     onSubmit(body);
   }
 
-  // Pick the right grade list for the selected scale.
-  const gradeOptions = $derived(
-    form.grading_system === 'YDS' ? YDS_GRADES : form.grading_system === 'circuit' ? [] : V_GRADES,
-  );
+  // Pick the right grade list for the selected scale. Honor any custom
+  // ranges the gym has set; fall back to the full default list otherwise.
+  const gradeOptions = $derived.by((): string[] => {
+    if (form.grading_system === 'YDS') {
+      return settings?.grading.yds_range && settings.grading.yds_range.length > 0
+        ? settings.grading.yds_range
+        : DEFAULT_YDS_GRADES;
+    }
+    if (form.grading_system === 'circuit') {
+      // Circuit "grade" is the circuit color (mirrors the HTMX form).
+      return circuits.map((c) => c.name);
+    }
+    return settings?.grading.v_scale_range && settings.grading.v_scale_range.length > 0
+      ? settings.grading.v_scale_range
+      : DEFAULT_V_GRADES;
+  });
 </script>
 
 <form class="form" onsubmit={handleSubmit}>
@@ -134,43 +231,32 @@
     <div class="field">
       <label for="r-system">Grading system</label>
       <select id="r-system" bind:value={form.grading_system}>
-        <option value="V-scale">V-scale</option>
-        <option value="YDS">YDS</option>
-        <option value="circuit">Circuit</option>
+        {#if form.route_type === 'boulder'}
+          {#if allowedBoulderSystems.includes('V-scale')}
+            <option value="V-scale">V-scale</option>
+          {/if}
+          {#if allowedBoulderSystems.includes('circuit')}
+            <option value="circuit">Circuit</option>
+          {/if}
+        {:else}
+          <option value="YDS">YDS</option>
+        {/if}
       </select>
     </div>
     <div class="field">
-      <label for="r-grade">Grade *</label>
-      {#if gradeOptions.length > 0}
-        <select id="r-grade" bind:value={form.grade}>
-          <option value="">Pick a grade…</option>
-          {#each gradeOptions as g}
-            <option value={g}>{g}</option>
-          {/each}
-        </select>
-      {:else}
-        <input
-          id="r-grade"
-          bind:value={form.grade}
-          placeholder="Free text for circuit boulders" />
-      {/if}
+      <label for="r-grade">
+        {form.grading_system === 'circuit' ? 'Circuit *' : 'Grade *'}
+      </label>
+      <select id="r-grade" bind:value={form.grade}>
+        <option value="">
+          {form.grading_system === 'circuit' ? 'Pick a circuit…' : 'Pick a grade…'}
+        </option>
+        {#each gradeOptions as g}
+          <option value={g}>{g}</option>
+        {/each}
+      </select>
     </div>
   </div>
-
-  {#if form.grading_system === 'circuit'}
-    <div class="row">
-      <div class="field">
-        <label for="r-circuit">Circuit color</label>
-        <select id="r-circuit" bind:value={form.circuit_color}>
-          <option value="">—</option>
-          {#each CIRCUIT_COLORS as c}
-            <option value={c}>{c}</option>
-          {/each}
-        </select>
-      </div>
-      <div class="field"></div>
-    </div>
-  {/if}
 
   <div class="row">
     <div class="field">
@@ -179,10 +265,20 @@
     </div>
     <div class="field">
       <label for="r-color">Hold color *</label>
-      <input
-        id="r-color"
-        bind:value={form.color}
-        placeholder="hex like #ff5500 or named like 'red'" />
+      <div class="color-input">
+        {#if holdColors.length > 0}
+          <select id="r-color" bind:value={form.color}>
+            <option value="">Pick a color…</option>
+            {#each holdColors as c (c.name)}
+              <option value={c.hex}>{c.name}</option>
+            {/each}
+          </select>
+          <span class="color-swatch" style="background:{form.color || '#e8e6e1'}"></span>
+        {:else}
+          <input id="r-color" type="color" bind:value={form.color} />
+          <span class="color-hex">{form.color || '#e8e6e1'}</span>
+        {/if}
+      </div>
     </div>
   </div>
 
@@ -202,8 +298,17 @@
       <input id="r-set" type="date" bind:value={form.date_set} />
     </div>
     <div class="field">
-      <label for="r-strip">Projected strip date</label>
-      <input id="r-strip" type="date" bind:value={form.projected_strip_date} />
+      <label for="r-strip">
+        Projected strip date
+        {#if stripAgeDays > 0 && !stripUserDirty}
+          <span class="hint-tag">auto from gym default</span>
+        {/if}
+      </label>
+      <input
+        id="r-strip"
+        type="date"
+        bind:value={form.projected_strip_date}
+        oninput={() => (stripUserDirty = true)} />
     </div>
   </div>
 
@@ -258,6 +363,37 @@
     color: var(--rw-text);
     box-sizing: border-box;
     font-family: inherit;
+  }
+  .color-input {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    align-items: center;
+  }
+  .color-input input[type='color'] {
+    height: 38px;
+    padding: 2px;
+    cursor: pointer;
+  }
+  .color-swatch {
+    display: inline-block;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 1px solid var(--rw-border-strong);
+  }
+  .color-hex {
+    color: var(--rw-text-muted);
+    font-size: 0.85rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .hint-tag {
+    margin-left: 6px;
+    color: var(--rw-text-faint);
+    font-size: 0.7rem;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
   }
   .field input:focus,
   .field select:focus,

@@ -235,11 +235,17 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 		// /login is taken by the HTMX password-auth page used by staff).
 		r.Handle("/sign-in", spa.FallbackHandler())
 		r.Handle("/sign-in/*", spa.FallbackHandler())
-		// Staff comp UI (Phase 1h). No existing /staff routes today —
-		// the existing HTMX dashboards live at /dashboard, /walls, etc.
-		// /staff is reserved for the SPA staff workflows.
-		r.Handle("/staff/comp", spa.FallbackHandler())
-		r.Handle("/staff/comp/*", spa.FallbackHandler())
+		// /staff/comp/* used to host the comp staff UI; it now lives
+		// under /app/competitions/* so it shares the workspace shell
+		// (sidebar, location picker, role pill). 308 redirects preserve
+		// any bookmarks pointing at the old paths.
+		r.Get("/staff/comp", func(w http.ResponseWriter, req *http.Request) {
+			http.Redirect(w, req, "/app/competitions", http.StatusPermanentRedirect)
+		})
+		r.Get("/staff/comp/*", func(w http.ResponseWriter, req *http.Request) {
+			rest := chi.URLParam(req, "*")
+			http.Redirect(w, req, "/app/competitions/"+rest, http.StatusPermanentRedirect)
+		})
 		// Phase 2 (rebuild): the new SPA shell lives at /app while we
 		// migrate the existing HTMX surfaces page-by-page. Once a page
 		// has a SPA equivalent ready, its old HTMX route can be swapped
@@ -769,11 +775,16 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 				})
 
 				// Location settings (circuits, hold-colors, grading, display,
-				// session defaults). gym_manager+ only — matches the HTMX
-				// /settings page policy.
+				// session defaults). Read for setter+ so the SPA route form
+				// can restrict grading systems / color pickers to what this
+				// gym actually stocks; write stays gym_manager+ since these
+				// values shape every climber-facing card.
+				r.Group(func(r chi.Router) {
+					r.Use(authz.RequireLocationRole("setter"))
+					r.Get("/settings", settingsHandler.GetLocationSettings)
+				})
 				r.Group(func(r chi.Router) {
 					r.Use(authz.RequireLocationRole("gym_manager"))
-					r.Get("/settings", settingsHandler.GetLocationSettings)
 					r.Put("/settings", settingsHandler.UpdateLocationSettings)
 				})
 

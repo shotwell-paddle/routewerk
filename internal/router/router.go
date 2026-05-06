@@ -133,6 +133,8 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	routeHandler := handler.NewRouteHandler(routeRepo, auditService)
 	teamHandler := handler.NewTeamHandler(userRepo)
 	questHandler := handler.NewQuestHandler(deps.QuestSvc)
+	// notifHandler is initialized lower, after notifRepo is constructed
+	// for the web handler bundle.
 	ascentHandler := handler.NewAscentHandler(ascentRepo)
 	ratingHandler := handler.NewRatingHandler(ratingRepo)
 	sessionHandler := handler.NewSessionHandler(sessionRepo)
@@ -170,6 +172,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	activityRepo := repository.NewActivityRepo(db)
 	routeSkillTagRepo := repository.NewRouteSkillTagRepo(db)
 	notifRepo := repository.NewNotificationRepo(db)
+	notifHandler := handler.NewNotificationHandler(notifRepo)
 
 	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, questRepo, badgeRepo, activityRepo, routeSkillTagRepo, notifRepo, deps.QuestSvc, deps.EventBus, authService, storageSvc, cardGen, cardBatchRepo, batchSvc, auditService, sessionMgr, cfg, db)
 
@@ -513,6 +516,10 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			r.Get("/me/ascents", ascentHandler.MyAscents)
 			r.Get("/me/stats", ascentHandler.MyStats)
 			r.Get("/me/quests", questHandler.MyQuests)
+			r.Get("/me/notifications", notifHandler.List)
+			r.Get("/me/notifications/unread-count", notifHandler.UnreadCount)
+			r.Post("/me/notifications/{notifID}/read", notifHandler.MarkRead)
+			r.Post("/me/notifications/read-all", notifHandler.MarkAllRead)
 			r.Get("/me/feed", followHandler.Feed)
 			r.Get("/me/labor", laborHandler.MyLabor)
 			r.Get("/me/training-plans", trainingHandler.MyPlans)

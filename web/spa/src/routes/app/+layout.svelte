@@ -14,7 +14,11 @@
     setSelectedLocation,
     effectiveLocationId,
   } from '$lib/stores/location.svelte';
-  import { getLocation, type LocationShape } from '$lib/api/client';
+  import {
+    getLocation,
+    getUnreadNotificationCount,
+    type LocationShape,
+  } from '$lib/api/client';
 
   let { children } = $props();
 
@@ -111,6 +115,7 @@
       group: 'main',
       visible: () => progressionsEnabled,
     },
+    { label: 'Notifications', href: '/app/notifications', minRoleRank: 1, group: 'main' },
     { label: 'Profile', href: '/app/profile', minRoleRank: 1, group: 'main' },
     // Staff
     { label: 'Sessions', href: '/app/sessions', minRoleRank: 2, group: 'staff' },
@@ -135,6 +140,36 @@
   }
 
   let mobileNavOpen = $state(false);
+
+  // Notification badge — same 60s poll cadence as the HTMX sidebar
+  // (see web/templates/partials/sidebar.html for the HTMX equivalent).
+  // The endpoint is cheap (a single COUNT) so this is fine to run on
+  // every authenticated page, regardless of whether the user navigates
+  // to /app/notifications.
+  let unreadCount = $state(0);
+  onMount(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const poll = async () => {
+      // Wait for /me to settle so we don't poll while unauthenticated.
+      while (!authState().loaded) {
+        await new Promise((r) => setTimeout(r, 30));
+      }
+      if (!isAuthenticated()) return;
+      try {
+        unreadCount = await getUnreadNotificationCount();
+      } catch {
+        // best-effort; bad fetch shouldn't break the rest of the shell
+      }
+    };
+    poll();
+    timer = setInterval(poll, 60_000);
+    return () => {
+      cancelled = true;
+      void cancelled;
+      if (timer) clearInterval(timer);
+    };
+  });
 </script>
 
 <div class="app-shell">
@@ -169,6 +204,9 @@
           {#each visibleNav.filter((n) => n.group === 'main') as item (item.href)}
             <a class="nav-link" class:active={isActive(item.href)} href={item.href}>
               {item.label}
+              {#if item.href === '/app/notifications' && unreadCount > 0}
+                <span class="badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
+              {/if}
             </a>
           {/each}
         </div>
@@ -180,6 +218,9 @@
           {#each visibleNav.filter((n) => n.group === 'staff') as item (item.href)}
             <a class="nav-link" class:active={isActive(item.href)} href={item.href}>
               {item.label}
+              {#if item.href === '/app/notifications' && unreadCount > 0}
+                <span class="badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
+              {/if}
             </a>
           {/each}
         </div>
@@ -380,6 +421,19 @@
     width: 3px;
     border-radius: 0 2px 2px 0;
     background: var(--rw-accent);
+  }
+  .badge {
+    display: inline-block;
+    margin-left: 8px;
+    background: var(--rw-accent);
+    color: var(--rw-accent-ink);
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 999px;
+    line-height: 1.4;
+    min-width: 18px;
+    text-align: center;
   }
 
   /* User card at bottom — mirrors HTMX's .sidebar-footer / .user-pill. */

@@ -94,7 +94,7 @@ func (h *Handler) SwitchLocation(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// Redirect — HTMX or full page
-	redirect := "/dashboard"
+	redirect := "/"
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("HX-Redirect", redirect)
 		w.WriteHeader(http.StatusOK)
@@ -152,7 +152,7 @@ func (h *Handler) SwitchViewAs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Redirect — validate referer to prevent open redirects
-	redirect := safeRedirect(r.Header.Get("Referer"), "/dashboard")
+	redirect := safeRedirect(r.Header.Get("Referer"), "/")
 
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("HX-Redirect", redirect)

@@ -17,7 +17,7 @@ import (
 // This page is only accessible when no organizations exist yet.
 func (h *Handler) SetupPage(w http.ResponseWriter, r *http.Request) {
 	if !h.needsSetup(r) {
-		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -34,7 +34,7 @@ func (h *Handler) SetupPage(w http.ResponseWriter, r *http.Request) {
 // the current user to org_admin.
 func (h *Handler) SetupSubmit(w http.ResponseWriter, r *http.Request) {
 	if !h.needsSetup(r) {
-		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -141,7 +141,7 @@ func (h *Handler) SetupSubmit(w http.ResponseWriter, r *http.Request) {
 		"admin_user_id", user.ID,
 	)
 
-	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 // needsSetup returns true if no organizations exist (first-run state).

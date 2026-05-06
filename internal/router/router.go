@@ -236,44 +236,47 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 		r.Handle("/_app/*", spa.AssetServer())
 	})
 
-	// SPA fallback: any unmatched path under an SPA-owned prefix returns
-	// index.html and the client router takes over. Each SPA-owned prefix
-	// is mounted at both /prefix and /prefix/* so SvelteKit's
-	// trailingSlash='never' default (URL ends up as /prefix) doesn't
-	// 404 on reload. All registrations point at the same handler.
+	// SPA fallback: the SvelteKit shell at web/spa/ owns the root URL
+	// space. Anything not claimed by a more specific HTMX or /api/v1
+	// route falls through to the client router. Specific paths registered
+	// here are either: server-side artifacts the SPA needs (favicon), or
+	// 308 redirects from legacy URL prefixes (/app/*, /staff/comp/*).
 	//
-	// Phase 1g adds /comp/*; Phase 1h adds /staff/comp/*. /spa-test
-	// stays around as a smoke-test landing.
+	// chi's tree matcher prefers the most specific match, so the
+	// catch-all "/*" registered last has the lowest precedence and only
+	// runs when no HTMX or /api/v1 route claimed the path.
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.Gzip)
 		r.Get("/favicon.svg", func(w http.ResponseWriter, req *http.Request) {
 			spa.AssetServer().ServeHTTP(w, req)
 		})
-		r.Handle("/spa-test", spa.FallbackHandler())
-		r.Handle("/spa-test/*", spa.FallbackHandler())
-		r.Handle("/comp", spa.FallbackHandler())
-		r.Handle("/comp/*", spa.FallbackHandler())
-		// SPA's magic-link sign-in lives at /sign-in (not /login —
-		// /login is taken by the HTMX password-auth page used by staff).
-		r.Handle("/sign-in", spa.FallbackHandler())
-		r.Handle("/sign-in/*", spa.FallbackHandler())
-		// /staff/comp/* used to host the comp staff UI; it now lives
-		// under /app/competitions/* so it shares the workspace shell
-		// (sidebar, location picker, role pill). 308 redirects preserve
-		// any bookmarks pointing at the old paths.
+		// /staff/comp/* used to host the comp staff UI; it lives at
+		// /competitions/* now. Bookmarks redirect.
 		r.Get("/staff/comp", func(w http.ResponseWriter, req *http.Request) {
-			http.Redirect(w, req, "/app/competitions", http.StatusPermanentRedirect)
+			http.Redirect(w, req, "/competitions", http.StatusPermanentRedirect)
 		})
 		r.Get("/staff/comp/*", func(w http.ResponseWriter, req *http.Request) {
 			rest := chi.URLParam(req, "*")
-			http.Redirect(w, req, "/app/competitions/"+rest, http.StatusPermanentRedirect)
+			http.Redirect(w, req, "/competitions/"+rest, http.StatusPermanentRedirect)
 		})
-		// Phase 2 (rebuild): the new SPA shell lives at /app while we
-		// migrate the existing HTMX surfaces page-by-page. Once a page
-		// has a SPA equivalent ready, its old HTMX route can be swapped
-		// to point here as well.
-		r.Handle("/app", spa.FallbackHandler())
-		r.Handle("/app/*", spa.FallbackHandler())
+		// /app/* used to host the SPA shell. Phase 2.10 promoted it to
+		// the root URL, so /app/walls is now /walls etc. 308 redirects
+		// preserve every bookmark pointing at the old prefix.
+		r.Get("/app", func(w http.ResponseWriter, req *http.Request) {
+			http.Redirect(w, req, "/", http.StatusPermanentRedirect)
+		})
+		r.Get("/app/*", func(w http.ResponseWriter, req *http.Request) {
+			rest := chi.URLParam(req, "*")
+			target := "/" + rest
+			if req.URL.RawQuery != "" {
+				target += "?" + req.URL.RawQuery
+			}
+			http.Redirect(w, req, target, http.StatusPermanentRedirect)
+		})
+		// SPA catch-all. Registered last so HTMX routes (auth flows,
+		// /admin/*, server-rendered card artifacts) and /api/v1/* still
+		// take precedence in chi's tree.
+		r.Handle("/*", spa.FallbackHandler())
 	})
 
 	// Web pages — web-specific CSP, CSRF, rate limiting, gzip, query timeout.
@@ -303,13 +306,23 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			r.Get("/verify-magic", magicVerifyHandler.Verify)
 		})
 
-		// Authenticated web routes
+		// Authenticated HTMX surfaces. After Phase 2.10 swapped the SPA
+		// from /app/* to /*, the SPA owns nearly the entire user-facing
+		// surface. The HTMX routes that survive are:
+		//   - first-run / cross-org bootstrap flows (setup, join-gym)
+		//   - logout (still a form-action POST)
+		//   - server-rendered route-card and card-batch artifacts the SPA
+		//     references as <img src> / download links
+		//   - quest manual mark-complete (rare staff recovery path; auto-
+		//     complete fires from the service layer for normal flows)
+		//   - app-admin observability dashboards
+		//
+		// Mirrored handler methods on webHandler stay in place for now —
+		// they're orphaned (no route reaches them) and will be removed in
+		// the cleanup PR per docs/spa-rebuild-cleanup.md.
 		r.Group(func(r chi.Router) {
 			r.Use(sessionMgr.RequireSession)
 
-			r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-				http.Redirect(w, r, "/dashboard", http.StatusTemporaryRedirect)
-			})
 			// First-run setup (only works when no orgs exist)
 			r.Get("/setup", webHandler.SetupPage)
 			r.Post("/setup", webHandler.SetupSubmit)
@@ -319,173 +332,29 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			r.Get("/join-gym/search", webHandler.JoinGymSearch)
 			r.Post("/join-gym", webHandler.JoinGymSubmit)
 
-			// Location and role switchers
-			r.Post("/switch-location", webHandler.SwitchLocation)
-			r.Post("/switch-view-as", webHandler.SwitchViewAs)
+			// Logout — still a server-side POST so the cookie clear and
+			// redirect happen in one round-trip without JS.
+			r.Post("/logout", webHandler.Logout)
 
-			// Climber routes — any authenticated user
-			r.Get("/explore/walls", webHandler.ClimberWalls)
-			r.Get("/routes", webHandler.Routes)
-			r.Get("/archive", webHandler.Archive)
-			r.Get("/routes/{routeID}", webHandler.RouteDetail)
+			// Server-rendered route card artifacts. The SPA route detail
+			// embeds these as <img src> and provides download links.
 			r.Get("/routes/{routeID}/card/print.png", webHandler.RouteCardPrintPNG)
 			r.Get("/routes/{routeID}/card/print.pdf", webHandler.RouteCardPrintPDF)
 			r.Get("/routes/{routeID}/card/share.png", webHandler.RouteCardSharePNG)
 			r.Get("/routes/{routeID}/card/share.pdf", webHandler.RouteCardSharePDF)
-			r.Post("/routes/{routeID}/ascent", webHandler.LogAscent)
-			r.Get("/routes/{routeID}/ascents-feed", webHandler.AscentsFeed)
-			r.Post("/routes/{routeID}/rate", webHandler.RateRoute)
-			r.Post("/routes/{routeID}/difficulty", webHandler.DifficultyVote)
-			r.Post("/routes/{routeID}/tags", webHandler.AddCommunityTag)
-			r.Post("/routes/{routeID}/tags/remove", webHandler.RemoveCommunityTag)
-			r.Post("/routes/{routeID}/tags/delete", webHandler.DeleteCommunityTag)
-			r.Post("/routes/{routeID}/photos", webHandler.PhotoUpload)
-			r.Post("/routes/{routeID}/photos/{photoID}/delete", webHandler.PhotoDelete)
-			r.Get("/profile", webHandler.ClimberProfile)
-			r.Get("/profile/ticks", webHandler.ProfileTicks)
-			r.Get("/profile/settings", webHandler.ProfileSettings)
-			r.Post("/profile/settings", webHandler.ProfileSettingsSave)
-			r.Post("/profile/password", webHandler.PasswordChange)
-			r.Get("/profile/ticks/{ascentID}/edit", webHandler.TickEditForm)
-			r.Post("/profile/ticks/{ascentID}", webHandler.TickUpdate)
-			r.Post("/profile/ticks/{ascentID}/delete", webHandler.TickDelete)
-			r.Post("/logout", webHandler.Logout)
 
-			// Notifications
-			r.Get("/notifications", webHandler.Notifications)
-			r.Get("/notifications/badge", webHandler.NotificationBadge)
-			r.Post("/notifications/read-all", webHandler.NotificationMarkAllRead)
-			r.Post("/notifications/{notifID}/read", webHandler.NotificationMarkRead)
-
-			// Progressions — climber-facing quest system
-			r.Get("/quests", webHandler.QuestBrowser)
-			r.Get("/quests/mine", webHandler.MyQuests)
-			r.Get("/quests/badges", webHandler.BadgeShowcase)
-			r.Get("/quests/activity", webHandler.QuestActivity)
-			r.Get("/quests/{questID}", webHandler.QuestDetailPage)
-			r.Post("/quests/{questID}/start", webHandler.QuestStart)
-			r.Post("/quests/{questID}/log", webHandler.QuestLogProgress)
+			// Manual mark-complete — recovery path. Auto-complete handles
+			// the normal case (service-layer trigger when criteria met).
 			r.Post("/quests/{questID}/complete", webHandler.QuestComplete)
-			r.Post("/quests/{questID}/abandon", webHandler.QuestAbandon)
 
-			// Setter routes — require setter role or above
+			// Setter card-batch artifacts (PDF / cutline DXF / preview PNG).
+			// The SPA card-batch detail page links to these as download
+			// targets / preview <img>.
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireSetterSession)
-
-				r.Get("/dashboard", webHandler.Dashboard)
-
-				// Route creation, editing, status management
-				r.Get("/routes/manage", webHandler.RouteManage)
-				r.Get("/routes/new", webHandler.RouteNew)
-				r.Get("/routes/new/fields", webHandler.RouteFormFields)
-				r.Post("/routes/new", webHandler.RouteCreate)
-				r.Get("/routes/{routeID}/edit", webHandler.RouteEdit)
-				r.Post("/routes/{routeID}/edit", webHandler.RouteUpdate)
-				r.Post("/routes/{routeID}/status", webHandler.RouteStatusUpdate)
-
-				// Wall management
-				r.Get("/walls", webHandler.WallList)
-				r.Get("/walls/new", webHandler.WallNew)
-				r.Post("/walls/new", webHandler.WallCreate)
-				r.Get("/walls/{wallID}", webHandler.WallDetail)
-				r.Get("/walls/{wallID}/edit", webHandler.WallEdit)
-				r.Post("/walls/{wallID}/edit", webHandler.WallUpdate)
-				r.Post("/walls/{wallID}/archive", webHandler.WallArchive)
-				r.Post("/walls/{wallID}/unarchive", webHandler.WallUnarchive)
-				r.Post("/walls/{wallID}/delete", webHandler.WallDelete)
-
-				// Setting sessions
-				r.Get("/sessions", webHandler.SessionList)
-				r.Get("/sessions/new", webHandler.SessionNew)
-				r.Post("/sessions/new", webHandler.SessionCreate)
-				r.Get("/sessions/{sessionID}", webHandler.SessionDetail)
-				r.Get("/sessions/{sessionID}/edit", webHandler.SessionEdit)
-				r.Post("/sessions/{sessionID}/edit", webHandler.SessionUpdate)
-				r.Post("/sessions/{sessionID}/assign", webHandler.SessionAddAssignment)
-				r.Post("/sessions/{sessionID}/unassign/{assignmentID}", webHandler.SessionRemoveAssignment)
-				r.Post("/sessions/{sessionID}/strip", webHandler.SessionAddStripTarget)
-				r.Post("/sessions/{sessionID}/strip/{targetID}/delete", webHandler.SessionRemoveStripTarget)
-				r.Post("/sessions/{sessionID}/checklist/{itemID}/toggle", webHandler.SessionToggleChecklist)
-				r.Post("/sessions/{sessionID}/delete", webHandler.SessionDelete)
-				r.Get("/sessions/{sessionID}/complete", webHandler.SessionComplete)
-				r.Get("/sessions/{sessionID}/photos", webHandler.SessionPhotos)
-				r.Post("/sessions/{sessionID}/publish", webHandler.SessionPublish)
-				r.Post("/sessions/{sessionID}/reopen", webHandler.SessionReopen)
-				r.Get("/sessions/{sessionID}/route-fields", webHandler.SessionRouteFields)
-				r.Post("/sessions/{sessionID}/routes", webHandler.SessionAddRoute)
-				r.Post("/sessions/{sessionID}/routes/{routeID}/edit", webHandler.SessionEditRoute)
-				r.Post("/sessions/{sessionID}/routes/{routeID}/delete", webHandler.SessionDeleteRoute)
-
-				// Route card print batches — 8-up print-and-cut sheets.
-				// Download and detail are behind the setter group (same as the
-				// session-management tooling) because the batch picker exposes
-				// the full route inventory and the PDF is intended for the
-				// setter's print workflow.
-				r.Get("/card-batches", webHandler.CardBatchList)
-				r.Get("/card-batches/new", webHandler.CardBatchNewForm)
-				r.With(batchCreateLimitByUser).Post("/card-batches/new", webHandler.CardBatchCreate)
-				r.Get("/card-batches/{batchID}", webHandler.CardBatchDetail)
-				r.Get("/card-batches/{batchID}/edit", webHandler.CardBatchEditForm)
-				r.Post("/card-batches/{batchID}/edit", webHandler.CardBatchUpdate)
 				r.Get("/card-batches/{batchID}/download.pdf", webHandler.CardBatchDownload)
 				r.Get("/card-batches/{batchID}/cutlines.dxf", webHandler.CardBatchCutlines)
 				r.Get("/card-batches/{batchID}/preview.png", webHandler.CardBatchPreview)
-				r.With(batchCreateLimitByUser).Post("/card-batches/{batchID}/retry", webHandler.CardBatchRetry)
-				r.Post("/card-batches/{batchID}/delete", webHandler.CardBatchDelete)
-
-				// Gym settings — head_setter or above (handler checks role internally)
-				r.Get("/settings", webHandler.GymSettingsPage)
-				r.Post("/settings", webHandler.GymSettingsSave)
-				r.Post("/settings/circuits/add", webHandler.GymSettingsAddCircuit)
-				r.Post("/settings/circuits/{colorName}/delete", webHandler.GymSettingsRemoveCircuit)
-				r.Post("/settings/hold-colors/add", webHandler.GymSettingsAddHoldColor)
-				r.Post("/settings/hold-colors/{colorName}/delete", webHandler.GymSettingsRemoveHoldColor)
-				r.Post("/settings/palette-preset", webHandler.GymSettingsApplyPalettePreset)
-				r.Get("/settings/team", webHandler.TeamPage)
-				r.Post("/settings/team/{membershipID}/role", webHandler.TeamUpdateRole)
-
-				// Playbook editor — head_setter or above (handler checks role internally)
-				r.Get("/settings/playbook", webHandler.PlaybookEditPage)
-				r.Post("/settings/playbook/add", webHandler.PlaybookCreate)
-				r.Post("/settings/playbook/{stepID}/edit", webHandler.PlaybookUpdate)
-				r.Post("/settings/playbook/{stepID}/delete", webHandler.PlaybookDelete)
-				r.Post("/settings/playbook/{stepID}/move", webHandler.PlaybookMove)
-
-				// Progressions feature toggle — gym_manager or above (handler checks role internally)
-				r.Post("/settings/progressions-toggle", webHandler.ProgressionsToggle)
-
-				// Organization settings — gym_manager or above (handler checks role internally)
-				r.Get("/settings/organization", webHandler.OrgSettingsPage)
-				r.Post("/settings/organization", webHandler.OrgSettingsSave)
-				r.Get("/settings/organization/gyms/new", webHandler.GymNewPage)
-				r.Post("/settings/organization/gyms/new", webHandler.GymCreate)
-				r.Get("/settings/organization/gyms/{gymID}/edit", webHandler.GymEditPage)
-				r.Post("/settings/organization/gyms/{gymID}/edit", webHandler.GymUpdate)
-				r.Get("/settings/organization/team", webHandler.OrgTeamPage)
-				r.Post("/settings/organization/team/{membershipID}/role", webHandler.OrgTeamUpdateRole)
-
-				// Progressions admin — head_setter or above (handler checks role internally)
-				r.Get("/settings/progressions", webHandler.ProgressionsAdminPage)
-
-				r.Get("/settings/progressions/domains/new", webHandler.DomainCreateForm)
-				r.Post("/settings/progressions/domains/new", webHandler.DomainCreate)
-				r.Get("/settings/progressions/domains/{domainID}/edit", webHandler.DomainEditForm)
-				r.Post("/settings/progressions/domains/{domainID}/edit", webHandler.DomainUpdate)
-				r.Post("/settings/progressions/domains/{domainID}/delete", webHandler.DomainDelete)
-
-				r.Get("/settings/progressions/quests/new", webHandler.QuestCreateForm)
-				r.Post("/settings/progressions/quests/new", webHandler.QuestCreate)
-				r.Get("/settings/progressions/quests/{questID}/edit", webHandler.QuestEditForm)
-				r.Post("/settings/progressions/quests/{questID}/edit", webHandler.QuestUpdate)
-				r.Post("/settings/progressions/quests/{questID}/deactivate", webHandler.QuestDeactivate)
-				r.Post("/settings/progressions/quests/{questID}/duplicate", webHandler.QuestDuplicate)
-
-				r.Get("/settings/progressions/badges/new", webHandler.BadgeCreateForm)
-				r.Post("/settings/progressions/badges/new", webHandler.BadgeCreate)
-				r.Get("/settings/progressions/badges/{badgeID}/edit", webHandler.BadgeEditForm)
-				r.Post("/settings/progressions/badges/{badgeID}/edit", webHandler.BadgeUpdate)
-				r.Post("/settings/progressions/badges/{badgeID}/delete", webHandler.BadgeDelete)
-
 			})
 
 			// App admin routes — require is_app_admin flag on user

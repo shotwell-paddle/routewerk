@@ -15,7 +15,7 @@ import (
 // MagicVerifyHandler handles GET /verify-magic — the URL the climber
 // clicks in their email. On success it consumes the token, mints a web
 // session (same pattern as POST /login), sets the cookie, rotates CSRF,
-// and redirects to either the saved next path or /dashboard.
+// and redirects to either the saved next path or the SPA root.
 //
 // On failure (invalid, expired, or already-consumed token) it redirects
 // to /login. Phase 2 polish: a dedicated "this link no longer works,
@@ -59,7 +59,7 @@ func (h *MagicVerifyHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	next := safeRedirect(r.URL.Query().Get("next"), "/dashboard")
+	next := safeRedirect(r.URL.Query().Get("next"), "/")
 
 	user, _, err := h.svc.Consume(r.Context(), token)
 	if err != nil {

@@ -31,7 +31,7 @@ func (h *Handler) LoginPage(w http.ResponseWriter, r *http.Request) {
 
 	// Already authenticated — redirect to dashboard
 	if cookie, err := r.Cookie(middleware.SessionCookieName); err == nil && cookie.Value != "" {
-		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -149,7 +149,7 @@ func (h *Handler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, h.postAuthRedirect(r), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 // loginError re-renders the login page with an error message.
@@ -358,7 +358,7 @@ func (h *Handler) RegisterSubmit(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, h.postAuthRedirect(r), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 // locationForHost resolves the request hostname to a location via the

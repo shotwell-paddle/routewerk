@@ -1,17 +1,19 @@
 # SPA rebuild — cleanup audit
 
-After the Phase-2 rebuild plus the parity sweep in PRs #77–#93, the
-SvelteKit shell at `/app/*` covers nearly the entire HTMX climber +
-staff surface. This doc tracks each HTMX route as one of:
+Phase 2 of the rebuild is complete. The SvelteKit shell at `web/spa/`
+now owns the entire user-facing surface and is mounted at the root URL
+(`/walls`, `/routes`, `/sessions`, …) since PR #98. The HTMX templates
+and handler methods that mirror SPA pages are still present but
+**orphaned** — no router registration reaches them.
 
-- **mirrored** — SPA at `/app/*` covers it; HTMX template + handler can
-  be deleted in a follow-up cleanup PR.
-- **partial** — SPA covers most of the feature, gap noted.
-- **unique** — still HTMX-only; either intentionally so, awaits backend
-  work, or is a server-rendered artifact.
+This doc tracks each HTMX surface as one of:
 
-Nothing here is destructive — the actual HTMX template / handler
-deletions are a separate PR once the user signs off on the swap.
+- **mirrored** — SPA equivalent exists; HTMX template + handler can be
+  deleted in the cleanup PR. The router registration was already
+  removed in #98.
+- **kept** — HTMX surface still in use, either by design (auth flows,
+  app-admin) or because the SPA links to it as a server-rendered
+  artifact (route cards, card-batch PDFs).
 
 > SPA shell + parity PRs:
 > #50–#53 (Phase 1h staff comp), #54 head_setter authz,
@@ -29,98 +31,114 @@ deletions are a separate PR once the user signs off on the swap.
 > showcase, #85 sidebar no-scroll, #86 per-ascent edit, #87 session
 > publish, #88 org-wide team toggle, #89 progressions toggle, #90 staff
 > stay on quests/badges when off, #91 card batch edit, #92 palette
-> presets, #93 activity feed.
+> presets, #93 activity feed, #94 audit refresh, #95 quest create/edit
+> form, #96 session photos + per-route ops, #97 setter playbook editor,
+> #98 SPA promoted to root, /app/* → /* 308 redirects.
 
 ---
 
 ## Status by HTMX surface
 
-### Auth (HTMX-only by design)
+### Auth (kept — by design)
 
-| HTMX route | Status | Notes |
-|---|---|---|
-| `GET /login` + `POST /login` | unique | Password auth; SPA `/sign-in` is magic-link only. |
-| `GET /register` + `POST /register` | unique | New account creation. |
-| `GET /verify-magic` | server-rendered | Magic-link callback; cannot be SPA. |
-| `GET /setup` + `POST /setup` | unique | First-run org bootstrap. |
-| `GET /join-gym` etc. | unique | Climber onboarding. |
-| `POST /logout` | server-rendered | Cookie clear + redirect. |
+| HTMX route | Status |
+|---|---|
+| `GET /login` + `POST /login` | kept — password auth; SPA `/sign-in` is magic-link only |
+| `GET /register` + `POST /register` | kept — new account creation |
+| `GET /verify-magic` | kept — magic-link callback (server-rendered cookie set) |
+| `GET /setup` + `POST /setup` | kept — first-run org bootstrap |
+| `GET /join-gym` etc. | kept — climber onboarding |
+| `POST /logout` | kept — cookie clear + redirect, no JS |
 
-### Climber-facing
+### Server-rendered artifacts (kept — SPA links to these)
 
-| HTMX route | Status | SPA equivalent |
-|---|---|---|
-| `GET /routes` | mirrored | `/app/routes` |
-| `GET /archive` | mirrored | `/app/archive` (#84) |
-| `GET /routes/{id}` | mirrored | `/app/routes/[id]` — log ascent (#68), rate, photo upload (#81), community tags (#83), difficulty consensus (#83) |
-| `POST /routes/{id}/ascent` | mirrored | `POST /api/v1/locations/{loc}/routes/{id}/ascent` |
-| `POST /routes/{id}/rate` | mirrored | `POST /api/v1/locations/{loc}/routes/{id}/rate` |
-| `POST /routes/{id}/difficulty` | mirrored | `POST /api/v1/locations/{loc}/routes/{id}/difficulty` (#83) |
-| `POST /routes/{id}/tags`, `/tags/remove`, `/tags/delete` | mirrored | `/api/v1/locations/{loc}/routes/{id}/tags` (#83) |
-| `POST /routes/{id}/photos`, `/photos/{id}/delete` | mirrored | `/api/v1/locations/{loc}/routes/{id}/photos` (#81) |
-| `GET /routes/{id}/card/...` | server-rendered | Same endpoint serves both surfaces |
-| `GET /routes/{id}/ascents-feed` | unique | HTMX live ticker; the SPA's route detail polls `listRouteAscents` |
-| `GET /profile`, `/profile/settings`, `POST /profile/*` | mirrored | `/app/profile`, `/app/settings` |
-| `GET /profile/ticks/{id}/edit`, `POST .../{id}`, `/delete` | mirrored | inline edit + delete on `/app/profile` (#86) |
-| `GET /notifications`, `POST .../*` | mirrored | `/app/notifications` (#69) |
-| `GET /quests`, `/quests/mine`, `/quests/{id}` | mirrored | `/app/quests/*` |
-| `POST /quests/{id}/{start,log,abandon}` | mirrored | JSON helpers |
-| `POST /quests/{id}/complete` | unique | Manual mark-complete; auto-complete fires server-side |
-| `GET /quests/badges` | mirrored | `/app/quests/badges` (#84) |
-| `GET /quests/activity` | mirrored | `/app/quests/activity` (#93) |
+| HTMX route | Status |
+|---|---|
+| `GET /routes/{id}/card/print.{png,pdf}` | kept — SPA route detail embeds + downloads |
+| `GET /routes/{id}/card/share.{png,pdf}` | kept — same |
+| `GET /card-batches/{id}/download.pdf` | kept — SPA card-batch detail download |
+| `GET /card-batches/{id}/cutlines.dxf` | kept — laser-cutter file download |
+| `GET /card-batches/{id}/preview.png` | kept — SPA card-batch preview <img> |
 
-### Setter / staff-facing
+### App admin (kept — server-rendered observability)
 
-| HTMX route | Status | SPA equivalent |
-|---|---|---|
-| `GET /dashboard` | mirrored | `/app` — stats + activity feed (#70) + wall-by-route grid (#79) |
-| `GET /routes/manage`, `/routes/new`, etc. | mirrored | `/app/routes/*` — gym-aware pickers + auto strip-date (#78) |
-| `GET /walls/*`, archive/unarchive/delete | mirrored | `/app/walls/*` (#71) |
-| `GET /sessions/*`, full lifecycle | mirrored | `/app/sessions/*` (#72) |
-| `POST /sessions/{id}/publish` | mirrored | one-shot publish on `/app/sessions/[id]` (#87) |
-| `GET /sessions/{id}/photos`, `POST /sessions/{id}/routes/...` | unique | Per-session route ops; needs backend port |
-| `GET /card-batches/*` | mirrored | `/app/card-batches/*` |
-| `POST /card-batches/{id}/edit` | mirrored | inline edit on `/app/card-batches/[id]` (#91) |
-| `GET /card-batches/{id}/{cutlines.dxf,preview.png}` | server-rendered | Downloadable artifacts |
-| `GET /settings`, gym settings + circuits + hold-colors | mirrored | `/app/settings/gym` (#73) — head_setter+ writes (#82) |
-| `POST /settings/palette-preset` | mirrored | one-click presets in `/app/settings/gym` (#92) |
-| `POST /settings/progressions-toggle` | mirrored | `/app/settings/gym` toggle card (#89) |
-| `GET /settings/team` | mirrored | `/app/team` |
-| `POST /switch-view-as` | mirrored | sidebar view-as bar (#80) + page gates (#82) |
-| `GET /settings/organization`, gym CRUD | mirrored | `/app/settings/org` (#74) |
-| `GET /settings/organization/team` | mirrored | "Whole org" toggle on `/app/team` (#88) |
-| `GET /settings/progressions`, domain/badge CRUD | partial | `/app/settings/progressions` (#75); **quest create/edit form still HTMX** |
-| `GET /settings/playbook` + edits | unique | Setter playbook editor — new domain, not yet in SPA |
-| `GET /admin/*` (health, metrics) | unique | App-admin observability; intentionally server-rendered |
+| HTMX route | Status |
+|---|---|
+| `GET /admin/health` | kept — pool / DB / queue dashboard |
+| `GET /admin/metrics` | kept — request counters dashboard |
 
-### Competitions
+### Climber-facing (mirrored — handlers + templates can be removed)
 
-`/app/competitions/*` (renamed from `/staff/comp/*` in #78) and
-`/comp/[slug]` are SPA-only — no HTMX cousins.
+| HTMX route | SPA equivalent |
+|---|---|
+| `GET /` (redirect) | `/` (SPA dashboard) |
+| `GET /dashboard` | `/` (#70, #79) |
+| `GET /routes` | `/routes` |
+| `GET /archive` | `/archive` (#84) |
+| `GET /routes/{id}` | `/routes/[id]` — log ascent (#68), rate, photo upload (#81), community tags (#83), difficulty consensus (#83) |
+| `POST /routes/{id}/ascent` | `POST /api/v1/locations/{loc}/routes/{id}/ascent` |
+| `POST /routes/{id}/rate` | `POST /api/v1/locations/{loc}/routes/{id}/rate` |
+| `POST /routes/{id}/difficulty` | `POST /api/v1/locations/{loc}/routes/{id}/difficulty` (#83) |
+| `POST /routes/{id}/tags`, `/tags/remove`, `/tags/delete` | `/api/v1/locations/{loc}/routes/{id}/tags` (#83) |
+| `POST /routes/{id}/photos`, `/photos/{id}/delete` | `/api/v1/locations/{loc}/routes/{id}/photos` (#81) |
+| `GET /routes/{id}/ascents-feed` | orphan — was an HTMX-only live ticker; SPA route detail polls `listRouteAscents` instead |
+| `GET /profile`, `/profile/settings`, `POST /profile/*` | `/profile`, `/settings` |
+| `GET /profile/ticks/{id}/edit`, `POST .../{id}`, `/delete` | inline edit + delete on `/profile` (#86) |
+| `GET /notifications`, `POST .../*` | `/notifications` (#69) |
+| `GET /quests`, `/quests/mine`, `/quests/{id}` | `/quests/*` |
+| `POST /quests/{id}/{start,log,abandon}` | JSON helpers |
+| `GET /quests/badges` | `/quests/badges` (#84) |
+| `GET /quests/activity` | `/quests/activity` (#93) |
+
+### Setter / staff-facing (mirrored)
+
+| HTMX route | SPA equivalent |
+|---|---|
+| `GET /routes/manage`, `/routes/new`, etc. | `/routes/*` — gym-aware pickers + auto strip-date (#78) |
+| `GET /walls/*`, archive/unarchive/delete | `/walls/*` (#71) |
+| `GET /sessions/*`, full lifecycle | `/sessions/*` (#72) |
+| `POST /sessions/{id}/publish` | one-shot publish on `/sessions/[id]` (#87) |
+| `GET /sessions/{id}/photos` + `POST /sessions/{id}/routes/...` | `/sessions/[id]/photos` (#96) |
+| `GET /card-batches/*` (list, new, detail, edit, retry, delete) | `/card-batches/*` |
+| `POST /card-batches/{id}/edit` | inline edit on `/card-batches/[id]` (#91) |
+| `GET /settings`, gym settings + circuits + hold-colors | `/settings/gym` (#73), head_setter+ writes (#82) |
+| `POST /settings/palette-preset` | one-click presets in `/settings/gym` (#92) |
+| `POST /settings/progressions-toggle` | `/settings/gym` toggle card (#89) |
+| `GET /settings/team` | `/team` |
+| `POST /switch-view-as` | sidebar view-as bar (#80) + page gates (#82) |
+| `POST /switch-location` | sidebar location picker — uses local store, no server cookie |
+| `GET /settings/organization`, gym CRUD | `/settings/org` (#74) |
+| `GET /settings/organization/team` | "Whole org" toggle on `/team` (#88) |
+| `GET /settings/progressions`, domain/badge CRUD | `/settings/progressions` (#75); quest create/edit form (#95) |
+| `GET /settings/playbook` + edits | `/settings/playbook` (#97) |
+
+### Quest manual mark-complete (kept — narrow recovery path)
+
+| HTMX route | Status |
+|---|---|
+| `POST /quests/{id}/complete` | kept — staff-only manual override; auto-complete fires from the quest service for normal flows |
 
 ---
 
-## Remaining HTMX-only items (full list)
+## Cleanup work remaining
 
-These are the only HTMX surfaces that don't have a `/app/*` equivalent:
+After this PR (#98), the swap-to-root and route deletes are done. The
+remaining cleanup is template + dead-handler removal:
 
-- **Auth flows** (`/login`, `/register`, `/verify-magic`, `/setup`, `/join-gym`) — intentionally server-rendered; the SPA's magic-link `/sign-in` is the new account-recovery path.
-- **`/routes/{id}/ascents-feed`** — live HTMX ticker. The SPA route detail already shows recent ascents via `listRouteAscents`; a polling/SSE upgrade is on the wishlist but not blocking.
-- **`POST /quests/{id}/complete`** — manual mark-complete. Auto-complete fires server-side; the manual path is a recovery mechanism rarely used.
-- **`GET /sessions/{id}/photos` + `POST /sessions/{id}/routes/*`** — session-scoped photo gallery + per-session route edits. Needs new JSON endpoints; **stretch item**.
-- **Quest create/edit form** (`POST /settings/progressions/quests/{id}/...`) — rich form (completion criteria, target count, availability window, route tag filter). The SPA progressions admin links out to HTMX for now. **Stretch item; deserves a dedicated PR.**
-- **Playbook editor** (`GET /settings/playbook` + child edits) — setter checklist templates. New domain, not in SPA. **Stretch item.**
-- **`/admin/health`, `/admin/metrics`** — app-admin observability. Server-rendered for immediate dashboards; not planned for SPA.
+1. **Delete orphaned HTMX handlers** in `internal/handler/web/` for the
+   surfaces marked **mirrored**. The router no longer points at them so
+   they're safe to remove. Skim for any cross-call from a kept handler
+   (`SetupSubmit` → `loginSubmit`-style helpers) before deleting.
+2. **Delete orphaned templates** in `web/templates/` for the same set.
+   Watch for partials reused by kept pages — e.g. `partials/route-card.html`
+   feeds the magic-link callback's success page and the route-card PDF
+   pipeline. Don't delete partials without `grep -r` first.
+3. **Delete the `_app/*` dead-code from webHandler/NewHandler** — once
+   handlers are gone, the constructor parameters that fed them can come
+   off too. Many repos / services will become unused on the HTMX side
+   but stay on the API side; only remove from `webhandler.NewHandler`,
+   not from `repository.New*` calls in `router.go`.
 
----
-
-## Recommendation: when to swap `/app/*` to root
-
-After the items above either land or are explicitly deferred:
-
-1. Delete the HTMX templates + handlers for the surfaces marked **mirrored**. Single deletion PR for review-ability.
-2. Swap each HTMX router mount in `internal/router/router.go` to point at the SPA fallback — a one-line change per row, fully reversible.
-3. For surfaces that stay HTMX (auth, `/admin/*`, the few unique items), keep their mounts intact.
-4. The HTMX-side templates that share partials (`partials/route-card.html`, etc.) are still load-bearing for server-rendered cards and the magic-link callback — don't touch those without grepping.
-
-The actual swap-to-root is mechanical once the deletes land. Reversible by reverting the commit if the user spots a regression.
+Two follow-up PRs (handler/templates separately, then constructor
+slimdown) keep each diff reviewable. Reversible by reverting the commit
+if the user spots a regression.

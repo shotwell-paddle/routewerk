@@ -1123,6 +1123,80 @@ export interface StripTargetShape {
   route_type?: string | null;
 }
 
+// ── Playbook (setter checklist template) ──────────────────────
+
+export interface PlaybookStepShape {
+  id: string;
+  location_id: string;
+  sort_order: number;
+  title: string;
+  created_at: string;
+}
+
+/** GET /locations/{locationId}/playbook — setter+ read. */
+export async function listPlaybookSteps(
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<PlaybookStepShape[]> {
+  return request(`/locations/${locationId}/playbook`, { signal });
+}
+
+/** POST /locations/{locationId}/playbook — head_setter+ append. */
+export async function createPlaybookStep(
+  locationId: string,
+  title: string,
+  signal?: AbortSignal,
+): Promise<PlaybookStepShape> {
+  return request(`/locations/${locationId}/playbook`, {
+    method: 'POST',
+    body: { title },
+    signal,
+  });
+}
+
+/** PATCH /locations/{locationId}/playbook/{stepId} — head_setter+ rename. */
+export async function updatePlaybookStep(
+  locationId: string,
+  stepId: string,
+  title: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/locations/${locationId}/playbook/${stepId}`, {
+    method: 'PATCH',
+    body: { title },
+    signal,
+  });
+}
+
+/** DELETE /locations/{locationId}/playbook/{stepId} — head_setter+. */
+export async function deletePlaybookStep(
+  locationId: string,
+  stepId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/locations/${locationId}/playbook/${stepId}`, {
+    method: 'DELETE',
+    signal,
+  });
+}
+
+/**
+ * POST /locations/{locationId}/playbook/{stepId}/move — head_setter+.
+ * Swaps with neighbor "up" or "down" in sort_order.
+ */
+export async function movePlaybookStep(
+  locationId: string,
+  stepId: string,
+  direction: 'up' | 'down',
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/locations/${locationId}/playbook/${stepId}/move`, {
+    method: 'POST',
+    body: { direction },
+    signal,
+  });
+}
+
 /** GET /locations/{locationId}/sessions/{sessionId}/strip-targets — setter+. */
 export async function listStripTargets(
   locationId: string,

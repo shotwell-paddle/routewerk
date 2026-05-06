@@ -195,6 +195,9 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	// the progressions feature flag — staff often want activity while
 	// the flag is still off.
 	activityHandler := handler.NewActivityHandler(activityRepo)
+	// Setter playbook — default checklist template applied to new
+	// sessions. Mirrors HTMX /settings/playbook.
+	playbookHandler := handler.NewPlaybookHandler(sessionRepo)
 
 	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, questRepo, badgeRepo, activityRepo, routeSkillTagRepo, notifRepo, deps.QuestSvc, deps.EventBus, authService, storageSvc, cardGen, cardBatchRepo, batchSvc, auditService, sessionMgr, cfg, db)
 
@@ -860,6 +863,10 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 					// (setter+) since the data is location-agnostic but
 					// the only callers are the gym-settings UI.
 					r.Get("/settings/palette-presets", settingsHandler.ListPalettePresets)
+					// Playbook list — setter+ since the SPA's session
+					// lifecycle UI peeks at this to know which steps to
+					// pre-populate. Writes are gated below.
+					r.Get("/playbook", playbookHandler.List)
 				})
 				r.Group(func(r chi.Router) {
 					r.Use(authz.RequireLocationRole("head_setter"))
@@ -867,6 +874,12 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 					// Apply a named palette preset — head_setter+ matches the
 					// HTMX flow. Replaces circuits + hold-color lists in one shot.
 					r.Post("/settings/palette-preset", settingsHandler.ApplyPalettePreset)
+					// Playbook writes — head_setter+ matches HTMX policy
+					// (internal/handler/web/sessions_lifecycle.go::PlaybookEdit*).
+					r.Post("/playbook", playbookHandler.Create)
+					r.Patch("/playbook/{stepID}", playbookHandler.Update)
+					r.Delete("/playbook/{stepID}", playbookHandler.Delete)
+					r.Post("/playbook/{stepID}/move", playbookHandler.Move)
 				})
 
 				// Progressions admin — quest / badge / domain CRUD for

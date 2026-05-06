@@ -2,8 +2,11 @@
   import {
     getLocationSettings,
     updateLocationSettings,
+    getLocation,
+    setLocationProgressions,
     ApiClientError,
     type LocationSettingsShape,
+    type LocationShape,
     type CircuitColor,
     type HoldColor,
   } from '$lib/api/client';
@@ -11,17 +14,21 @@
   import { roleRankAt } from '$lib/stores/auth.svelte';
 
   let settings = $state<LocationSettingsShape | null>(null);
+  let location = $state<LocationShape | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let saving = $state(false);
   let saveOk = $state<string | null>(null);
+  let progressionsToggling = $state(false);
+  let progressionsError = $state<string | null>(null);
 
   const locId = $derived(effectiveLocationId());
   // head_setter+ matches the HTMX gym-settings policy at
   // internal/handler/web/settings.go (head_setter can edit circuits,
   // hold colors, grading defaults). gym_manager+ only on the
-  // progressions toggle, which lives elsewhere.
+  // progressions toggle, which lives in its own card below.
   const canEdit = $derived(roleRankAt(locId) >= 3);
+  const canToggleProgressions = $derived(roleRankAt(locId) >= 4);
 
   $effect(() => {
     if (!locId) return;
@@ -29,9 +36,14 @@
     loading = true;
     error = null;
     saveOk = null;
-    getLocationSettings(locId)
-      .then((s) => {
-        if (!cancelled) settings = s;
+    Promise.all([
+      getLocationSettings(locId),
+      getLocation(locId).catch(() => null),
+    ])
+      .then(([s, loc]) => {
+        if (cancelled) return;
+        settings = s;
+        location = loc;
       })
       .catch((err) => {
         if (cancelled) return;
@@ -44,6 +56,23 @@
       cancelled = true;
     };
   });
+
+  async function toggleProgressions(next: boolean) {
+    if (!locId || progressionsToggling) return;
+    progressionsToggling = true;
+    progressionsError = null;
+    try {
+      await setLocationProgressions(locId, next);
+      // Refetch the location so the page reflects the new flag without a
+      // hard reload — and so the SPA layout's nav-link visibility flips
+      // on its next /me-driven render.
+      location = await getLocation(locId);
+    } catch (err) {
+      progressionsError = err instanceof ApiClientError ? err.message : 'Toggle failed.';
+    } finally {
+      progressionsToggling = false;
+    }
+  }
 
   // ── Circuit color editing ────────────────────────────────
 
@@ -256,6 +285,32 @@
       </div>
     </form>
   {/if}
+
+  <!-- Progressions toggle is its own gated card, separate from the
+       settings save form. gym_manager+ only — flipping it switches
+       climbers between seeing the quests / badges surface and not. -->
+  {#if location && canToggleProgressions}
+    <section class="card cta-card">
+      <h2>Climber progressions (quests + badges)</h2>
+      <p class="muted">
+        {location.progressions_enabled
+          ? 'Currently visible to climbers at this gym. Turn off to hide quests, badges, and the activity feed everywhere they appear.'
+          : 'Currently hidden from climbers. Turn on to expose the quests, badges, and activity feed surfaces — make sure your catalog is in shape first under Settings → Progressions.'}
+      </p>
+      {#if progressionsError}<p class="error">{progressionsError}</p>{/if}
+      <button
+        class="primary"
+        type="button"
+        disabled={progressionsToggling}
+        onclick={() => toggleProgressions(!location?.progressions_enabled)}>
+        {progressionsToggling
+          ? 'Saving…'
+          : location.progressions_enabled
+          ? 'Turn off progressions'
+          : 'Turn on progressions'}
+      </button>
+    </section>
+  {/if}
 </div>
 
 <style>
@@ -445,5 +500,29 @@
     border-radius: 6px;
     font-size: 0.9rem;
     margin: 0.5rem 0;
+  }
+  .cta-card {
+    border-color: var(--rw-accent);
+  }
+  .cta-card h2 {
+    margin-top: 0;
+  }
+  .cta-card .muted {
+    color: var(--rw-text-muted);
+    margin: 0 0 1rem;
+  }
+  .cta-card .primary {
+    background: var(--rw-accent);
+    color: var(--rw-accent-ink);
+    border: 1px solid var(--rw-accent);
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+  .cta-card .primary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 </style>

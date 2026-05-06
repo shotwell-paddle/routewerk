@@ -274,6 +274,23 @@ export async function getLocationSettings(
   return request(`/locations/${locationId}/settings`, { signal });
 }
 
+/**
+ * POST /locations/{locationId}/progressions-toggle — gym_manager+ flips
+ * the climber-facing progressions feature flag. Mirrors the HTMX
+ * /settings/progressions-toggle endpoint.
+ */
+export async function setLocationProgressions(
+  locationId: string,
+  enabled: boolean,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(`/locations/${locationId}/progressions-toggle`, {
+    method: 'POST',
+    body: { enabled },
+    signal,
+  });
+}
+
 /** PUT /locations/{locationId}/settings — gym_manager+. Replaces the full struct. */
 export async function updateLocationSettings(
   locationId: string,

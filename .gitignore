@@ -1,7 +1,9 @@
 # Binaries
 /bin/
 /api
+!/api/
 /admin
+!/admin/
 /routewerk
 *.exe
 *.exe~

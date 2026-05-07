@@ -248,7 +248,7 @@ func TestRoleDisplayName(t *testing.T) {
 // ── templateDataFromContext ──────────────────────────────────
 
 func TestTemplateDataFromContext_NoSession(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	td := templateDataFromContext(req, "dashboard")
 
 	if td.ActiveNav != "dashboard" {
@@ -279,7 +279,7 @@ func TestTemplateDataFromContext_WithUser(t *testing.T) {
 		DisplayName: "Chris",
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	ctx := middleware.SetWebUser(req.Context(), user)
 	ctx = middleware.SetWebRole(ctx, "head_setter")
 	ctx = middleware.SetWebRealRole(ctx, "head_setter")
@@ -314,7 +314,7 @@ func TestTemplateDataFromContext_ViewAsOverride(t *testing.T) {
 		IsAppAdmin:  true, // real account IS an app admin — view-as should hide UI
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	ctx := middleware.SetWebUser(req.Context(), user)
 	ctx = middleware.SetWebRole(ctx, "setter")       // effective = setter (overridden)
 	ctx = middleware.SetWebRealRole(ctx, "org_admin") // real = org_admin
@@ -350,7 +350,7 @@ func TestTemplateDataFromContext_AppAdminNoViewAs(t *testing.T) {
 		IsAppAdmin:  true,
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	ctx := middleware.SetWebUser(req.Context(), user)
 	ctx = middleware.SetWebRole(ctx, "org_admin")
 	ctx = middleware.SetWebRealRole(ctx, "org_admin") // no view-as override

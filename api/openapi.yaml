@@ -1,0 +1,1331 @@
+openapi: 3.0.3
+info:
+  title: Routewerk API
+  version: 0.1.0
+  description: |
+    REST API for Routewerk's competition tracking and supporting endpoints.
+    This is the source of truth for both the Go server (`internal/api/`,
+    via `oapi-codegen`) and the SvelteKit client (`web/spa/src/lib/api/`,
+    via `openapi-typescript`). Run `make api-gen` to regenerate after
+    spec changes; CI fails if the committed generated files drift.
+
+    Phase 1e populates magic-link auth and comp CRUD as a thin end-to-end
+    slice that exercises the full pipeline (spec → Go types → TS types →
+    SPA consumption). Phase 1f adds the remaining comp endpoints (events,
+    problems, registrations, the unified action endpoint, verification,
+    and the leaderboard + SSE stream).
+
+servers:
+  - url: https://routewerk.fly.dev
+    description: production
+  - url: https://routewerk-dev.fly.dev
+    description: staging
+  - url: http://localhost:8080
+    description: local dev
+
+tags:
+  - name: auth
+    description: Authentication and session lifecycle (password, magic link, JWT refresh).
+  - name: competitions
+    description: Top-level comp CRUD. Events, categories, problems, registrations, and attempts hang off these.
+
+# All comp endpoints require either a valid JWT (mobile/API clients) or a
+# valid web session cookie (browser/SPA). Auth scheme requirements per
+# operation are inherited from this default unless explicitly overridden.
+security:
+  - bearerAuth: []
+  - cookieAuth: []
+
+paths:
+
+  # ── Auth ────────────────────────────────────────────────────────
+
+  /auth/magic/request:
+    post:
+      tags: [auth]
+      operationId: requestMagicLink
+      summary: Request a magic-link sign-in email
+      description: |
+        Generates a single-use sign-in token and emails it to the address.
+        Always returns 202 — the response is identical whether or not the
+        email is registered, so an attacker can't enumerate accounts.
+
+        Layered rate limits: per-IP (existing 20/min auth limiter) and
+        per-email (3 / 15 min, enforced in the service against the DB).
+      security: []  # public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MagicLinkRequest'
+      responses:
+        '202':
+          description: Request accepted (email send happens via background queue).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+
+  # ── Competitions ───────────────────────────────────────────────
+
+  /locations/{locationId}/competitions:
+    parameters:
+      - $ref: '#/components/parameters/LocationId'
+    get:
+      tags: [competitions]
+      operationId: listCompetitions
+      summary: List competitions at a location
+      parameters:
+        - in: query
+          name: status
+          description: Filter by status (e.g. `live`, `open`). Omit to include all statuses.
+          schema:
+            $ref: '#/components/schemas/CompetitionStatus'
+      responses:
+        '200':
+          description: List of competitions, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Competition'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [competitions]
+      operationId: createCompetition
+      summary: Create a competition
+      description: Requires `head_setter+` role at the location.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompetitionCreate'
+      responses:
+        '201':
+          description: Competition created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Competition'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Slug already in use at this location.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /competitions/by-slug/{slug}:
+    parameters:
+      - in: path
+        name: slug
+        required: true
+        description: |
+          The comp's URL-safe slug. Resolved across every location the
+          authenticated user has membership at; first match wins. Use
+          this when the SPA has a slug from a magic-link URL but no
+          location context.
+        schema:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
+    get:
+      tags: [competitions]
+      operationId: getCompetitionBySlug
+      summary: Resolve a competition by slug across the user's locations
+      responses:
+        '200':
+          description: The competition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Competition'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /competitions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    get:
+      tags: [competitions]
+      operationId: getCompetition
+      summary: Get a competition by id
+      responses:
+        '200':
+          description: The competition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Competition'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [competitions]
+      operationId: updateCompetition
+      summary: Update a competition
+      description: |
+        Requires `head_setter+` role at the comp's location. All fields
+        are optional; only provided fields are updated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompetitionUpdate'
+      responses:
+        '200':
+          description: Updated competition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Competition'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ── Events ─────────────────────────────────────────────────────
+
+  /competitions/{id}/events:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    get:
+      tags: [competitions]
+      operationId: listEvents
+      summary: List events under a competition (sequence ASC)
+      responses:
+        '200':
+          description: Events ordered by sequence.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CompetitionEvent'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [competitions]
+      operationId: createEvent
+      summary: Create an event under a competition
+      description: Requires `head_setter+` role at the comp's location.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventCreate'
+      responses:
+        '201':
+          description: Event created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetitionEvent'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /events/{id}:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    patch:
+      tags: [competitions]
+      operationId: updateEvent
+      summary: Update an event
+      description: Requires `head_setter+` role at the comp's location.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventUpdate'
+      responses:
+        '200':
+          description: Updated event.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetitionEvent'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ── Categories ─────────────────────────────────────────────────
+
+  /competitions/{id}/categories:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    get:
+      tags: [competitions]
+      operationId: listCategories
+      summary: List categories under a competition (sort order ASC)
+      responses:
+        '200':
+          description: Categories.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CompetitionCategory'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [competitions]
+      operationId: createCategory
+      summary: Create a category
+      description: Requires `head_setter+` role at the comp's location.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryCreate'
+      responses:
+        '201':
+          description: Category created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetitionCategory'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ── Problems ───────────────────────────────────────────────────
+
+  /events/{id}/problems:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [competitions]
+      operationId: listProblems
+      summary: List problems under an event (sort order ASC)
+      responses:
+        '200':
+          description: Problems.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CompetitionProblem'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [competitions]
+      operationId: createProblem
+      summary: Create a problem under an event
+      description: Requires `head_setter+` role at the comp's location.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProblemCreate'
+      responses:
+        '201':
+          description: Problem created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetitionProblem'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /problems/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ProblemId'
+    patch:
+      tags: [competitions]
+      operationId: updateProblem
+      summary: Update a problem
+      description: Requires `head_setter+` role at the comp's location.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProblemUpdate'
+      responses:
+        '200':
+          description: Updated problem.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetitionProblem'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ── Registrations ──────────────────────────────────────────────
+
+  /competitions/{id}/registrations:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    get:
+      tags: [competitions]
+      operationId: listRegistrations
+      summary: List registrations for a competition
+      description: |
+        Any authenticated user can list. The leaderboard-visibility
+        filter (wave 4) governs how much detail unaffiliated users see.
+      responses:
+        '200':
+          description: Registrations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CompetitionRegistration'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [competitions]
+      operationId: createRegistration
+      summary: Register self (or another climber, if staff) for a competition
+      description: |
+        With no `user_id` field, registers the calling user. Staff
+        (`gym_manager+` at the comp's location) may pass a `user_id`
+        to register someone else.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationCreate'
+      responses:
+        '201':
+          description: Registration created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetitionRegistration'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Climber already registered for this competition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /registrations/{id}/attempts:
+    parameters:
+      - $ref: '#/components/parameters/RegistrationId'
+    get:
+      tags: [competitions]
+      operationId: listRegistrationAttempts
+      summary: Per-problem state for a registration
+      description: |
+        Returns the climber's current per-problem attempt state, in the
+        same shape the action endpoint emits. Used by the SPA scorecard
+        to hydrate on first load (and after a refresh).
+
+        Caller must be the registration's user OR `gym_manager+` at the
+        comp's location.
+      responses:
+        '200':
+          description: Per-problem attempt state.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AttemptState'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /registrations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/RegistrationId'
+    delete:
+      tags: [competitions]
+      operationId: withdrawRegistration
+      summary: Withdraw a registration (mark withdrawn)
+      description: |
+        Caller must be the registration's user OR `gym_manager+` at the
+        comp's location. Soft delete — the row stays for audit, the bib
+        number is freed for reuse.
+      responses:
+        '204':
+          description: Withdrawn.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ── Action endpoint (the league-night centerpiece) ─────────────
+
+  /competitions/{id}/actions:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    post:
+      tags: [competitions]
+      operationId: submitActions
+      summary: Submit one or more attempt actions
+      description: |
+        Unified write endpoint for the climber's scorecard. Each action
+        is independent and idempotent — accidental retries from a
+        flaky-network phone replay safely. Actions are processed in
+        order; failures don't abort the batch.
+
+        Action types:
+        - `increment` — add an attempt (you tried again)
+        - `zone` — mark zone reached at the current attempt count
+        - `top` — mark sent (implicitly marks zone if not already)
+        - `undo` — revert to the state before the most recent log entry
+        - `reset` — zero everything for this problem (climber within
+          grace window, or staff)
+
+        Idempotency: send a UUID `idempotency_key` per action. Server
+        dedupes against `competition_attempt_log`; replay returns the
+        cached result.
+
+        Authorization: caller must own the registration. Server rejects
+        actions whose problem belongs to an event whose `ends_at` has
+        passed (rejected with reason `event_closed`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionsRequest'
+      responses:
+        '200':
+          description: |
+            Per-action results plus the resulting attempt state for every
+            problem touched by this batch.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionsResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ── Verification (staff) ───────────────────────────────────────
+
+  /attempts/{id}/verify:
+    parameters:
+      - $ref: '#/components/parameters/AttemptId'
+    post:
+      tags: [competitions]
+      operationId: verifyAttempt
+      summary: Stamp an attempt as verified
+      description: |
+        Setter+ at the comp's location signs off on a climber's recorded
+        attempt. Sets `verified_by` + `verified_at` on the attempt; does
+        not modify scoring fields.
+      responses:
+        '200':
+          description: Updated attempt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetitionAttempt'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /attempts/{id}/override:
+    parameters:
+      - $ref: '#/components/parameters/AttemptId'
+    post:
+      tags: [competitions]
+      operationId: overrideAttempt
+      summary: Replace an attempt's state directly
+      description: |
+        Setter+ at the comp's location forcibly sets the attempt state.
+        Use cases: late-night cleanup, dispute resolution, recording an
+        attempt that was missed in real time. The override is logged
+        with `action=override` and the actor's user id, so the audit
+        trail shows what staff did.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttemptOverride'
+      responses:
+        '200':
+          description: Updated attempt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetitionAttempt'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ── Leaderboard (read) ─────────────────────────────────────────
+
+  /competitions/{id}/leaderboard:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    get:
+      tags: [competitions]
+      operationId: getLeaderboard
+      summary: Get the comp leaderboard
+      description: |
+        Computes and returns the comp leaderboard using the active
+        scorer (`competitions.scoring_rule`). Optional `category` query
+        filter narrows to one category; otherwise returns ranks per
+        registration regardless of category (set staff expectations:
+        for multi-category comps you usually want one query per
+        category to get separated standings).
+
+        Response is cached server-side for ~2 seconds; cache is
+        invalidated whenever an action lands on the comp.
+      parameters:
+        - in: query
+          name: category
+          description: Optional category UUID to filter rankings.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Computed leaderboard.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Leaderboard'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ── Leaderboard SSE stream ─────────────────────────────────────
+
+  /competitions/{id}/leaderboard/stream:
+    parameters:
+      - $ref: '#/components/parameters/CompetitionId'
+    get:
+      tags: [competitions]
+      operationId: streamLeaderboard
+      summary: Live leaderboard via Server-Sent Events
+      description: |
+        Long-lived `text/event-stream` connection. Server emits a
+        `leaderboard` event on connect (initial snapshot) and another
+        `leaderboard` event after every action / verify / override on
+        the comp. A `: keepalive` comment is emitted every 30 seconds
+        so reverse proxies don't kill idle connections.
+
+        Browsers consume via `EventSource`:
+
+        ```js
+        const es = new EventSource(`/api/v1/competitions/${id}/leaderboard/stream`);
+        es.addEventListener('leaderboard', e => {
+          const board = JSON.parse(e.data);
+          // …re-render…
+        });
+        ```
+
+        The handler closes the stream cleanly on client disconnect
+        (browser tab closed, or `es.close()`).
+
+        OpenAPI 3.0 doesn't model SSE responses well; the response
+        schema below describes the **payload of each `leaderboard`
+        event**, not the wire format itself.
+      parameters:
+        - in: query
+          name: category
+          description: Optional category UUID to filter the streamed leaderboard.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: |
+            Established event stream. Each `leaderboard` event has a
+            JSON `data:` payload matching the `Leaderboard` schema.
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/Leaderboard'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+
+  parameters:
+    LocationId:
+      name: locationId
+      in: path
+      required: true
+      description: Location UUID.
+      schema:
+        type: string
+        format: uuid
+    CompetitionId:
+      name: id
+      in: path
+      required: true
+      description: Competition UUID.
+      schema:
+        type: string
+        format: uuid
+    EventId:
+      name: id
+      in: path
+      required: true
+      description: Competition event UUID.
+      schema:
+        type: string
+        format: uuid
+    ProblemId:
+      name: id
+      in: path
+      required: true
+      description: Competition problem UUID.
+      schema:
+        type: string
+        format: uuid
+    RegistrationId:
+      name: id
+      in: path
+      required: true
+      description: Competition registration UUID.
+      schema:
+        type: string
+        format: uuid
+    AttemptId:
+      name: id
+      in: path
+      required: true
+      description: Competition attempt UUID.
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Malformed request body or invalid arguments.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid credentials.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Authenticated but not allowed to perform this action.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+
+    # ── Common ───────────────────────────────────────────────────
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message. Matches the existing routewerk envelope.
+      example:
+        error: "competition not found"
+
+    Accepted:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+      example:
+        ok: true
+
+    # ── Auth ─────────────────────────────────────────────────────
+
+    MagicLinkRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: The address to receive the sign-in link.
+        next:
+          type: string
+          description: |
+            Optional path to redirect to after successful verification.
+            Must be a relative path (no scheme, no host) — server validates
+            via `safeRedirect` and falls back to `/dashboard` if invalid.
+          example: "/comp/league-2026"
+      example:
+        email: "climber@example.com"
+        next: "/comp/league-2026"
+
+    # ── Competition ──────────────────────────────────────────────
+
+    CompetitionFormat:
+      type: string
+      enum: [single, series]
+      description: |
+        Comp shape. `single` = one event, `series` = multiple events
+        whose results combine per `aggregation`.
+
+    CompetitionStatus:
+      type: string
+      enum: [draft, open, live, closed, archived]
+
+    LeaderboardVisibility:
+      type: string
+      enum: [public, members, registrants]
+      description: |
+        Who can see the leaderboard:
+        - `public` — anyone (default; matches LEF/Mosaic league plan)
+        - `members` — anyone with org membership at the comp's location
+        - `registrants` — only climbers registered for this comp
+
+    Aggregation:
+      type: object
+      description: |
+        How per-event scores combine into a comp-level standing. Stored
+        as freeform jsonb in the DB; this is the canonical decoded form.
+        Method-specific fields (`drop`, `weights`, `finals_event_id`,
+        `best_n`) are only meaningful for some methods.
+      properties:
+        method:
+          type: string
+          enum: [sum, sum_drop_n, weighted_finals, best_n]
+        drop:
+          type: integer
+          minimum: 1
+          description: "For `sum_drop_n`/`best_n`: number of low events to discard."
+        weights:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+          description: "For `weighted_finals`: parallel to event sequence."
+        finals_event_id:
+          type: string
+          format: uuid
+          description: "For `weighted_finals`: which event is the finals."
+        best_n:
+          type: integer
+          minimum: 1
+          description: "For `best_n`: keep this many top per-event scores."
+
+    Competition:
+      type: object
+      required:
+        - id
+        - location_id
+        - name
+        - slug
+        - format
+        - aggregation
+        - scoring_rule
+        - scoring_config
+        - status
+        - leaderboard_visibility
+        - starts_at
+        - ends_at
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+          description: URL-safe identifier, unique per location.
+        format:
+          $ref: '#/components/schemas/CompetitionFormat'
+        aggregation:
+          $ref: '#/components/schemas/Aggregation'
+        scoring_rule:
+          type: string
+          description: |
+            Name of the scorer to apply. Built-ins: `top_zone`, `fixed`,
+            `decay`. Per-event overrides live on `competition_events`.
+        scoring_config:
+          type: object
+          additionalProperties: true
+          description: Scorer-specific config (shape depends on `scoring_rule`).
+        status:
+          $ref: '#/components/schemas/CompetitionStatus'
+        leaderboard_visibility:
+          $ref: '#/components/schemas/LeaderboardVisibility'
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        registration_opens_at:
+          type: string
+          format: date-time
+          nullable: true
+        registration_closes_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CompetitionCreate:
+      type: object
+      required:
+        - name
+        - slug
+        - format
+        - scoring_rule
+        - starts_at
+        - ends_at
+      properties:
+        name: { type: string }
+        slug:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
+          description: Lowercase, digits, and hyphens; must start with alphanumeric.
+        format: { $ref: '#/components/schemas/CompetitionFormat' }
+        aggregation: { $ref: '#/components/schemas/Aggregation' }
+        scoring_rule: { type: string }
+        scoring_config:
+          type: object
+          additionalProperties: true
+        status:
+          allOf:
+            - $ref: '#/components/schemas/CompetitionStatus'
+          description: Defaults to `draft` if omitted.
+        leaderboard_visibility:
+          allOf:
+            - $ref: '#/components/schemas/LeaderboardVisibility'
+          description: Defaults to `public` if omitted.
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        registration_opens_at: { type: string, format: date-time, nullable: true }
+        registration_closes_at: { type: string, format: date-time, nullable: true }
+
+    CompetitionUpdate:
+      type: object
+      description: |
+        All fields optional. Only fields present in the request are
+        updated. To clear a nullable field, send explicit null.
+      properties:
+        name: { type: string }
+        slug:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
+        format: { $ref: '#/components/schemas/CompetitionFormat' }
+        aggregation: { $ref: '#/components/schemas/Aggregation' }
+        scoring_rule: { type: string }
+        scoring_config:
+          type: object
+          additionalProperties: true
+        status: { $ref: '#/components/schemas/CompetitionStatus' }
+        leaderboard_visibility: { $ref: '#/components/schemas/LeaderboardVisibility' }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        registration_opens_at: { type: string, format: date-time, nullable: true }
+        registration_closes_at: { type: string, format: date-time, nullable: true }
+
+    # ── Event ────────────────────────────────────────────────────
+
+    CompetitionEvent:
+      type: object
+      required: [id, competition_id, name, sequence, starts_at, ends_at, weight]
+      properties:
+        id: { type: string, format: uuid }
+        competition_id: { type: string, format: uuid }
+        name: { type: string }
+        sequence:
+          type: integer
+          minimum: 1
+          description: Position within the comp; unique per comp.
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        weight:
+          type: number
+          description: Multiplier when aggregating event scores into a series total.
+        scoring_rule_override:
+          type: string
+          nullable: true
+          description: |
+            If set, overrides the comp-level scoring_rule for this event.
+            NULL means "use the comp default". Lets a series mix event types
+            (boulder + speed + lead under one comp).
+        scoring_config_override:
+          type: object
+          additionalProperties: true
+          nullable: true
+
+    EventCreate:
+      type: object
+      required: [name, sequence, starts_at, ends_at]
+      properties:
+        name: { type: string }
+        sequence: { type: integer, minimum: 1 }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        weight:
+          type: number
+          description: Defaults to 1.0 if omitted.
+        scoring_rule_override: { type: string }
+        scoring_config_override:
+          type: object
+          additionalProperties: true
+
+    EventUpdate:
+      type: object
+      description: All fields optional; only provided fields are updated.
+      properties:
+        name: { type: string }
+        sequence: { type: integer, minimum: 1 }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        weight: { type: number }
+        scoring_rule_override: { type: string, nullable: true }
+        scoring_config_override:
+          type: object
+          additionalProperties: true
+          nullable: true
+
+    # ── Category ─────────────────────────────────────────────────
+
+    CompetitionCategory:
+      type: object
+      required: [id, competition_id, name, sort_order, rules]
+      properties:
+        id: { type: string, format: uuid }
+        competition_id: { type: string, format: uuid }
+        name: { type: string }
+        sort_order: { type: integer }
+        rules:
+          type: object
+          additionalProperties: true
+          description: |
+            Freeform jsonb describing eligibility (age band, gender, etc.).
+            Shape is intentionally open — staff define what makes sense
+            per comp.
+
+    CategoryCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        sort_order:
+          type: integer
+          description: Defaults to 0 if omitted.
+        rules:
+          type: object
+          additionalProperties: true
+
+    # ── Problem ──────────────────────────────────────────────────
+
+    CompetitionProblem:
+      type: object
+      required: [id, event_id, label, sort_order]
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        route_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional link to a routes table row (gym inventory).
+        label:
+          type: string
+          description: Short identifier shown to climbers (e.g. "M1", "B7").
+        points:
+          type: number
+          nullable: true
+          description: Used by `fixed` scorer; ignored by `top_zone` and `decay`.
+        zone_points:
+          type: number
+          nullable: true
+        grade:
+          type: string
+          nullable: true
+        color:
+          type: string
+          nullable: true
+        sort_order: { type: integer }
+
+    ProblemCreate:
+      type: object
+      required: [label]
+      properties:
+        route_id: { type: string, format: uuid, nullable: true }
+        label: { type: string }
+        points: { type: number, nullable: true }
+        zone_points: { type: number, nullable: true }
+        grade: { type: string, nullable: true }
+        color: { type: string, nullable: true }
+        sort_order: { type: integer }
+
+    ProblemUpdate:
+      type: object
+      description: All fields optional; only provided fields are updated.
+      properties:
+        route_id: { type: string, format: uuid, nullable: true }
+        label: { type: string }
+        points: { type: number, nullable: true }
+        zone_points: { type: number, nullable: true }
+        grade: { type: string, nullable: true }
+        color: { type: string, nullable: true }
+        sort_order: { type: integer }
+
+    # ── Registration ─────────────────────────────────────────────
+
+    CompetitionRegistration:
+      type: object
+      required: [id, competition_id, category_id, user_id, display_name, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        competition_id: { type: string, format: uuid }
+        category_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        display_name:
+          type: string
+          description: Snapshot at registration time.
+        bib_number: { type: integer, nullable: true }
+        waiver_signed_at: { type: string, format: date-time, nullable: true }
+        paid_at: { type: string, format: date-time, nullable: true }
+        withdrawn_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    RegistrationCreate:
+      type: object
+      required: [category_id]
+      properties:
+        category_id: { type: string, format: uuid }
+        user_id:
+          type: string
+          format: uuid
+          description: |
+            Optional. Defaults to the calling user. Setting a different
+            user_id requires `gym_manager+` role at the comp's location.
+        display_name:
+          type: string
+          description: Optional. Defaults to the user's display_name.
+        bib_number:
+          type: integer
+          nullable: true
+          description: Staff-assigned bib. Climbers self-registering should leave null.
+
+    # ── Action endpoint ─────────────────────────────────────────
+
+    ActionType:
+      type: string
+      enum: [increment, zone, top, undo, reset]
+
+    ActionItem:
+      type: object
+      required: [type, problem_id]
+      properties:
+        idempotency_key:
+          type: string
+          format: uuid
+          description: |
+            Strongly recommended; UUIDv4 generated client-side. Server
+            dedupes accidental retries (action queue + flaky network).
+        type: { $ref: '#/components/schemas/ActionType' }
+        problem_id: { type: string, format: uuid }
+        client_timestamp:
+          type: string
+          format: date-time
+          description: Optional; recorded but not used for ordering.
+
+    ActionsRequest:
+      type: object
+      required: [actions]
+      properties:
+        actions:
+          type: array
+          items: { $ref: '#/components/schemas/ActionItem' }
+          maxItems: 50
+
+    AttemptState:
+      type: object
+      required: [problem_id, attempts, zone_reached, top_reached]
+      properties:
+        problem_id: { type: string, format: uuid }
+        attempts: { type: integer }
+        zone_attempts: { type: integer, nullable: true }
+        zone_reached: { type: boolean }
+        top_reached: { type: boolean }
+
+    ActionApplied:
+      type: object
+      required: [problem_id, state]
+      properties:
+        idempotency_key: { type: string, format: uuid }
+        problem_id: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/AttemptState' }
+        replayed:
+          type: boolean
+          description: True if this action's idempotency key matched a prior request.
+
+    ActionRejected:
+      type: object
+      required: [problem_id, reason]
+      properties:
+        idempotency_key: { type: string, format: uuid }
+        problem_id: { type: string, format: uuid }
+        reason:
+          type: string
+          enum:
+            - unknown_problem
+            - wrong_competition
+            - event_closed
+            - no_history       # undo with no prior log entry
+            - server_error
+
+    ActionsResponse:
+      type: object
+      required: [applied, rejected, state]
+      properties:
+        applied:
+          type: array
+          items: { $ref: '#/components/schemas/ActionApplied' }
+        rejected:
+          type: array
+          items: { $ref: '#/components/schemas/ActionRejected' }
+        state:
+          type: array
+          items: { $ref: '#/components/schemas/AttemptState' }
+          description: Current state for every problem touched by this batch.
+
+    # ── Attempts (verify / override) ─────────────────────────────
+
+    CompetitionAttempt:
+      type: object
+      required:
+        - id
+        - registration_id
+        - problem_id
+        - attempts
+        - zone_reached
+        - top_reached
+        - logged_at
+        - updated_at
+      properties:
+        id: { type: string, format: uuid }
+        registration_id: { type: string, format: uuid }
+        problem_id: { type: string, format: uuid }
+        attempts: { type: integer }
+        zone_attempts: { type: integer, nullable: true }
+        zone_reached: { type: boolean }
+        top_reached: { type: boolean }
+        notes: { type: string, nullable: true }
+        logged_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        verified_by: { type: string, format: uuid, nullable: true }
+        verified_at: { type: string, format: date-time, nullable: true }
+
+    AttemptOverride:
+      type: object
+      required: [attempts, zone_reached, top_reached]
+      description: |
+        Body for POST /attempts/{id}/override. The fields here
+        wholesale replace the attempt's state — staff is asserting
+        "this attempt is now exactly this." A log entry is appended
+        with action=override.
+      properties:
+        attempts: { type: integer, minimum: 0 }
+        zone_attempts: { type: integer, nullable: true, minimum: 0 }
+        zone_reached: { type: boolean }
+        top_reached: { type: boolean }
+        notes: { type: string, nullable: true }
+
+    # ── Leaderboard ──────────────────────────────────────────────
+
+    Leaderboard:
+      type: object
+      required: [competition_id, scoring_rule, generated_at, entries]
+      properties:
+        competition_id: { type: string, format: uuid }
+        category_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: NULL when the leaderboard spans all categories.
+        scoring_rule: { type: string }
+        generated_at: { type: string, format: date-time }
+        entries:
+          type: array
+          items: { $ref: '#/components/schemas/LeaderboardEntry' }
+
+    LeaderboardEntry:
+      type: object
+      required: [rank, registration_id, display_name, points, tops, zones, attempts_to_top, attempts_to_zone]
+      properties:
+        rank:
+          type: integer
+          description: 1-indexed; ties share the lower rank (1224 ranking).
+        registration_id: { type: string, format: uuid }
+        display_name: { type: string }
+        bib_number: { type: integer, nullable: true }
+        category_id: { type: string, format: uuid }
+        points:
+          type: number
+          description: |
+            Aggregate score from the comp's scorer. Used by `fixed`
+            and `decay`; `top_zone` ranks on (tops, zones, attempts)
+            and leaves this at 0.
+        tops: { type: integer }
+        zones: { type: integer }
+        attempts_to_top: { type: integer }
+        attempts_to_zone: { type: integer }
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        For mobile / API clients. Obtain via `POST /api/v1/auth/login`
+        (returns `access_token` + `refresh_token`). Header:
+        `Authorization: Bearer <jwt>`.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: _rw_session
+      description: |
+        For browser / SPA clients. Set automatically after a successful
+        password login (`POST /login`) or magic-link verify
+        (`GET /verify-magic`). HttpOnly + SameSite=Lax + Secure (in prod).

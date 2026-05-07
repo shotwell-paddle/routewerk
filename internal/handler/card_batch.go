@@ -299,6 +299,137 @@ func (h *CardBatchHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type updateBatchRequest struct {
+	RouteIDs []string `json:"route_ids"`
+}
+
+// Update — PATCH /api/v1/locations/{id}/card-batches/{id}.
+//
+// Replaces the batch's route_ids and resets the storage key so the next
+// download re-renders. Mirrors the HTMX edit flow at
+// internal/handler/web/route_card_batches.go::CardBatchUpdate. Authz:
+// creator or head_setter+ (same gate as Delete).
+func (h *CardBatchHandler) Update(w http.ResponseWriter, r *http.Request) {
+	locationID := chi.URLParam(r, "locationID")
+	batchID := chi.URLParam(r, "batchID")
+
+	b, err := h.batches.GetByID(r.Context(), batchID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if b == nil || b.LocationID != locationID {
+		Error(w, http.StatusNotFound, "batch not found")
+		return
+	}
+
+	actorID := middleware.GetUserID(r.Context())
+	actorRole := ""
+	if m := middleware.GetMembership(r.Context()); m != nil {
+		actorRole = m.Role
+	}
+	if !CanDeleteCardBatch(b.CreatedBy, actorID, actorRole) {
+		Error(w, http.StatusForbidden, "only the creator or a head setter can edit this batch")
+		return
+	}
+
+	var req updateBatchRequest
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(req.RouteIDs) == 0 {
+		Error(w, http.StatusBadRequest, "route_ids is required")
+		return
+	}
+	if len(req.RouteIDs) > cardbatch.MaxBatchCards {
+		Error(w, http.StatusRequestEntityTooLarge, fmt.Sprintf(
+			"route_ids exceeds max batch size (%d, max %d)",
+			len(req.RouteIDs), cardbatch.MaxBatchCards,
+		))
+		return
+	}
+
+	valid, err := h.svc.ValidateRouteIDs(r.Context(), b.LocationID, req.RouteIDs)
+	if err != nil {
+		slog.Error("card batch update: validate failed", "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if len(valid) == 0 {
+		Error(w, http.StatusUnprocessableEntity, "no valid routes for this location")
+		return
+	}
+
+	if err := h.batches.UpdateRouteIDs(r.Context(), b.ID, valid); err != nil {
+		slog.Error("card batch update: db error", "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	if h.audit != nil {
+		h.audit.Record(r, service.AuditCardBatchCreate, "card_batch", b.ID, "", map[string]interface{}{
+			"location_id": locationID,
+			"route_count": len(valid),
+			"edit":        true,
+		})
+	}
+
+	// Re-fetch so the response includes the new route count + reset
+	// status the caller can use to refresh their view.
+	updated, err := h.batches.GetByID(r.Context(), b.ID)
+	if err != nil || updated == nil {
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	JSON(w, http.StatusOK, toBatchResponse(*updated))
+}
+
+// Retry — POST /api/v1/locations/{id}/card-batches/{batchID}/retry.
+//
+// Resets a failed batch back to pending so the next download re-renders.
+// Mirrors the HTMX retry flow at
+// internal/handler/web/route_card_batches.go::CardBatchRetry. Authz:
+// creator or head_setter+ (same gate as Delete / Update).
+func (h *CardBatchHandler) Retry(w http.ResponseWriter, r *http.Request) {
+	locationID := chi.URLParam(r, "locationID")
+	batchID := chi.URLParam(r, "batchID")
+
+	b, err := h.batches.GetByID(r.Context(), batchID)
+	if err != nil {
+		slog.Error("card batch retry: db error", "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if b == nil || b.LocationID != locationID {
+		Error(w, http.StatusNotFound, "batch not found")
+		return
+	}
+
+	actorID := middleware.GetUserID(r.Context())
+	actorRole := ""
+	if m := middleware.GetMembership(r.Context()); m != nil {
+		actorRole = m.Role
+	}
+	if !CanDeleteCardBatch(b.CreatedBy, actorID, actorRole) {
+		Error(w, http.StatusForbidden, "only the creator or a head setter can retry this batch")
+		return
+	}
+
+	if err := h.batches.InvalidateStorageKey(r.Context(), batchID); err != nil {
+		slog.Error("card batch retry: db error", "batch_id", batchID, "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	updated, err := h.batches.GetByID(r.Context(), batchID)
+	if err != nil || updated == nil {
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	JSON(w, http.StatusOK, toBatchResponse(*updated))
+}
+
 // CanDeleteCardBatch encodes the shared "creator-or-head_setter+" rule used
 // by both the JSON API and the web handler. Exported for use from the web
 // package; the duplication there is intentional to keep web-package tests

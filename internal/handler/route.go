@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -13,12 +16,62 @@ import (
 )
 
 type RouteHandler struct {
-	routes *repository.RouteRepo
-	audit  *service.AuditService
+	routes   *repository.RouteRepo
+	settings *repository.CachedSettingsRepo
+	audit    *service.AuditService
 }
 
-func NewRouteHandler(routes *repository.RouteRepo, audit *service.AuditService) *RouteHandler {
-	return &RouteHandler{routes: routes, audit: audit}
+func NewRouteHandler(routes *repository.RouteRepo, settings *repository.CachedSettingsRepo, audit *service.AuditService) *RouteHandler {
+	return &RouteHandler{routes: routes, settings: settings, audit: audit}
+}
+
+// routeResponse wraps a model.Route with denormalized display fields the
+// SPA wants but doesn't have direct access to. Currently just the
+// human-readable hold-color name (climbers can't read /settings, so the
+// hex → name mapping has to come from the API). Embed by pointer so
+// json.Marshal still walks every field on Route without us having to
+// re-list them here.
+type routeResponse struct {
+	*model.Route
+	ColorName string `json:"color_name,omitempty"`
+}
+
+// enrichRoutes attaches hold-color names to each route by hex lookup
+// against the location's settings. One settings fetch covers any number
+// of routes (cheap, settings are cached). On settings-load error the
+// names are left blank rather than failing the whole list — the SPA
+// falls back to the hex chip.
+func (h *RouteHandler) enrichRoutes(ctx context.Context, locationID string, routes []model.Route) []routeResponse {
+	holdNames := h.holdColorNames(ctx, locationID)
+	out := make([]routeResponse, len(routes))
+	for i := range routes {
+		out[i] = routeResponse{
+			Route:     &routes[i],
+			ColorName: holdNames[strings.ToLower(routes[i].Color)],
+		}
+	}
+	return out
+}
+
+func (h *RouteHandler) enrichRoute(ctx context.Context, rt *model.Route) routeResponse {
+	holdNames := h.holdColorNames(ctx, rt.LocationID)
+	return routeResponse{
+		Route:     rt,
+		ColorName: holdNames[strings.ToLower(rt.Color)],
+	}
+}
+
+func (h *RouteHandler) holdColorNames(ctx context.Context, locationID string) map[string]string {
+	settings, err := h.settings.GetLocationSettings(ctx, locationID)
+	if err != nil {
+		slog.Warn("route enrich: load settings failed", "location_id", locationID, "error", err)
+		return nil
+	}
+	out := make(map[string]string, len(settings.HoldColors.Colors))
+	for _, c := range settings.HoldColors.Colors {
+		out[strings.ToLower(c.Hex)] = c.Name
+	}
+	return out
 }
 
 type createRouteRequest struct {
@@ -104,7 +157,7 @@ func (h *RouteHandler) Create(w http.ResponseWriter, r *http.Request) {
 		"route_type":  rt.RouteType,
 	})
 
-	JSON(w, http.StatusCreated, rt)
+	JSON(w, http.StatusCreated, h.enrichRoute(r.Context(), rt))
 }
 
 func (h *RouteHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -135,7 +188,7 @@ func (h *RouteHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	JSON(w, http.StatusOK, map[string]interface{}{
-		"routes": routes,
+		"routes": h.enrichRoutes(r.Context(), locationID, routes),
 		"total":  total,
 		"limit":  filter.Limit,
 		"offset": filter.Offset,
@@ -143,31 +196,16 @@ func (h *RouteHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RouteHandler) Get(w http.ResponseWriter, r *http.Request) {
-	routeID := chi.URLParam(r, "routeID")
-
-	rt, err := h.routes.GetByID(r.Context(), routeID)
-	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+	rt, ok := h.resolveRoute(w, r)
+	if !ok {
 		return
 	}
-	if rt == nil {
-		Error(w, http.StatusNotFound, "route not found")
-		return
-	}
-
-	JSON(w, http.StatusOK, rt)
+	JSON(w, http.StatusOK, h.enrichRoute(r.Context(), rt))
 }
 
 func (h *RouteHandler) Update(w http.ResponseWriter, r *http.Request) {
-	routeID := chi.URLParam(r, "routeID")
-
-	rt, err := h.routes.GetByID(r.Context(), routeID)
-	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if rt == nil {
-		Error(w, http.StatusNotFound, "route not found")
+	rt, ok := h.resolveRoute(w, r)
+	if !ok {
 		return
 	}
 
@@ -236,7 +274,7 @@ func (h *RouteHandler) Update(w http.ResponseWriter, r *http.Request) {
 		"route_type": rt.RouteType,
 	})
 
-	JSON(w, http.StatusOK, rt)
+	JSON(w, http.StatusOK, h.enrichRoute(r.Context(), rt))
 }
 
 type updateStatusRequest struct {
@@ -244,7 +282,10 @@ type updateStatusRequest struct {
 }
 
 func (h *RouteHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
-	routeID := chi.URLParam(r, "routeID")
+	rt, ok := h.resolveRoute(w, r)
+	if !ok {
+		return
+	}
 
 	var req updateStatusRequest
 	if err := Decode(r, &req); err != nil {
@@ -257,17 +298,40 @@ func (h *RouteHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.routes.UpdateStatus(r.Context(), routeID, req.Status); err != nil {
+	if err := h.routes.UpdateStatus(r.Context(), rt.ID, req.Status); err != nil {
 		Error(w, http.StatusInternalServerError, "failed to update status")
 		return
 	}
 
-	h.audit.Record(r, service.AuditRouteStatusChange, "route", routeID, "", map[string]interface{}{
+	h.audit.Record(r, service.AuditRouteStatusChange, "route", rt.ID, "", map[string]interface{}{
 		"new_status": req.Status,
 	})
 
-	rt, _ := h.routes.GetByID(r.Context(), routeID)
-	JSON(w, http.StatusOK, rt)
+	updated, _ := h.routes.GetByID(r.Context(), rt.ID)
+	if updated == nil {
+		Error(w, http.StatusNotFound, "route not found")
+		return
+	}
+	JSON(w, http.StatusOK, h.enrichRoute(r.Context(), updated))
+}
+
+// resolveRoute fetches the route by URL ID and verifies it belongs to
+// the URL's locationID. Centralizes the cross-tenant guard for every
+// by-id route handler — without it a setter at gym A could read/edit
+// a route at gym B by passing the wrong locationID.
+func (h *RouteHandler) resolveRoute(w http.ResponseWriter, r *http.Request) (*model.Route, bool) {
+	locationID := chi.URLParam(r, "locationID")
+	routeID := chi.URLParam(r, "routeID")
+	rt, err := h.routes.GetByID(r.Context(), routeID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "internal error")
+		return nil, false
+	}
+	if rt == nil || rt.LocationID != locationID {
+		Error(w, http.StatusNotFound, "route not found")
+		return nil, false
+	}
+	return rt, true
 }
 
 type bulkArchiveRequest struct {

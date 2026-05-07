@@ -181,7 +181,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	notifHandler := handler.NewNotificationHandler(notifRepo)
 	dashboardHandler := handler.NewDashboardHandler(analyticsRepo)
 	settingsHandler := handler.NewSettingsHandler(settingsRepo)
-	progressionsAdminHandler := handler.NewProgressionsAdminHandler(questRepo, badgeRepo)
+	progressionsAdminHandler := handler.NewProgressionsAdminHandler(questRepo, badgeRepo, authz)
 	// JSON variant of the HTMX route-photo upload pipeline (multipart upload,
 	// image processing, S3 upload, route_photos row insert). Cap concurrent
 	// processing at 4 to bound peak memory on the 256 MB VM.
@@ -262,7 +262,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			http.Redirect(w, req, "/competitions", http.StatusPermanentRedirect)
 		})
 		r.Get("/staff/comp/*", func(w http.ResponseWriter, req *http.Request) {
-			rest := chi.URLParam(req, "*")
+			rest := stripRedirectPrefix(chi.URLParam(req, "*"))
 			http.Redirect(w, req, "/competitions/"+rest, http.StatusPermanentRedirect)
 		})
 		// /app/* used to host the SPA shell. Phase 2.10 promoted it to
@@ -272,7 +272,12 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			http.Redirect(w, req, "/", http.StatusPermanentRedirect)
 		})
 		r.Get("/app/*", func(w http.ResponseWriter, req *http.Request) {
-			rest := chi.URLParam(req, "*")
+			// Strip leading slashes/backslashes from the wildcard so
+			// /app//evil.com → /evil.com, not //evil.com (which a
+			// browser would resolve to https://evil.com — open
+			// redirect). chi doesn't normalize paths by default, so
+			// we sanitize at the leaf instead of pulling in CleanPath.
+			rest := stripRedirectPrefix(chi.URLParam(req, "*"))
 			target := "/" + rest
 			if req.URL.RawQuery != "" {
 				target += "?" + req.URL.RawQuery
@@ -859,4 +864,18 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	})
 
 	return r
+}
+
+// stripRedirectPrefix removes leading '/' and '\' characters from the
+// captured wildcard portion of a redirect target, defending against
+// open-redirect via "/app//evil.com/foo" → "//evil.com/foo" (which a
+// browser resolves to "https://evil.com/foo"). chi doesn't normalize
+// paths by default; we sanitize at the redirect leaf instead of
+// pulling in CleanPath middleware (which would also affect API
+// routes' chi.URLParam values).
+func stripRedirectPrefix(s string) string {
+	for len(s) > 0 && (s[0] == '/' || s[0] == '\\') {
+		s = s[1:]
+	}
+	return s
 }

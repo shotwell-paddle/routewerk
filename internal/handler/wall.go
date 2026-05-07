@@ -104,31 +104,17 @@ func (h *WallHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *WallHandler) Get(w http.ResponseWriter, r *http.Request) {
-	wallID := chi.URLParam(r, "wallID")
-
-	wall, err := h.walls.GetByID(r.Context(), wallID)
-	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+	wall, ok := h.resolveWall(w, r)
+	if !ok {
 		return
 	}
-	if wall == nil {
-		Error(w, http.StatusNotFound, "wall not found")
-		return
-	}
-
 	JSON(w, http.StatusOK, wall)
 }
 
 func (h *WallHandler) Update(w http.ResponseWriter, r *http.Request) {
 	wallID := chi.URLParam(r, "wallID")
-
-	wall, err := h.walls.GetByID(r.Context(), wallID)
-	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if wall == nil {
-		Error(w, http.StatusNotFound, "wall not found")
+	wall, ok := h.resolveWall(w, r)
+	if !ok {
 		return
 	}
 
@@ -184,14 +170,8 @@ func (h *WallHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 func (h *WallHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	wallID := chi.URLParam(r, "wallID")
-
-	wall, err := h.walls.GetByID(r.Context(), wallID)
-	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if wall == nil {
-		Error(w, http.StatusNotFound, "wall not found")
+	wall, ok := h.resolveWall(w, r)
+	if !ok {
 		return
 	}
 
@@ -222,17 +202,11 @@ func (h *WallHandler) Unarchive(w http.ResponseWriter, r *http.Request) {
 
 func (h *WallHandler) setArchived(w http.ResponseWriter, r *http.Request, archive bool) {
 	wallID := chi.URLParam(r, "wallID")
-
-	wall, err := h.walls.GetByID(r.Context(), wallID)
-	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if wall == nil {
-		Error(w, http.StatusNotFound, "wall not found")
+	if _, ok := h.resolveWall(w, r); !ok {
 		return
 	}
 
+	var err error
 	if archive {
 		err = h.walls.Archive(r.Context(), wallID)
 	} else {
@@ -244,6 +218,26 @@ func (h *WallHandler) setArchived(w http.ResponseWriter, r *http.Request, archiv
 	}
 
 	// Re-fetch so the response reflects the new archived_at.
-	wall, _ = h.walls.GetByID(r.Context(), wallID)
+	wall, _ := h.walls.GetByID(r.Context(), wallID)
 	JSON(w, http.StatusOK, wall)
+}
+
+// resolveWall fetches the wall by ID and verifies it belongs to the
+// URL's locationID, writing 404 on mismatch. Centralizes the
+// cross-tenant guard that every by-id wall handler needs — without
+// it a setter at gym A could read/edit/delete a wall at gym B (within
+// orgs they share, or across orgs entirely).
+func (h *WallHandler) resolveWall(w http.ResponseWriter, r *http.Request) (*model.Wall, bool) {
+	locationID := chi.URLParam(r, "locationID")
+	wallID := chi.URLParam(r, "wallID")
+	wall, err := h.walls.GetByID(r.Context(), wallID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "internal error")
+		return nil, false
+	}
+	if wall == nil || wall.LocationID != locationID {
+		Error(w, http.StatusNotFound, "wall not found")
+		return nil, false
+	}
+	return wall, true
 }

@@ -162,6 +162,21 @@ func (h *TeamHandler) UpdateMembership(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Privilege-escalation guard: forbid mutating a target whose current
+	// rank meets or exceeds the caller's. Without this a head_setter
+	// (rank 3) is "allowed to assign setter / climber" and can therefore
+	// demote an org_admin (rank 5) to climber, breaking the org's admin
+	// chain. The caller must outrank the target to change their role at
+	// all. Strict > rather than >= so peers can't demote each other —
+	// ties land in the self-demotion branch below.
+	targetRank := middleware.RoleRankValue(target.Role)
+	callerRank := middleware.RoleRankValue(callerRole)
+	if target.UserID != callerID && targetRank >= callerRank {
+		Error(w, http.StatusForbidden,
+			"you cannot change a member with a role equal to or above your own")
+		return
+	}
+
 	// Self-demotion guard: forbid the caller from setting their own
 	// membership to a lower rank than they currently have. Lateral or
 	// upward moves on yourself are still blocked by allowedRolesForGrantor
@@ -210,6 +225,14 @@ func (h *TeamHandler) RemoveMembership(w http.ResponseWriter, r *http.Request) {
 	}
 	if target.UserID == callerID {
 		Error(w, http.StatusForbidden, "you cannot remove your own membership")
+		return
+	}
+	// Same privilege-escalation guard as UpdateMembership: caller must
+	// outrank target. Otherwise a gym_manager could remove an org_admin
+	// — the rank check is more restrictive than the gym_manager+ floor.
+	if middleware.RoleRankValue(target.Role) >= middleware.RoleRankValue(callerRole) {
+		Error(w, http.StatusForbidden,
+			"you cannot remove a member with a role equal to or above your own")
 		return
 	}
 

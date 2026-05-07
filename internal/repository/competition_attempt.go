@@ -332,12 +332,25 @@ func (r *CompetitionAttemptRepo) Verify(ctx context.Context, attemptID, verifier
 // matched as a substring of pgErr.ConstraintName so partial-index names
 // (which Postgres reports as the index name) work.
 func isUniqueViolation(err error, name string) bool {
+	return IsUniqueViolation(err) && (name == "" || extractConstraintName(err) == name)
+}
+
+// IsUniqueViolation is the package-exported variant: reports whether err
+// is any Postgres unique_violation. Use from handlers that need to
+// translate a 23505 → 409 Conflict without caring which constraint
+// fired (e.g. competition slug uniqueness, registration uniqueness).
+func IsUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) {
 		return false
 	}
-	if pgErr.Code != pgerrcode.UniqueViolation {
-		return false
+	return pgErr.Code == pgerrcode.UniqueViolation
+}
+
+func extractConstraintName(err error) string {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return ""
 	}
-	return name == "" || pgErr.ConstraintName == name
+	return pgErr.ConstraintName
 }

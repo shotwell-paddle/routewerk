@@ -204,6 +204,11 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	// Setter playbook — default checklist template applied to new
 	// sessions. Mirrors HTMX /settings/playbook.
 	playbookHandler := handler.NewPlaybookHandler(sessionRepo)
+	// Route distribution targets — head-setter-configured "what's our
+	// mix supposed to look like" goals that the dashboard charts
+	// overlay against actual route counts.
+	routeDistributionTargetRepo := repository.NewRouteDistributionTargetRepo(db)
+	routeDistributionTargetHandler := handler.NewRouteDistributionTargetHandler(routeDistributionTargetRepo)
 
 	webHandler := webhandler.NewHandler(routeRepo, wallRepo, locationRepo, userRepo, tagRepo, ascentRepo, ratingRepo, difficultyRepo, orgRepo, sessionRepo, analyticsRepo, webSessionRepo, photoRepo, settingsRepo, userTagRepo, questRepo, badgeRepo, activityRepo, routeSkillTagRepo, notifRepo, deps.QuestSvc, deps.EventBus, authService, storageSvc, cardGen, cardBatchRepo, batchSvc, auditService, sessionMgr, cfg, db)
 
@@ -748,6 +753,10 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 					// lifecycle UI peeks at this to know which steps to
 					// pre-populate. Writes are gated below.
 					r.Get("/playbook", playbookHandler.List)
+					// Distribution targets — setter+ can read so the
+					// dashboard chart overlay works for everyone with chart
+					// access. Edit (PUT) is head_setter+ below.
+					r.Get("/distribution-targets", routeDistributionTargetHandler.List)
 				})
 				r.Group(func(r chi.Router) {
 					r.Use(authz.RequireLocationRole("head_setter"))
@@ -761,6 +770,8 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 					r.Patch("/playbook/{stepID}", playbookHandler.Update)
 					r.Delete("/playbook/{stepID}", playbookHandler.Delete)
 					r.Post("/playbook/{stepID}/move", playbookHandler.Move)
+					// Distribution targets — replace-all PUT.
+					r.Put("/distribution-targets", routeDistributionTargetHandler.Replace)
 				})
 
 				// Progressions admin — quest / badge / domain CRUD for

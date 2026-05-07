@@ -341,6 +341,56 @@ export async function updateLocationSettings(
   return request(`/locations/${locationId}/settings`, { method: 'PUT', body, signal });
 }
 
+// ── Route distribution targets ────────────────────────────
+
+export type DistributionTargetType = 'boulder' | 'route' | 'circuit';
+
+export interface DistributionTarget {
+  id: string;
+  location_id: string;
+  route_type: DistributionTargetType;
+  grade: string;
+  target_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DistributionTargetWrite {
+  route_type: DistributionTargetType;
+  grade: string;
+  target_count: number;
+}
+
+/**
+ * GET /locations/{locationId}/distribution-targets — setter+.
+ * Returns the per-(route_type, grade) goals the dashboard charts
+ * overlay against actual route counts.
+ */
+export async function listDistributionTargets(
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<DistributionTarget[]> {
+  return request(`/locations/${locationId}/distribution-targets`, { signal });
+}
+
+/**
+ * PUT /locations/{locationId}/distribution-targets — head_setter+.
+ * Replace-all: wipes the existing target set and inserts the
+ * caller-supplied entries in one transaction. Entries with
+ * target_count <= 0 are dropped server-side.
+ */
+export async function replaceDistributionTargets(
+  locationId: string,
+  targets: DistributionTargetWrite[],
+  signal?: AbortSignal,
+): Promise<DistributionTarget[]> {
+  return request(`/locations/${locationId}/distribution-targets`, {
+    method: 'PUT',
+    body: { targets },
+    signal,
+  });
+}
+
 // ── Organizations (org admin surface) ─────────────────────
 
 export interface OrgShape {

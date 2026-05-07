@@ -3,10 +3,12 @@
     getDashboardSummary,
     listWalls,
     listRoutes,
+    listDistributionTargets,
     ApiClientError,
     type DashboardSummaryShape,
     type WallShape,
     type RouteShape,
+    type DistributionTarget,
   } from '$lib/api/client';
   import { currentUser, roleRankAt } from '$lib/stores/auth.svelte';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
@@ -26,12 +28,16 @@
   // listRoutes(active) so we don't need a dedicated endpoint.
   let walls = $state<WallShape[]>([]);
   let activeRoutes = $state<RouteShape[]>([]);
+  // Per-(route_type, grade) targets. Looked up by buckets below to
+  // overlay a marker on the matching distribution bar.
+  let targets = $state<DistributionTarget[]>([]);
 
   $effect(() => {
     if (!locId || !isStaff) {
       summary = null;
       walls = [];
       activeRoutes = [];
+      targets = [];
       return;
     }
     let cancelled = false;
@@ -46,12 +52,14 @@
         limit: 0,
         offset: 0,
       })),
+      listDistributionTargets(locId).catch(() => [] as DistributionTarget[]),
     ])
-      .then(([s, wls, rt]) => {
+      .then(([s, wls, rt, ts]) => {
         if (cancelled) return;
         summary = s;
         walls = wls;
         activeRoutes = rt.routes;
+        targets = ts;
       })
       .catch((err) => {
         if (cancelled) return;
@@ -125,9 +133,20 @@
     key: string;
     label: string;
     count: number;
+    target: number; // 0 = no target set; > 0 draws a marker on the bar
     color?: string; // optional fill (circuit hex when grouping by circuit)
     section: 'boulder' | 'route' | 'circuit'; // sort grouping
   };
+
+  // Lookup for the per-(route_type, grade) target. Built once per
+  // targets change so the bucket derivations below are O(1) per grade.
+  const targetByKey = $derived.by(() => {
+    const m = new Map<string, number>();
+    for (const t of targets) {
+      m.set(t.route_type + ':' + t.grade, t.target_count);
+    }
+    return m;
+  });
 
   /**
    * Order grades within a section so V0..V10 doesn't sort lexicographically
@@ -154,19 +173,37 @@
   // Distribution grouped by grade. Boulders (V-scale) and routes
   // (YDS / letter / circuit) get separate sub-lists so the chart
   // doesn't show a 50% chunk of "circuit" alongside "5.10a"-style
-  // grades.
+  // grades. Targets-without-actual buckets are added in too — a grade
+  // we want but aren't setting reads as "0 / target" with an empty
+  // bar and a target marker showing the gap.
   const gradeDistribution = $derived.by<DistBucket[]>(() => {
     const buckets = new Map<string, DistBucket>();
     for (const r of activeRoutes) {
-      // Skip circuit-graded routes here — they're covered by the
-      // circuit chart below. We only want grade-on-grade comparison.
       if (r.grading_system === 'circuit') continue;
       const section: DistBucket['section'] = r.route_type === 'boulder' ? 'boulder' : 'route';
       const key = section + ':' + r.grade;
       if (!buckets.has(key)) {
-        buckets.set(key, { key, label: r.grade, count: 0, section });
+        buckets.set(key, { key, label: r.grade, count: 0, target: 0, section });
       }
       buckets.get(key)!.count++;
+    }
+    // Add target-only buckets (target set, zero actual).
+    for (const t of targets) {
+      if (t.route_type === 'circuit') continue;
+      const key = t.route_type + ':' + t.grade;
+      if (!buckets.has(key)) {
+        buckets.set(key, {
+          key,
+          label: t.grade,
+          count: 0,
+          target: 0,
+          section: t.route_type,
+        });
+      }
+    }
+    // Inject targets into the merged buckets.
+    for (const b of buckets.values()) {
+      b.target = targetByKey.get(b.section + ':' + b.label) ?? 0;
     }
     return [...buckets.values()].sort((a, b) => {
       if (a.section !== b.section) return a.section === 'boulder' ? -1 : 1;
@@ -177,7 +214,9 @@
   // Distribution grouped by circuit color. Pulls the chip color from
   // the first route in each bucket so the bars show the actual circuit
   // hex even when the gym has custom palette presets. Routes without a
-  // circuit_color (i.e. graded routes) are skipped.
+  // circuit_color (i.e. graded routes) are skipped. Target-only
+  // circuit buckets (target set, zero actual) get a default chip color
+  // since we don't have a route to pull the hex from.
   const circuitDistribution = $derived.by<DistBucket[]>(() => {
     const buckets = new Map<string, DistBucket>();
     for (const r of activeRoutes) {
@@ -188,21 +227,47 @@
           key,
           label: r.circuit_color,
           count: 0,
+          target: 0,
           color: r.color,
           section: 'circuit',
         });
       }
       buckets.get(key)!.count++;
     }
-    // Sort by count desc — most-stocked circuit first reads better
-    // than alpha order for a "what's our mix" glance.
-    return [...buckets.values()].sort((a, b) => b.count - a.count);
+    for (const t of targets) {
+      if (t.route_type !== 'circuit') continue;
+      const key = 'circuit:' + t.grade;
+      if (!buckets.has(key)) {
+        buckets.set(key, {
+          key,
+          label: t.grade,
+          count: 0,
+          target: 0,
+          section: 'circuit',
+        });
+      }
+    }
+    for (const b of buckets.values()) {
+      b.target = targetByKey.get('circuit:' + b.label) ?? 0;
+    }
+    // Sort by count desc — most-stocked circuit first. Ties broken by
+    // target so a target-only bucket lands at the bottom rather than
+    // mixing alphabetically.
+    return [...buckets.values()].sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return b.target - a.target;
+    });
   });
 
-  // Max count drives bar widths (one scale per chart so the longest
-  // bar always pegs to 100%).
-  const gradeMax = $derived(gradeDistribution.reduce((m, b) => Math.max(m, b.count), 0));
-  const circuitMax = $derived(circuitDistribution.reduce((m, b) => Math.max(m, b.count), 0));
+  // Max drives bar widths (one scale per chart). Now considers
+  // max(count, target) so an under-stocked grade's target marker fits
+  // inside the bar track instead of overflowing.
+  const gradeMax = $derived(
+    gradeDistribution.reduce((m, b) => Math.max(m, b.count, b.target), 0),
+  );
+  const circuitMax = $derived(
+    circuitDistribution.reduce((m, b) => Math.max(m, b.count, b.target), 0),
+  );
 </script>
 
 <svelte:head>
@@ -279,10 +344,16 @@
         <section class="dist-grid">
           {#if gradeDistribution.length > 0}
             <div class="card">
-              <h2>Active routes by grade</h2>
+              <div class="dist-card-head">
+                <h2>Active routes by grade</h2>
+                {#if roleRankAt(locId) >= 3}
+                  <a class="muted small dist-edit" href="/settings/targets">Edit targets</a>
+                {/if}
+              </div>
               <p class="muted small">
                 Snapshot of the current set. Boulders sort V-scale ascending,
-                then graded routes ascend by YDS.
+                then graded routes ascend by YDS. The vertical line marks the
+                head-setter target if one is set.
               </p>
               <ul class="dist-bars">
                 {#each gradeDistribution as b (b.key)}
@@ -291,9 +362,18 @@
                     <span class="dist-bar-track">
                       <span
                         class="dist-bar-fill grade-fill"
-                        style="width: {(b.count / gradeMax) * 100}%"></span>
+                        style="width: {gradeMax > 0 ? (b.count / gradeMax) * 100 : 0}%"></span>
+                      {#if b.target > 0 && gradeMax > 0}
+                        <span
+                          class="dist-target"
+                          class:dist-target-met={b.count >= b.target}
+                          style="left: {(b.target / gradeMax) * 100}%"
+                          title="Target: {b.target}"></span>
+                      {/if}
                     </span>
-                    <span class="dist-count">{b.count}</span>
+                    <span class="dist-count" class:dist-count-short={b.target > 0 && b.count < b.target}>
+                      {b.count}{#if b.target > 0}/{b.target}{/if}
+                    </span>
                   </li>
                 {/each}
               </ul>
@@ -301,10 +381,15 @@
           {/if}
           {#if circuitDistribution.length > 0}
             <div class="card">
-              <h2>Active circuits</h2>
+              <div class="dist-card-head">
+                <h2>Active circuits</h2>
+                {#if roleRankAt(locId) >= 3}
+                  <a class="muted small dist-edit" href="/settings/targets">Edit targets</a>
+                {/if}
+              </div>
               <p class="muted small">
                 Routes assigned to a circuit color. Sorted by count — biggest
-                circuits first.
+                circuits first. Vertical line marks the target if set.
               </p>
               <ul class="dist-bars">
                 {#each circuitDistribution as b (b.key)}
@@ -316,9 +401,18 @@
                     <span class="dist-bar-track">
                       <span
                         class="dist-bar-fill"
-                        style="width: {(b.count / circuitMax) * 100}%; background: {b.color};"></span>
+                        style="width: {circuitMax > 0 ? (b.count / circuitMax) * 100 : 0}%; background: {b.color ?? 'var(--rw-accent)'};"></span>
+                      {#if b.target > 0 && circuitMax > 0}
+                        <span
+                          class="dist-target"
+                          class:dist-target-met={b.count >= b.target}
+                          style="left: {(b.target / circuitMax) * 100}%"
+                          title="Target: {b.target}"></span>
+                      {/if}
                     </span>
-                    <span class="dist-count">{b.count}</span>
+                    <span class="dist-count" class:dist-count-short={b.target > 0 && b.count < b.target}>
+                      {b.count}{#if b.target > 0}/{b.target}{/if}
+                    </span>
                   </li>
                 {/each}
               </ul>
@@ -572,12 +666,30 @@
     text-transform: capitalize;
     justify-content: flex-end;
   }
+  .dist-card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+  .dist-card-head h2 {
+    margin: 0;
+  }
+  .dist-edit {
+    text-decoration: none;
+    border-bottom: 1px dotted var(--rw-text-faint);
+  }
+  .dist-edit:hover {
+    color: var(--rw-accent);
+    border-bottom-color: var(--rw-accent);
+  }
   .dist-bar-track {
     background: var(--rw-surface-alt);
     border-radius: 4px;
     height: 14px;
     position: relative;
-    overflow: hidden;
+    overflow: visible; /* let the target marker overhang the track top/bottom */
   }
   .dist-bar-fill {
     display: block;
@@ -589,11 +701,28 @@
   .dist-bar-fill.grade-fill {
     background: linear-gradient(90deg, var(--rw-accent) 0%, var(--rw-accent-hover) 100%);
   }
+  .dist-target {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 2px;
+    transform: translateX(-1px);
+    background: var(--rw-text);
+    border-radius: 1px;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7);
+  }
+  .dist-target-met {
+    background: var(--rw-success);
+  }
   .dist-count {
     text-align: right;
     font-variant-numeric: tabular-nums;
     color: var(--rw-text-muted);
     font-size: 0.8rem;
+  }
+  .dist-count-short {
+    color: var(--rw-warning);
+    font-weight: 600;
   }
   .wall-list {
     list-style: none;

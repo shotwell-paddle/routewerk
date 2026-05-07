@@ -12,7 +12,11 @@ primary_region = "ord"
   force_https = true
   auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 0
+  # Keep one machine warm so the SPA's first dashboard load doesn't pay
+  # cold-start latency × 4-6 parallel XHRs (it fires /me + memberships +
+  # walls + listRoutes(limit:500) in parallel). Cold start on shared CPU
+  # is 2-4s; on a fan-out load that compounds visibly.
+  min_machines_running = 1
 
   [http_service.concurrency]
     type = "requests"
@@ -26,7 +30,12 @@ primary_region = "ord"
     method = "GET"
     path = "/health"
 
+# Bumped from 256mb to 512mb on 2026-05-06 alongside the SPA-at-root
+# deploy (PR #98 + follow-ups). The new shape fires multiple parallel
+# JSON requests per page load; we're not memory-constrained at 256 in
+# steady state but headroom around the card-batch render + image
+# pipeline is cheap insurance during the cutover.
 [[vm]]
-  memory = "256mb"
+  memory = "512mb"
   cpu_kind = "shared"
   cpus = 1

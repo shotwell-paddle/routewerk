@@ -90,31 +90,16 @@ func (h *SessionHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SessionHandler) Get(w http.ResponseWriter, r *http.Request) {
-	sessionID := chi.URLParam(r, "sessionID")
-
-	session, err := h.sessions.GetByID(r.Context(), sessionID)
-	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+	session, ok := h.resolveSession(w, r)
+	if !ok {
 		return
 	}
-	if session == nil {
-		Error(w, http.StatusNotFound, "session not found")
-		return
-	}
-
 	JSON(w, http.StatusOK, session)
 }
 
 func (h *SessionHandler) Update(w http.ResponseWriter, r *http.Request) {
-	sessionID := chi.URLParam(r, "sessionID")
-
-	session, err := h.sessions.GetByID(r.Context(), sessionID)
-	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if session == nil {
-		Error(w, http.StatusNotFound, "session not found")
+	session, ok := h.resolveSession(w, r)
+	if !ok {
 		return
 	}
 
@@ -139,12 +124,35 @@ func (h *SessionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, _ = h.sessions.GetByID(r.Context(), sessionID)
+	session, _ = h.sessions.GetByID(r.Context(), session.ID)
 	JSON(w, http.StatusOK, session)
 }
 
-func (h *SessionHandler) Assign(w http.ResponseWriter, r *http.Request) {
+// resolveSession fetches the session by URL ID and verifies it belongs
+// to the URL's locationID. Cross-tenant guard for every by-id session
+// handler — without it a setter at gym A could read/edit a session at
+// gym B by passing the wrong locationID.
+func (h *SessionHandler) resolveSession(w http.ResponseWriter, r *http.Request) (*model.SettingSession, bool) {
+	locationID := chi.URLParam(r, "locationID")
 	sessionID := chi.URLParam(r, "sessionID")
+	session, err := h.sessions.GetByID(r.Context(), sessionID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "internal error")
+		return nil, false
+	}
+	if session == nil || session.LocationID != locationID {
+		Error(w, http.StatusNotFound, "session not found")
+		return nil, false
+	}
+	return session, true
+}
+
+func (h *SessionHandler) Assign(w http.ResponseWriter, r *http.Request) {
+	session, ok := h.resolveSession(w, r)
+	if !ok {
+		return
+	}
+	sessionID := session.ID
 
 	var req assignRequest
 	if err := Decode(r, &req); err != nil {
@@ -197,7 +205,10 @@ type sessionStatusRequest struct {
 // the SPA should redirect to the existing /sessions/{id}/complete HTMX
 // view (which has the multi-step flow).
 func (h *SessionHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
-	sessionID := chi.URLParam(r, "sessionID")
+	session, ok := h.resolveSession(w, r)
+	if !ok {
+		return
+	}
 	var req sessionStatusRequest
 	if err := Decode(r, &req); err != nil {
 		Error(w, http.StatusBadRequest, "invalid request body")
@@ -213,7 +224,7 @@ func (h *SessionHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		Error(w, http.StatusBadRequest, "invalid status")
 		return
 	}
-	if err := h.sessions.UpdateStatus(r.Context(), sessionID, req.Status); err != nil {
+	if err := h.sessions.UpdateStatus(r.Context(), session.ID, req.Status); err != nil {
 		Error(w, http.StatusInternalServerError, "failed to update status")
 		return
 	}
@@ -223,8 +234,11 @@ func (h *SessionHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 // Delete — DELETE /sessions/{sessionID}. Soft delete (deleted_at).
 // head_setter+ enforced by router middleware.
 func (h *SessionHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	sessionID := chi.URLParam(r, "sessionID")
-	if err := h.sessions.Delete(r.Context(), sessionID); err != nil {
+	session, ok := h.resolveSession(w, r)
+	if !ok {
+		return
+	}
+	if err := h.sessions.Delete(r.Context(), session.ID); err != nil {
 		Error(w, http.StatusInternalServerError, "failed to delete session")
 		return
 	}
@@ -248,11 +262,11 @@ type publishResult struct {
 }
 
 func (h *SessionHandler) Publish(w http.ResponseWriter, r *http.Request) {
-	sessionID := chi.URLParam(r, "sessionID")
-	if !isUUID(sessionID) {
-		Error(w, http.StatusBadRequest, "invalid session id")
+	session, ok := h.resolveSession(w, r)
+	if !ok {
 		return
 	}
+	sessionID := session.ID
 
 	// Order matters: archive THEN publish, otherwise a whole-wall strip
 	// would catch the freshly-published routes too.
@@ -307,11 +321,11 @@ func (h *SessionHandler) Publish(w http.ResponseWriter, r *http.Request) {
 // SPA session-photos page so setters can see at a glance which routes
 // still need photos uploaded. Setter+ enforced at router level.
 func (h *SessionHandler) ListRoutes(w http.ResponseWriter, r *http.Request) {
-	sessionID := chi.URLParam(r, "sessionID")
-	if !isUUID(sessionID) {
-		Error(w, http.StatusBadRequest, "invalid session id")
+	session, ok := h.resolveSession(w, r)
+	if !ok {
 		return
 	}
+	sessionID := session.ID
 	routes, err := h.sessions.ListSessionRoutes(r.Context(), sessionID)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "internal error")
@@ -327,8 +341,11 @@ func (h *SessionHandler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 
 // ListStripTargets — GET /sessions/{sessionID}/strip-targets.
 func (h *SessionHandler) ListStripTargets(w http.ResponseWriter, r *http.Request) {
-	sessionID := chi.URLParam(r, "sessionID")
-	targets, err := h.sessions.ListStripTargets(r.Context(), sessionID)
+	session, ok := h.resolveSession(w, r)
+	if !ok {
+		return
+	}
+	targets, err := h.sessions.ListStripTargets(r.Context(), session.ID)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "internal error")
 		return
@@ -345,7 +362,11 @@ type addStripTargetRequest struct {
 // required; route_id is optional (nil means "strip the whole wall").
 // head_setter+ enforced by router middleware.
 func (h *SessionHandler) AddStripTarget(w http.ResponseWriter, r *http.Request) {
-	sessionID := chi.URLParam(r, "sessionID")
+	session, ok := h.resolveSession(w, r)
+	if !ok {
+		return
+	}
+	sessionID := session.ID
 	var req addStripTargetRequest
 	if err := Decode(r, &req); err != nil {
 		Error(w, http.StatusBadRequest, "invalid request body")
@@ -383,8 +404,11 @@ func (h *SessionHandler) RemoveStripTarget(w http.ResponseWriter, r *http.Reques
 // session's checklist items joined with the user who completed each
 // (NULL for items that aren't done yet).
 func (h *SessionHandler) ListChecklist(w http.ResponseWriter, r *http.Request) {
-	sessionID := chi.URLParam(r, "sessionID")
-	items, err := h.sessions.ListChecklistItems(r.Context(), sessionID)
+	session, ok := h.resolveSession(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.sessions.ListChecklistItems(r.Context(), session.ID)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "internal error")
 		return

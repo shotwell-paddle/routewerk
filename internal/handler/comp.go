@@ -213,12 +213,10 @@ func (h *CompHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	comp := createToModel(locationID, &body)
 	if err := h.repo.Create(r.Context(), comp); err != nil {
-		// Slug uniqueness violation surfaces as a Postgres unique-constraint
-		// failure on the (location_id, slug) index. Map to 409 so the
-		// SPA can show "that slug is taken" instead of a generic 500.
-		// (Detection pattern matches the magic_link_tokens repo's
-		// isUniqueViolation helper used in the attempt repo.)
-		// TODO(1f.2): factor isUniqueViolation up into a shared helper.
+		if repository.IsUniqueViolation(err) {
+			Error(w, http.StatusConflict, "a competition with that slug already exists at this location")
+			return
+		}
 		slog.Error("create competition", "location_id", locationID, "error", err)
 		Error(w, http.StatusInternalServerError, "internal error")
 		return

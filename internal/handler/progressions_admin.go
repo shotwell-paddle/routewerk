@@ -1,26 +1,55 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
 )
 
 // ProgressionsAdminHandler exposes admin CRUD on quests, badges, and quest
-// domains for the SPA at /app/settings/progressions. The climber-side
+// domains for the SPA at /settings/progressions. The climber-side
 // QuestHandler (handler/quest.go) handles browse/start/log/abandon; this
 // handler is purely for staff catalog management. Mirrors the HTMX
 // /settings/progressions surface.
 type ProgressionsAdminHandler struct {
 	quests *repository.QuestRepo
 	badges *repository.BadgeRepo
+	authz  *middleware.Authorizer
 }
 
-func NewProgressionsAdminHandler(quests *repository.QuestRepo, badges *repository.BadgeRepo) *ProgressionsAdminHandler {
-	return &ProgressionsAdminHandler{quests: quests, badges: badges}
+func NewProgressionsAdminHandler(quests *repository.QuestRepo, badges *repository.BadgeRepo, authz *middleware.Authorizer) *ProgressionsAdminHandler {
+	return &ProgressionsAdminHandler{quests: quests, badges: badges, authz: authz}
+}
+
+// requireHeadSetterAt looks up the caller's role at the given location
+// and writes a 403 (or 404 / 500 as appropriate) if they're not at
+// least head_setter. Used by the by-id update/delete handlers that
+// don't have {locationID} on the URL — without this the chi parent
+// middleware can't enforce per-location rank, so any authenticated
+// user could mutate any quest/badge/domain by guessing an ID.
+func (h *ProgressionsAdminHandler) requireHeadSetterAt(w http.ResponseWriter, r *http.Request, locationID string) bool {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		Error(w, http.StatusUnauthorized, "not authenticated")
+		return false
+	}
+	m, err := h.authz.LookupLocationMembership(r.Context(), userID, locationID)
+	if err != nil || m == nil {
+		// Hide cross-org access under 404 so the API doesn't leak the
+		// existence of rows in other gyms.
+		Error(w, http.StatusNotFound, "not found")
+		return false
+	}
+	if middleware.RoleRankValue(m.Role) < middleware.RoleRankValue(middleware.RoleHeadSetter) {
+		Error(w, http.StatusForbidden, "head_setter or above required")
+		return false
+	}
+	return true
 }
 
 // ── Quest admin ──────────────────────────────────────────
@@ -63,15 +92,33 @@ func (h *ProgressionsAdminHandler) CreateQuest(w http.ResponseWriter, r *http.Re
 }
 
 // UpdateQuest — PUT /quests/{id}. Replaces the quest's mutable fields.
-// LocationID + ID + CreatedAt aren't touched.
+// LocationID + ID + CreatedAt aren't touched. Authz: head_setter+ at
+// the quest's owning location (looked up from the row, NOT the body).
 func (h *ProgressionsAdminHandler) UpdateQuest(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "questID")
+	existing, err := h.quests.GetByID(r.Context(), id)
+	if err != nil {
+		slog.Error("update quest: lookup failed", "quest_id", id, "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if existing == nil {
+		Error(w, http.StatusNotFound, "quest not found")
+		return
+	}
+	if !h.requireHeadSetterAt(w, r, existing.LocationID) {
+		return
+	}
+
 	var q model.Quest
 	if err := Decode(r, &q); err != nil {
 		Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	// Pin id + location to the existing row — body can't relocate the
+	// quest into a gym the caller has rights at by setting location_id.
 	q.ID = id
+	q.LocationID = existing.LocationID
 	if err := h.quests.Update(r.Context(), &q); err != nil {
 		Error(w, http.StatusInternalServerError, "failed to update quest")
 		return
@@ -141,15 +188,31 @@ func (h *ProgressionsAdminHandler) CreateDomain(w http.ResponseWriter, r *http.R
 	JSON(w, http.StatusCreated, d)
 }
 
-// UpdateDomain — PUT /quest-domains/{id}.
+// UpdateDomain — PUT /quest-domains/{id}. Authz: head_setter+ at the
+// domain's owning location, looked up from the row.
 func (h *ProgressionsAdminHandler) UpdateDomain(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "domainID")
+	existing, err := h.quests.GetDomainByID(r.Context(), id)
+	if err != nil {
+		slog.Error("update domain: lookup failed", "domain_id", id, "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if existing == nil {
+		Error(w, http.StatusNotFound, "domain not found")
+		return
+	}
+	if !h.requireHeadSetterAt(w, r, existing.LocationID) {
+		return
+	}
+
 	var d model.QuestDomain
 	if err := Decode(r, &d); err != nil {
 		Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	d.ID = id
+	d.LocationID = existing.LocationID
 	if err := h.quests.UpdateDomain(r.Context(), &d); err != nil {
 		Error(w, http.StatusInternalServerError, "failed to update domain")
 		return
@@ -205,15 +268,31 @@ func (h *ProgressionsAdminHandler) CreateBadge(w http.ResponseWriter, r *http.Re
 	JSON(w, http.StatusCreated, b)
 }
 
-// UpdateBadge — PUT /badges/{id}.
+// UpdateBadge — PUT /badges/{id}. Authz: head_setter+ at the badge's
+// owning location, looked up from the row.
 func (h *ProgressionsAdminHandler) UpdateBadge(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "badgeID")
+	existing, err := h.badges.GetByID(r.Context(), id)
+	if err != nil {
+		slog.Error("update badge: lookup failed", "badge_id", id, "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if existing == nil {
+		Error(w, http.StatusNotFound, "badge not found")
+		return
+	}
+	if !h.requireHeadSetterAt(w, r, existing.LocationID) {
+		return
+	}
+
 	var b model.Badge
 	if err := Decode(r, &b); err != nil {
 		Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	b.ID = id
+	b.LocationID = existing.LocationID
 	if err := h.badges.Update(r.Context(), &b); err != nil {
 		Error(w, http.StatusInternalServerError, "failed to update badge")
 		return
@@ -221,9 +300,24 @@ func (h *ProgressionsAdminHandler) UpdateBadge(w http.ResponseWriter, r *http.Re
 	JSON(w, http.StatusOK, b)
 }
 
-// DeleteBadge — DELETE /badges/{id}.
+// DeleteBadge — DELETE /badges/{id}. Authz: head_setter+ at the
+// badge's owning location, looked up from the row.
 func (h *ProgressionsAdminHandler) DeleteBadge(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "badgeID")
+	existing, err := h.badges.GetByID(r.Context(), id)
+	if err != nil {
+		slog.Error("delete badge: lookup failed", "badge_id", id, "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if existing == nil {
+		Error(w, http.StatusNotFound, "badge not found")
+		return
+	}
+	if !h.requireHeadSetterAt(w, r, existing.LocationID) {
+		return
+	}
+
 	if err := h.badges.Delete(r.Context(), id); err != nil {
 		Error(w, http.StatusInternalServerError, "failed to delete badge")
 		return

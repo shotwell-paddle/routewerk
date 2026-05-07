@@ -196,31 +196,16 @@ func (h *RouteHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RouteHandler) Get(w http.ResponseWriter, r *http.Request) {
-	routeID := chi.URLParam(r, "routeID")
-
-	rt, err := h.routes.GetByID(r.Context(), routeID)
-	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+	rt, ok := h.resolveRoute(w, r)
+	if !ok {
 		return
 	}
-	if rt == nil {
-		Error(w, http.StatusNotFound, "route not found")
-		return
-	}
-
 	JSON(w, http.StatusOK, h.enrichRoute(r.Context(), rt))
 }
 
 func (h *RouteHandler) Update(w http.ResponseWriter, r *http.Request) {
-	routeID := chi.URLParam(r, "routeID")
-
-	rt, err := h.routes.GetByID(r.Context(), routeID)
-	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if rt == nil {
-		Error(w, http.StatusNotFound, "route not found")
+	rt, ok := h.resolveRoute(w, r)
+	if !ok {
 		return
 	}
 
@@ -297,7 +282,10 @@ type updateStatusRequest struct {
 }
 
 func (h *RouteHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
-	routeID := chi.URLParam(r, "routeID")
+	rt, ok := h.resolveRoute(w, r)
+	if !ok {
+		return
+	}
 
 	var req updateStatusRequest
 	if err := Decode(r, &req); err != nil {
@@ -310,21 +298,40 @@ func (h *RouteHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.routes.UpdateStatus(r.Context(), routeID, req.Status); err != nil {
+	if err := h.routes.UpdateStatus(r.Context(), rt.ID, req.Status); err != nil {
 		Error(w, http.StatusInternalServerError, "failed to update status")
 		return
 	}
 
-	h.audit.Record(r, service.AuditRouteStatusChange, "route", routeID, "", map[string]interface{}{
+	h.audit.Record(r, service.AuditRouteStatusChange, "route", rt.ID, "", map[string]interface{}{
 		"new_status": req.Status,
 	})
 
-	rt, _ := h.routes.GetByID(r.Context(), routeID)
-	if rt == nil {
+	updated, _ := h.routes.GetByID(r.Context(), rt.ID)
+	if updated == nil {
 		Error(w, http.StatusNotFound, "route not found")
 		return
 	}
-	JSON(w, http.StatusOK, h.enrichRoute(r.Context(), rt))
+	JSON(w, http.StatusOK, h.enrichRoute(r.Context(), updated))
+}
+
+// resolveRoute fetches the route by URL ID and verifies it belongs to
+// the URL's locationID. Centralizes the cross-tenant guard for every
+// by-id route handler — without it a setter at gym A could read/edit
+// a route at gym B by passing the wrong locationID.
+func (h *RouteHandler) resolveRoute(w http.ResponseWriter, r *http.Request) (*model.Route, bool) {
+	locationID := chi.URLParam(r, "locationID")
+	routeID := chi.URLParam(r, "routeID")
+	rt, err := h.routes.GetByID(r.Context(), routeID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "internal error")
+		return nil, false
+	}
+	if rt == nil || rt.LocationID != locationID {
+		Error(w, http.StatusNotFound, "route not found")
+		return nil, false
+	}
+	return rt, true
 }
 
 type bulkArchiveRequest struct {

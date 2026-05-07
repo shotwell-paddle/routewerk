@@ -60,6 +60,17 @@ func Authenticate(jwtSecret string, enforceAudience bool) func(http.Handler) htt
 // The context is populated with the same UserIDKey + EmailKey the
 // Authenticate middleware uses, plus (in the cookie path) the full
 // WebSession + WebUser the existing web handlers expect.
+//
+// View-as scope: the _rw_view_as cookie is intentionally NOT honored
+// here. The downgraded role only takes effect inside SessionManager.
+// RequireSession (the HTMX path), where it gates page rendering, and
+// inside the SPA layout via /me/view-as which hides higher-privilege
+// affordances. The JSON API enforces the user's REAL role on every
+// endpoint — view-as is a UI/UX preview, not a privilege drop. A
+// head_setter clicking "view as climber" still retains setter+ rights
+// on /api/v1/* (which makes sense since they had those rights before
+// clicking). If you want true privilege drop, build a separate
+// "act as" mechanism that issues a downgraded session cookie.
 func AuthenticateCookieOrJWT(sm *SessionManager, jwtSecret string, enforceAudience bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -115,11 +115,11 @@ func (h *CompHandler) CreateRegistration(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.regRepo.Create(r.Context(), reg); err != nil {
-		// Unique-violation on (competition_id, user_id) → already registered.
-		// We don't have a shared isUniqueViolation helper at handler scope yet
-		// (TODO: factor out from competition_attempt.go); for now we surface
-		// any error as 500 except the very common "already registered" path
-		// — staff/SPA will retry with the existing registration ID.
+		if repository.IsUniqueViolation(err) {
+			// (competition_id, user_id) is unique — duplicate registration.
+			Error(w, http.StatusConflict, "this user is already registered for this competition")
+			return
+		}
 		slog.Error("create registration", "competition_id", compID, "user_id", targetUserID, "error", err)
 		Error(w, http.StatusInternalServerError, "could not create registration")
 		return

@@ -546,6 +546,7 @@ export interface RouteShape {
   circuit_color?: string | null;
   name?: string | null;
   color: string;
+  color_name?: string | null;
   description?: string | null;
   photo_url?: string | null;
   date_set: string;

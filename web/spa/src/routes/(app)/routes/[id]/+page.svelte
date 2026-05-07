@@ -419,10 +419,11 @@
   {:else if route}
     <header class="page-header">
       <div class="title-block">
-        <span class="color-chip" style="background:{route.color}" title={route.color}></span>
+        <span class="color-chip" style="background:{route.color}" title={route.color_name ?? route.color}></span>
         <div>
           <div class="title-meta">
             <span class="grade">{route.grade}</span>
+            {#if route.color_name}<span class="hold-color">{route.color_name}</span>{/if}
             {#if route.name}<span class="name">{route.name}</span>{/if}
           </div>
           <p class="meta-line muted">
@@ -832,6 +833,12 @@
     font-size: 1.4rem;
     font-weight: 800;
     letter-spacing: -0.01em;
+  }
+  .hold-color {
+    font-size: 0.95rem;
+    color: var(--rw-text-muted);
+    font-weight: 500;
+    text-transform: capitalize;
   }
   .name {
     font-size: 1.05rem;

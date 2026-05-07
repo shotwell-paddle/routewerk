@@ -130,7 +130,12 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	orgHandler := handler.NewOrgHandler(orgRepo, auditService)
 	locationHandler := handler.NewLocationHandler(locationRepo)
 	wallHandler := handler.NewWallHandler(wallRepo, auditService)
-	routeHandler := handler.NewRouteHandler(routeRepo, auditService)
+	// settingsRepo is constructed below in the web-frontend section, but
+	// the route handler needs it too — for hex → hold-color-name lookup
+	// when enriching the JSON list / detail response. Pull the
+	// construction up here so both code paths share a single cache.
+	settingsRepo := repository.NewCachedSettingsRepo(repository.NewSettingsRepo(db))
+	routeHandler := handler.NewRouteHandler(routeRepo, settingsRepo, auditService)
 	teamHandler := handler.NewTeamHandler(userRepo)
 	questHandler := handler.NewQuestHandler(deps.QuestSvc)
 	// notifHandler is initialized lower, after notifRepo is constructed
@@ -161,7 +166,8 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	// ── Web Frontend (HTMX) ────────────────────────────────────
 	difficultyRepo := repository.NewDifficultyRepo(db)
 	photoRepo := repository.NewRoutePhotoRepo(db)
-	settingsRepo := repository.NewCachedSettingsRepo(repository.NewSettingsRepo(db))
+	// settingsRepo is constructed earlier (above NewRouteHandler) so the
+	// route enricher and the HTMX handler bundle share a single cache.
 	userTagRepo := repository.NewUserTagRepo(db)
 
 	// Progressions repos (created in main.go for service layer, but we also

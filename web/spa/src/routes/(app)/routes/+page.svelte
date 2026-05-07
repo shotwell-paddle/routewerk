@@ -182,9 +182,10 @@
               <span
                 class="color-chip"
                 style="background:{route.color}"
-                title={route.color}></span>
+                title={route.color_name ?? route.color}></span>
               <span class="primary">
                 <span class="grade">{route.grade}</span>
+                {#if route.color_name}<span class="hold-color">{route.color_name}</span>{/if}
                 {#if route.name}<span class="name">{route.name}</span>{/if}
                 <span class="status status-{route.status}">{route.status}</span>
               </span>
@@ -339,6 +340,12 @@
     font-weight: 700;
     color: var(--rw-text);
     font-size: 1.05rem;
+  }
+  .hold-color {
+    color: var(--rw-text-muted);
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-transform: capitalize;
   }
   .name {
     color: var(--rw-text);

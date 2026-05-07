@@ -165,6 +165,18 @@
     </section>
   {/if}
 
+  {#if roleRankAt(effectiveLocationId()) >= 3}
+    <section class="card cta-card">
+      <h2>Distribution targets</h2>
+      <p class="muted">
+        How many active routes you want at each grade or circuit. The
+        dashboard charts overlay these as targets so the gap between
+        actual and goal is obvious.
+      </p>
+      <a class="primary-link" href="/settings/targets">Edit targets →</a>
+    </section>
+  {/if}
+
   {#if roleRankAt(effectiveLocationId()) >= 5}
     <section class="card cta-card">
       <h2>Organization</h2>

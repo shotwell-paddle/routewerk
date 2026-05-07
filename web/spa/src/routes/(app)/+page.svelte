@@ -664,7 +664,11 @@
     gap: 6px;
     text-align: left;
     text-transform: capitalize;
-    justify-content: flex-end;
+    /* Left-align the chip + name so circuit labels read like a list
+       rather than right-aligning against the bar like the numeric grade
+       column does. Bar position itself stays put — the grid column
+       width hasn't changed. */
+    justify-content: flex-start;
   }
   .dist-card-head {
     display: flex;

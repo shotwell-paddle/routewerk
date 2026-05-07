@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 
+	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
 	"github.com/shotwell-paddle/routewerk/internal/service"
 	"github.com/shotwell-paddle/routewerk/internal/service/cardsheet"
@@ -105,23 +106,35 @@ func (s *Service) RenderBatch(
 		locationName = loc.Name
 	}
 
-	// Cache wall names + setter display names across the batch. Most batches
-	// come from a single wall or two, so this avoids N DB round-trips.
+	// Single batch lookup instead of N round-trips. Pre-#000037 this
+	// loop did one DB round-trip per route — at MaxBatchCards=200 cards
+	// × 50 gyms × hourly print runs that's ~10k round-trips per hour
+	// just resolving routes. ListByIDs returns the set in one query;
+	// indexing by id lets us still walk routeIDs in order so the sheet
+	// layout matches what the setter selected.
+	rows, err := s.routes.ListByIDs(ctx, locationID, routeIDs)
+	if err != nil {
+		return 0, fmt.Errorf("cardbatch: load routes: %w", err)
+	}
+	routeByID := make(map[string]model.Route, len(rows))
+	for _, rt := range rows {
+		routeByID[rt.ID] = rt
+	}
+
+	// Cache wall names + setter display names across the batch. Most
+	// batches come from a single wall or two, so this still avoids the
+	// per-route wall/setter round-trip; the inner GetByIDs are bounded
+	// by len(distinct walls + distinct setters), which is tiny.
 	wallNames := map[string]string{}
 	setterNames := map[string]string{}
 
 	cards := make([]service.CardData, 0, len(routeIDs))
 	for _, id := range routeIDs {
-		rt, err := s.routes.GetByID(ctx, id)
-		if err != nil {
-			// A failed single-route lookup is a hard error — DB is probably
-			// unhealthy and we shouldn't silently ship a partial sheet.
-			return 0, fmt.Errorf("cardbatch: load route %s: %w", id, err)
-		}
-		if rt == nil || rt.LocationID != locationID {
-			// Missing or cross-location route — skip silently. Cross-location
-			// is treated as "not found" to avoid leaking existence across
-			// location boundaries in the eventual API response.
+		rt, ok := routeByID[id]
+		if !ok {
+			// Missing or cross-location route — silently skipped (as
+			// before). The location filter is enforced inside ListByIDs
+			// so cross-tenant IDs simply don't appear in the result.
 			continue
 		}
 		wname, seen := wallNames[rt.WallID]
@@ -143,7 +156,7 @@ func (s *Service) RenderBatch(
 			sname = cached
 		}
 		cards = append(cards, service.CardData{
-			Route:        rt,
+			Route:        &rt,
 			WallName:     wname,
 			LocationName: locationName,
 			SetterName:   sname,
@@ -256,16 +269,23 @@ func (s *Service) ValidateRouteIDs(
 	locationID string,
 	routeIDs []string,
 ) ([]string, error) {
-	valid := make([]string, 0, len(routeIDs))
+	// Single batch lookup. The location filter inside ListByIDs takes
+	// care of the cross-tenant skip — anything that doesn't belong to
+	// this location simply doesn't appear in the result.
+	rows, err := s.routes.ListByIDs(ctx, locationID, routeIDs)
+	if err != nil {
+		return nil, fmt.Errorf("cardbatch: validate routes: %w", err)
+	}
+	present := make(map[string]struct{}, len(rows))
+	for _, rt := range rows {
+		present[rt.ID] = struct{}{}
+	}
+	// Walk the input slice so we preserve the caller's intended order.
+	valid := make([]string, 0, len(rows))
 	for _, id := range routeIDs {
-		rt, err := s.routes.GetByID(ctx, id)
-		if err != nil {
-			return nil, fmt.Errorf("cardbatch: validate route %s: %w", id, err)
+		if _, ok := present[id]; ok {
+			valid = append(valid, id)
 		}
-		if rt == nil || rt.LocationID != locationID {
-			continue
-		}
-		valid = append(valid, id)
 	}
 	return valid, nil
 }

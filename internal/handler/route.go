@@ -160,6 +160,24 @@ func (h *RouteHandler) Create(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusCreated, h.enrichRoute(r.Context(), rt))
 }
 
+// Distribution returns the active-route count grouped by
+// (route_type, grading_system, grade) plus a representative hex for
+// circuit buckets. Replaces the dashboard's "fetch all 500 active
+// routes and count client-side" pattern. Setter+ enforced by router.
+func (h *RouteHandler) Distribution(w http.ResponseWriter, r *http.Request) {
+	locationID := chi.URLParam(r, "locationID")
+	out, err := h.routes.RouteDistribution(r.Context(), locationID)
+	if err != nil {
+		slog.Error("route distribution", "location_id", locationID, "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if out == nil {
+		out = []repository.RouteDistributionBucket{}
+	}
+	JSON(w, http.StatusOK, out)
+}
+
 func (h *RouteHandler) List(w http.ResponseWriter, r *http.Request) {
 	locationID := chi.URLParam(r, "locationID")
 

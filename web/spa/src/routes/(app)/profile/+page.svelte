@@ -2,12 +2,14 @@
   import {
     listMyAscents,
     getMyStats,
+    getMyGradePyramid,
     updateMyAscent,
     deleteMyAscent,
     ApiClientError,
     type AscentWithRouteShape,
     type AscentType,
     type MyStatsShape,
+    type GradePyramidEntryShape,
   } from '$lib/api/client';
   import { currentUser } from '$lib/stores/auth.svelte';
 
@@ -16,6 +18,10 @@
   let ascents = $state<AscentWithRouteShape[]>([]);
   let total = $state(0);
   let stats = $state<MyStatsShape | null>(null);
+  // Grade pyramid is lazy — fired after the cheap summary lands so the
+  // stats panel renders immediately. Null = "not loaded yet" (chart
+  // hidden); empty array = "loaded, climber has no sends".
+  let pyramid = $state<GradePyramidEntryShape[] | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let offset = $state(0);
@@ -42,6 +48,27 @@
       })
       .finally(() => {
         if (!cancelled) loading = false;
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  // Lazy pyramid fetch — fires once on mount, independent of the
+  // page-level loading state so it doesn't block the stats panel from
+  // rendering. The pyramid card is the slowest piece on the profile
+  // page (GROUP BY scan over the climber's sends + JOIN to routes);
+  // separating it lets the cheap summary appear immediately.
+  $effect(() => {
+    let cancelled = false;
+    getMyGradePyramid()
+      .then((p) => {
+        if (!cancelled) pyramid = p;
+      })
+      .catch(() => {
+        // Best-effort — leave pyramid null so the card stays hidden
+        // rather than rendering an error state. The summary panel
+        // (above it) is the load-bearing piece for the profile page.
       });
     return () => {
       cancelled = true;
@@ -112,11 +139,16 @@
       ascents = ascents.filter((a) => a.id !== id);
       total = Math.max(0, total - 1);
       // Refresh stats so the totals on the avatar row stay honest.
+      // Counters are now denormalized (#000037), the trigger updates
+      // them in the same DB tx as the delete — no race.
       try {
         stats = await getMyStats();
       } catch {
         // best-effort
       }
+      // Pyramid may also have shifted if the deleted ascent was a
+      // send/flash. Refire the lazy fetch so the chart stays honest.
+      getMyGradePyramid().then((p) => (pyramid = p)).catch(() => {});
     } catch (err) {
       editError = err instanceof ApiClientError ? err.message : 'Delete failed.';
     } finally {
@@ -131,7 +163,7 @@
 
   // Pyramid bars are scaled to the largest single-grade count.
   const pyramidMax = $derived(
-    Math.max(1, ...(stats?.grade_pyramid?.map((p) => p.count) ?? [0])),
+    Math.max(1, ...(pyramid?.map((p) => p.count) ?? [0])),
   );
 </script>
 
@@ -180,11 +212,11 @@
       </div>
     </section>
 
-    {#if stats.grade_pyramid && stats.grade_pyramid.length > 0}
+    {#if pyramid && pyramid.length > 0}
       <section class="card">
         <h2>Grade pyramid</h2>
         <div class="pyramid">
-          {#each stats.grade_pyramid as entry}
+          {#each pyramid as entry}
             <div class="pyr-row">
               <span class="pyr-grade">{entry.grade}</span>
               <div class="pyr-bar">

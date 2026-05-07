@@ -434,6 +434,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			r.Patch("/me/ascents/{ascentID}", ascentHandler.UpdateMine)
 			r.Delete("/me/ascents/{ascentID}", ascentHandler.DeleteMine)
 			r.Get("/me/stats", ascentHandler.MyStats)
+			r.Get("/me/grade-pyramid", ascentHandler.MyGradePyramid)
 			r.Get("/me/quests", questHandler.MyQuests)
 			r.Get("/me/notifications", notifHandler.List)
 			r.Get("/me/notifications/unread-count", notifHandler.UnreadCount)
@@ -542,6 +543,15 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 							r.Post("/unarchive", wallHandler.Unarchive)
 						})
 					})
+				})
+
+				// Server-side route distribution aggregator — replaces
+				// the dashboard's "fetch all 500 active routes, count
+				// client-side" pattern. Setter+ since the dashboard
+				// chart is staff-only.
+				r.Group(func(r chi.Router) {
+					r.Use(authz.RequireLocationRole("setter"))
+					r.Get("/route-distribution", routeHandler.Distribution)
 				})
 
 				// Routes (climbs)

@@ -4,11 +4,13 @@
     listWalls,
     listRoutes,
     listDistributionTargets,
+    listRouteDistribution,
     ApiClientError,
     type DashboardSummaryShape,
     type WallShape,
     type RouteShape,
     type DistributionTarget,
+    type RouteDistributionBucket,
   } from '$lib/api/client';
   import { currentUser, roleRankAt } from '$lib/stores/auth.svelte';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
@@ -31,6 +33,10 @@
   // Per-(route_type, grade) targets. Looked up by buckets below to
   // overlay a marker on the matching distribution bar.
   let targets = $state<DistributionTarget[]>([]);
+  // Server-aggregated distribution buckets — replaces the old client-
+  // side derive-from-activeRoutes logic. ~30 rows per gym instead of
+  // 500 routes downloaded for the count.
+  let distribution = $state<RouteDistributionBucket[]>([]);
 
   $effect(() => {
     if (!locId || !isStaff) {
@@ -38,6 +44,7 @@
       walls = [];
       activeRoutes = [];
       targets = [];
+      distribution = [];
       return;
     }
     let cancelled = false;
@@ -46,6 +53,10 @@
     Promise.all([
       getDashboardSummary(locId),
       listWalls(locId).catch(() => [] as WallShape[]),
+      // listRoutes still drives the "Walls & routes" per-wall grid
+      // below — that grid wants per-route detail (grade chip + name)
+      // not aggregates. Distribution charts switched to the server-
+      // aggregated endpoint above.
       listRoutes(locId, { status: 'active', limit: 500 }).catch(() => ({
         routes: [],
         total: 0,
@@ -53,13 +64,15 @@
         offset: 0,
       })),
       listDistributionTargets(locId).catch(() => [] as DistributionTarget[]),
+      listRouteDistribution(locId).catch(() => [] as RouteDistributionBucket[]),
     ])
-      .then(([s, wls, rt, ts]) => {
+      .then(([s, wls, rt, ts, dist]) => {
         if (cancelled) return;
         summary = s;
         walls = wls;
         activeRoutes = rt.routes;
         targets = ts;
+        distribution = dist;
       })
       .catch((err) => {
         if (cancelled) return;
@@ -170,24 +183,25 @@
     return 5000;
   }
 
-  // Distribution grouped by grade. Boulders (V-scale) and routes
-  // (YDS / letter / circuit) get separate sub-lists so the chart
-  // doesn't show a 50% chunk of "circuit" alongside "5.10a"-style
-  // grades. Targets-without-actual buckets are added in too — a grade
-  // we want but aren't setting reads as "0 / target" with an empty
-  // bar and a target marker showing the gap.
+  // Distribution grouped by grade. Source is the server-aggregated
+  // /route-distribution endpoint, NOT a client-side count of all
+  // active routes — the old pattern downloaded ~500 routes per
+  // dashboard load just to count them. Boulders (V-scale) and routes
+  // (YDS / letter) get separate sub-lists so the chart doesn't mix
+  // grade types. Circuit-graded routes belong on the circuit chart
+  // below and are skipped here.
+  //
+  // Target-only buckets (head-setter set a goal for a grade we
+  // currently have zero of) are merged in so the gap shows as an
+  // empty bar with a target marker.
   const gradeDistribution = $derived.by<DistBucket[]>(() => {
     const buckets = new Map<string, DistBucket>();
-    for (const r of activeRoutes) {
-      if (r.grading_system === 'circuit') continue;
-      const section: DistBucket['section'] = r.route_type === 'boulder' ? 'boulder' : 'route';
-      const key = section + ':' + r.grade;
-      if (!buckets.has(key)) {
-        buckets.set(key, { key, label: r.grade, count: 0, target: 0, section });
-      }
-      buckets.get(key)!.count++;
+    for (const b of distribution) {
+      if (b.grading_system === 'circuit') continue;
+      const section: DistBucket['section'] = b.route_type === 'boulder' ? 'boulder' : 'route';
+      const key = section + ':' + b.grade;
+      buckets.set(key, { key, label: b.grade, count: b.count, target: 0, section });
     }
-    // Add target-only buckets (target set, zero actual).
     for (const t of targets) {
       if (t.route_type === 'circuit') continue;
       const key = t.route_type + ':' + t.grade;
@@ -201,7 +215,6 @@
         });
       }
     }
-    // Inject targets into the merged buckets.
     for (const b of buckets.values()) {
       b.target = targetByKey.get(b.section + ':' + b.label) ?? 0;
     }
@@ -211,28 +224,24 @@
     });
   });
 
-  // Distribution grouped by circuit color. Pulls the chip color from
-  // the first route in each bucket so the bars show the actual circuit
-  // hex even when the gym has custom palette presets. Routes without a
-  // circuit_color (i.e. graded routes) are skipped. Target-only
-  // circuit buckets (target set, zero actual) get a default chip color
-  // since we don't have a route to pull the hex from.
+  // Distribution grouped by circuit color. The server-aggregated
+  // bucket carries a representative `circuit_color` hex (MIN(color)
+  // over the bucket's routes) so the bars paint with the gym's actual
+  // palette even when presets vary. Target-only circuit buckets get
+  // no color and fall back to the accent.
   const circuitDistribution = $derived.by<DistBucket[]>(() => {
     const buckets = new Map<string, DistBucket>();
-    for (const r of activeRoutes) {
-      if (!r.circuit_color) continue;
-      const key = 'circuit:' + r.circuit_color;
-      if (!buckets.has(key)) {
-        buckets.set(key, {
-          key,
-          label: r.circuit_color,
-          count: 0,
-          target: 0,
-          color: r.color,
-          section: 'circuit',
-        });
-      }
-      buckets.get(key)!.count++;
+    for (const b of distribution) {
+      if (b.grading_system !== 'circuit') continue;
+      const key = 'circuit:' + b.grade;
+      buckets.set(key, {
+        key,
+        label: b.grade,
+        count: b.count,
+        target: 0,
+        color: b.circuit_color ?? undefined,
+        section: 'circuit',
+      });
     }
     for (const t of targets) {
       if (t.route_type !== 'circuit') continue;
@@ -250,9 +259,6 @@
     for (const b of buckets.values()) {
       b.target = targetByKey.get('circuit:' + b.label) ?? 0;
     }
-    // Sort by count desc — most-stocked circuit first. Ties broken by
-    // target so a target-only bucket lands at the bottom rather than
-    // mixing alphabetically.
     return [...buckets.values()].sort((a, b) => {
       if (b.count !== a.count) return b.count - a.count;
       return b.target - a.target;

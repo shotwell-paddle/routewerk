@@ -92,23 +92,26 @@ func (h *CompHandler) SubmitActions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	eventByID := make(map[string]*model.CompetitionEvent, len(events))
+	eventIDs := make([]string, len(events))
 	for i := range events {
 		eventByID[events[i].ID] = &events[i]
+		eventIDs[i] = events[i].ID
 	}
 
-	problemByID := map[string]*model.CompetitionProblem{}
-	problemEventID := map[string]string{}
-	for i := range events {
-		ps, err := h.repo.ListProblems(r.Context(), events[i].ID)
-		if err != nil {
-			slog.Error("list problems", "event_id", events[i].ID, "error", err)
-			Error(w, http.StatusInternalServerError, "internal error")
-			return
-		}
-		for j := range ps {
-			problemByID[ps[j].ID] = &ps[j]
-			problemEventID[ps[j].ID] = events[i].ID
-		}
+	// Single batch fetch — the per-event ListProblems loop here ran on
+	// every action submit (verify/override) which is the hot path
+	// during a comp.
+	allProblems, err := h.repo.ListProblemsForEvents(r.Context(), eventIDs)
+	if err != nil {
+		slog.Error("list problems for events", "competition_id", compID, "error", err)
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	problemByID := make(map[string]*model.CompetitionProblem, len(allProblems))
+	problemEventID := make(map[string]string, len(allProblems))
+	for i := range allProblems {
+		problemByID[allProblems[i].ID] = &allProblems[i]
+		problemEventID[allProblems[i].ID] = allProblems[i].EventID
 	}
 
 	resp := api.ActionsResponse{

@@ -523,3 +523,108 @@ func (r *RouteRepo) SetTags(ctx context.Context, routeID string, tagIDs []string
 
 	return tx.Commit(ctx)
 }
+
+// RouteDistributionBucket is one row of the dashboard distribution
+// chart — the count of active routes at a particular grade or circuit
+// color. The dashboard renders three groups (boulder grades, route
+// grades, circuits) — RouteType + GradingSystem disambiguate them.
+//
+// CircuitColor is non-nil only when GradingSystem == "circuit"; it
+// holds the hex of one route in the bucket so the chart can paint the
+// bar with the gym's actual circuit color (palette presets vary).
+type RouteDistributionBucket struct {
+	RouteType     string  `json:"route_type"`
+	GradingSystem string  `json:"grading_system"`
+	Grade         string  `json:"grade"`
+	CircuitColor  *string `json:"circuit_color,omitempty"`
+	Count         int     `json:"count"`
+}
+
+// RouteDistribution returns the active-route count per (route_type,
+// grading_system, grade) bucket for a location, plus a representative
+// hex color for circuit buckets so the chart can render colored bars.
+//
+// Replaces the old "fetch all 500 active routes, group client-side"
+// pattern in the SPA dashboard. At 50 gyms × 200 routes apiece that
+// was 200 routes downloaded per dashboard load just to count them;
+// this endpoint returns ~30 rows regardless of route count.
+func (r *RouteRepo) RouteDistribution(ctx context.Context, locationID string) ([]RouteDistributionBucket, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT
+			route_type,
+			grading_system,
+			CASE WHEN grading_system = 'circuit' THEN COALESCE(circuit_color, grade) ELSE grade END AS grade,
+			-- Representative hex for circuit buckets — MIN() is arbitrary
+			-- but stable; all routes in a circuit bucket should share the
+			-- same color anyway, so MIN just plucks any one. NULL for
+			-- non-circuit rows.
+			CASE WHEN grading_system = 'circuit' THEN MIN(color) ELSE NULL END AS circuit_color,
+			COUNT(*) AS count
+		FROM routes
+		WHERE location_id = $1 AND status = 'active' AND deleted_at IS NULL
+		GROUP BY route_type, grading_system,
+			CASE WHEN grading_system = 'circuit' THEN COALESCE(circuit_color, grade) ELSE grade END
+		ORDER BY route_type, grading_system, grade`, locationID)
+	if err != nil {
+		return nil, fmt.Errorf("route distribution: %w", err)
+	}
+	defer rows.Close()
+
+	var out []RouteDistributionBucket
+	for rows.Next() {
+		var b RouteDistributionBucket
+		if err := rows.Scan(&b.RouteType, &b.GradingSystem, &b.Grade, &b.CircuitColor, &b.Count); err != nil {
+			return nil, fmt.Errorf("scan route distribution: %w", err)
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+// ListByIDs returns the routes matching any of the given IDs in a
+// single query. Order of the result is NOT guaranteed to match the
+// input — callers that need order (e.g. card-batch sheet layout)
+// should index the result by ID and walk the input slice.
+//
+// Replaces the per-id GetByID loop in cardbatch.RenderBatch /
+// ValidateRouteIDs which paid one round-trip per route. At 16-card
+// batches × 50 gyms × hourly print runs that was ~800 round-trips/hr
+// for what's now one. Filters by location_id so cross-tenant lookups
+// silently return nothing instead of returning the wrong gym's data.
+func (r *RouteRepo) ListByIDs(ctx context.Context, locationID string, ids []string) ([]model.Route, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.Query(ctx, `
+		SELECT id, location_id, wall_id, setter_id, route_type, status,
+			grading_system, grade, grade_low, grade_high, circuit_color,
+			name, color, description, photo_url, date_set,
+			projected_strip_date, date_stripped, avg_rating, rating_count,
+			ascent_count, attempt_count, session_id, created_at, updated_at,
+			deleted_at
+		FROM routes
+		WHERE location_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL`,
+		locationID, ids,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list routes by ids: %w", err)
+	}
+	defer rows.Close()
+
+	var out []model.Route
+	for rows.Next() {
+		var rt model.Route
+		if err := rows.Scan(
+			&rt.ID, &rt.LocationID, &rt.WallID, &rt.SetterID, &rt.RouteType, &rt.Status,
+			&rt.GradingSystem, &rt.Grade, &rt.GradeLow, &rt.GradeHigh, &rt.CircuitColor,
+			&rt.Name, &rt.Color, &rt.Description, &rt.PhotoURL, &rt.DateSet,
+			&rt.ProjectedStripDate, &rt.DateStripped, &rt.AvgRating, &rt.RatingCount,
+			&rt.AscentCount, &rt.AttemptCount, &rt.SessionID, &rt.CreatedAt, &rt.UpdatedAt,
+			&rt.DeletedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan route: %w", err)
+		}
+		out = append(out, rt)
+	}
+	return out, rows.Err()
+}

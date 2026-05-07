@@ -115,6 +115,94 @@
     }
     return a.route_grade;
   }
+
+  // ── Route distribution charts (setter+) ─────────────────────────
+  // The user wants a quick "what's the gym's mix look like right now"
+  // glance. Derived purely from activeRoutes already in scope, so no
+  // extra API calls — bars are computed client-side.
+
+  type DistBucket = {
+    key: string;
+    label: string;
+    count: number;
+    color?: string; // optional fill (circuit hex when grouping by circuit)
+    section: 'boulder' | 'route' | 'circuit'; // sort grouping
+  };
+
+  /**
+   * Order grades within a section so V0..V10 doesn't sort lexicographically
+   * (V10 ahead of V2). Pulls the trailing number for V-scale and YDS, falls
+   * back to localeCompare. Null grades sort last.
+   */
+  function gradeKey(grade: string): number {
+    if (!grade) return 9999;
+    const v = grade.match(/^V(\d+)/i);
+    if (v) return parseInt(v[1], 10);
+    const yds = grade.match(/^5\.(\d+)/);
+    if (yds) {
+      let base = parseInt(yds[1], 10) * 10;
+      // Letter suffix gives a/b/c/d ordering within a grade.
+      const letter = grade.match(/^5\.\d+([a-d])/i);
+      if (letter) base += letter[1].toLowerCase().charCodeAt(0) - 96;
+      const sign = grade.match(/^5\.\d+([+-])$/);
+      if (sign) base += sign[1] === '+' ? 5 : -5;
+      return base;
+    }
+    return 5000;
+  }
+
+  // Distribution grouped by grade. Boulders (V-scale) and routes
+  // (YDS / letter / circuit) get separate sub-lists so the chart
+  // doesn't show a 50% chunk of "circuit" alongside "5.10a"-style
+  // grades.
+  const gradeDistribution = $derived.by<DistBucket[]>(() => {
+    const buckets = new Map<string, DistBucket>();
+    for (const r of activeRoutes) {
+      // Skip circuit-graded routes here — they're covered by the
+      // circuit chart below. We only want grade-on-grade comparison.
+      if (r.grading_system === 'circuit') continue;
+      const section: DistBucket['section'] = r.route_type === 'boulder' ? 'boulder' : 'route';
+      const key = section + ':' + r.grade;
+      if (!buckets.has(key)) {
+        buckets.set(key, { key, label: r.grade, count: 0, section });
+      }
+      buckets.get(key)!.count++;
+    }
+    return [...buckets.values()].sort((a, b) => {
+      if (a.section !== b.section) return a.section === 'boulder' ? -1 : 1;
+      return gradeKey(a.label) - gradeKey(b.label);
+    });
+  });
+
+  // Distribution grouped by circuit color. Pulls the chip color from
+  // the first route in each bucket so the bars show the actual circuit
+  // hex even when the gym has custom palette presets. Routes without a
+  // circuit_color (i.e. graded routes) are skipped.
+  const circuitDistribution = $derived.by<DistBucket[]>(() => {
+    const buckets = new Map<string, DistBucket>();
+    for (const r of activeRoutes) {
+      if (!r.circuit_color) continue;
+      const key = 'circuit:' + r.circuit_color;
+      if (!buckets.has(key)) {
+        buckets.set(key, {
+          key,
+          label: r.circuit_color,
+          count: 0,
+          color: r.color,
+          section: 'circuit',
+        });
+      }
+      buckets.get(key)!.count++;
+    }
+    // Sort by count desc — most-stocked circuit first reads better
+    // than alpha order for a "what's our mix" glance.
+    return [...buckets.values()].sort((a, b) => b.count - a.count);
+  });
+
+  // Max count drives bar widths (one scale per chart so the longest
+  // bar always pegs to 100%).
+  const gradeMax = $derived(gradeDistribution.reduce((m, b) => Math.max(m, b.count), 0));
+  const circuitMax = $derived(circuitDistribution.reduce((m, b) => Math.max(m, b.count), 0));
 </script>
 
 <svelte:head>
@@ -186,6 +274,58 @@
           </ul>
         {/if}
       </section>
+
+      {#if gradeDistribution.length > 0 || circuitDistribution.length > 0}
+        <section class="dist-grid">
+          {#if gradeDistribution.length > 0}
+            <div class="card">
+              <h2>Active routes by grade</h2>
+              <p class="muted small">
+                Snapshot of the current set. Boulders sort V-scale ascending,
+                then graded routes ascend by YDS.
+              </p>
+              <ul class="dist-bars">
+                {#each gradeDistribution as b (b.key)}
+                  <li>
+                    <span class="dist-label">{b.label}</span>
+                    <span class="dist-bar-track">
+                      <span
+                        class="dist-bar-fill grade-fill"
+                        style="width: {(b.count / gradeMax) * 100}%"></span>
+                    </span>
+                    <span class="dist-count">{b.count}</span>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+          {#if circuitDistribution.length > 0}
+            <div class="card">
+              <h2>Active circuits</h2>
+              <p class="muted small">
+                Routes assigned to a circuit color. Sorted by count — biggest
+                circuits first.
+              </p>
+              <ul class="dist-bars">
+                {#each circuitDistribution as b (b.key)}
+                  <li>
+                    <span class="dist-label dist-label-circuit">
+                      <span class="color-chip" style="background:{b.color}" aria-hidden="true"></span>
+                      {b.label}
+                    </span>
+                    <span class="dist-bar-track">
+                      <span
+                        class="dist-bar-fill"
+                        style="width: {(b.count / circuitMax) * 100}%; background: {b.color};"></span>
+                    </span>
+                    <span class="dist-count">{b.count}</span>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+        </section>
+      {/if}
 
       {#if walls.length > 0}
         <section class="card">
@@ -393,6 +533,67 @@
   }
   .small {
     font-size: 0.85rem;
+  }
+  .dist-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  .dist-grid .card {
+    margin: 0;
+  }
+  .dist-bars {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .dist-bars > li {
+    display: grid;
+    grid-template-columns: 4.5rem 1fr 2.5rem;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.85rem;
+  }
+  .dist-label {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--rw-text);
+    text-align: right;
+  }
+  .dist-label-circuit {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    text-align: left;
+    text-transform: capitalize;
+    justify-content: flex-end;
+  }
+  .dist-bar-track {
+    background: var(--rw-surface-alt);
+    border-radius: 4px;
+    height: 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .dist-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: 4px;
+    background: var(--rw-accent);
+    transition: width 200ms ease;
+  }
+  .dist-bar-fill.grade-fill {
+    background: linear-gradient(90deg, var(--rw-accent) 0%, var(--rw-accent-hover) 100%);
+  }
+  .dist-count {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--rw-text-muted);
+    font-size: 0.8rem;
   }
   .wall-list {
     list-style: none;

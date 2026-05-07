@@ -291,10 +291,16 @@ export async function setLocationProgressions(
   });
 }
 
+export interface PalettePresetSwatch {
+  name: string;
+  hex: string;
+}
+
 export interface PalettePresetEntry {
   name: string;
   display_name: string;
   description: string;
+  circuits: PalettePresetSwatch[];
 }
 
 /**
@@ -1402,6 +1408,46 @@ export async function updateCardBatch(
 /** Resolve the absolute download URL for a card batch's PDF. */
 export function cardBatchDownloadUrl(locationId: string, batchId: string): string {
   return `/api/v1/locations/${locationId}/card-batches/${batchId}/pdf`;
+}
+
+/**
+ * Resolve the cutlines DXF URL for a card batch. The DXF is a fallback
+ * for Silhouette Studio when Cut-by-Color misbehaves on the PDF.
+ *
+ * Served by the HTMX-side handler at /card-batches/{id}/cutlines.dxf —
+ * kept after the SPA-to-root swap because the SPA links to it as a
+ * download target. Uses the cookie session for auth.
+ */
+export function cardBatchCutlinesUrl(batchId: string): string {
+  return `/card-batches/${batchId}/cutlines.dxf`;
+}
+
+/**
+ * Resolve the first-card preview PNG URL for a card batch. Used as an
+ * <img src> on the batch detail page so setters get a quick visual
+ * confirmation that their print settings look right.
+ *
+ * Same provenance as cardBatchCutlinesUrl — server-rendered artifact
+ * the SPA references, kept after the swap.
+ */
+export function cardBatchPreviewUrl(batchId: string): string {
+  return `/card-batches/${batchId}/preview.png`;
+}
+
+/**
+ * POST /locations/{locationId}/card-batches/{batchId}/retry — creator
+ * or head_setter+. Resets a failed batch back to pending so the next
+ * download re-renders. Returns the updated batch.
+ */
+export async function retryCardBatch(
+  locationId: string,
+  batchId: string,
+  signal?: AbortSignal,
+): Promise<CardBatchShape> {
+  return request(`/locations/${locationId}/card-batches/${batchId}/retry`, {
+    method: 'POST',
+    signal,
+  });
 }
 
 /**

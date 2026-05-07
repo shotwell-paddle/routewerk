@@ -59,24 +59,36 @@ func (h *SettingsHandler) UpdateLocationSettings(w http.ResponseWriter, r *http.
 	JSON(w, http.StatusOK, saved)
 }
 
+type palettePresetSwatch struct {
+	Name string `json:"name"`
+	Hex  string `json:"hex"`
+}
+
 type palettePresetEntry struct {
-	Name        string `json:"name"`
-	DisplayName string `json:"display_name"`
-	Description string `json:"description"`
+	Name        string                `json:"name"`
+	DisplayName string                `json:"display_name"`
+	Description string                `json:"description"`
+	Circuits    []palettePresetSwatch `json:"circuits"`
 }
 
 // ListPalettePresets — GET /api/v1/settings/palette-presets.
 //
 // Returns the catalog of named palette presets so the SPA can render
-// them as one-click apply buttons. Public (any authenticated user)
-// because the catalog itself is global; the apply endpoint is gated.
+// them as one-click apply buttons with a swatch preview. Public (any
+// authenticated user) because the catalog itself is global; the apply
+// endpoint is gated.
 func (h *SettingsHandler) ListPalettePresets(w http.ResponseWriter, r *http.Request) {
 	out := make([]palettePresetEntry, 0, len(model.PalettePresets))
 	for _, p := range model.PalettePresets {
+		swatches := make([]palettePresetSwatch, 0, len(p.Circuits))
+		for _, c := range p.Circuits {
+			swatches = append(swatches, palettePresetSwatch{Name: c.Name, Hex: c.Hex})
+		}
 		out = append(out, palettePresetEntry{
 			Name:        p.Name,
 			DisplayName: p.DisplayName,
 			Description: p.Description,
+			Circuits:    swatches,
 		})
 	}
 	JSON(w, http.StatusOK, out)

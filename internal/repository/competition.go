@@ -438,6 +438,47 @@ func (r *CompetitionRepo) ListProblems(ctx context.Context, eventID string) ([]m
 	return out, rows.Err()
 }
 
+// ListProblemsForEvents returns problems across multiple events in one
+// query. Replaces the per-event loop in the leaderboard rebuild path
+// (handler/comp_leaderboard.go) and the action-submit path
+// (handler/comp_action.go) — at a 5-event comp the leaderboard
+// rebuild was paying 5 sequential round-trips on every cache miss
+// (every score-affecting write busts the cache + every SSE
+// subscriber renders against a cold cache).
+//
+// Empty input returns nil, nil. Order: by event then sort_order then
+// label, matching the per-event ListProblems result.
+func (r *CompetitionRepo) ListProblemsForEvents(ctx context.Context, eventIDs []string) ([]model.CompetitionProblem, error) {
+	if len(eventIDs) == 0 {
+		return nil, nil
+	}
+	ctx, cancel := database.QueryTimeout(ctx, database.TimeoutFast)
+	defer cancel()
+
+	rows, err := r.db.Query(ctx, `
+		SELECT id, event_id, route_id, label, points, zone_points, grade, color, sort_order
+		FROM competition_problems
+		WHERE event_id = ANY($1::uuid[])
+		ORDER BY event_id, sort_order, label`, eventIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list problems for events: %w", err)
+	}
+	defer rows.Close()
+
+	var out []model.CompetitionProblem
+	for rows.Next() {
+		var p model.CompetitionProblem
+		if err := rows.Scan(
+			&p.ID, &p.EventID, &p.RouteID, &p.Label, &p.Points, &p.ZonePoints,
+			&p.Grade, &p.Color, &p.SortOrder,
+		); err != nil {
+			return nil, fmt.Errorf("scan problem: %w", err)
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 func (r *CompetitionRepo) UpdateProblem(ctx context.Context, p *model.CompetitionProblem) error {
 	query := `
 		UPDATE competition_problems

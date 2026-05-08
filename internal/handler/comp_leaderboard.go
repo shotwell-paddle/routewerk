@@ -82,13 +82,17 @@ func (h *CompHandler) buildLeaderboard(r *http.Request, compID, categoryID strin
 	if err != nil {
 		return api.Leaderboard{}, err
 	}
-	var problems []model.CompetitionProblem
+	// Single batch fetch instead of N round-trips. The leaderboard
+	// rebuild fires on every score-affecting write + every SSE
+	// subscriber connect; pre-batch this was len(events) round-trips
+	// per rebuild against an already-cold cache.
+	eventIDs := make([]string, len(events))
 	for i := range events {
-		ps, err := h.repo.ListProblems(r.Context(), events[i].ID)
-		if err != nil {
-			return api.Leaderboard{}, err
-		}
-		problems = append(problems, ps...)
+		eventIDs[i] = events[i].ID
+	}
+	problems, err := h.repo.ListProblemsForEvents(r.Context(), eventIDs)
+	if err != nil {
+		return api.Leaderboard{}, err
 	}
 
 	regs, err := h.regRepo.ListByCompetition(r.Context(), compID, categoryID)

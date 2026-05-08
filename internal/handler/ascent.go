@@ -86,6 +86,9 @@ func (h *AscentHandler) MyAscents(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// MyStats returns the four denormalized counters for the climber.
+// Sub-millisecond row read post-#000037 — the grade pyramid moved to
+// MyGradePyramid below so the profile page can lazy-load it.
 func (h *AscentHandler) MyStats(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 
@@ -96,6 +99,24 @@ func (h *AscentHandler) MyStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	JSON(w, http.StatusOK, stats)
+}
+
+// MyGradePyramid returns sends/flashes grouped by grade for the
+// climber. Was bundled into MyStats; split out so the cheap stats
+// summary doesn't pay for the GROUP BY scan on every profile load.
+// Empty array when the climber has no sends.
+func (h *AscentHandler) MyGradePyramid(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	pyramid, err := h.ascents.UserGradePyramid(r.Context(), userID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if pyramid == nil {
+		pyramid = []repository.GradePyramidEntry{}
+	}
+	JSON(w, http.StatusOK, pyramid)
 }
 
 func (h *AscentHandler) RouteAscents(w http.ResponseWriter, r *http.Request) {

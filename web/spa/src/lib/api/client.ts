@@ -332,6 +332,33 @@ export async function applyPalettePreset(
   });
 }
 
+// ── Route distribution (server-aggregated) ────────────────
+
+export interface RouteDistributionBucket {
+  route_type: string;
+  grading_system: string;
+  grade: string;
+  circuit_color?: string | null; // hex; only set when grading_system === 'circuit'
+  count: number;
+}
+
+/**
+ * GET /locations/{locationId}/route-distribution — setter+.
+ *
+ * Server-side GROUP BY over active routes. Replaces the dashboard's
+ * old pattern of fetching all 500 active routes just to count them
+ * client-side; this returns ~30 rows regardless of the gym's route
+ * count. The dashboard derives both grade and circuit charts from the
+ * same response — `grading_system === 'circuit'` rows feed the
+ * circuit chart, the rest feed the grade chart.
+ */
+export async function listRouteDistribution(
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<RouteDistributionBucket[]> {
+  return request(`/locations/${locationId}/route-distribution`, { signal });
+}
+
 /** PUT /locations/{locationId}/settings — gym_manager+. Replaces the full struct. */
 export async function updateLocationSettings(
   locationId: string,
@@ -1655,12 +1682,30 @@ export interface MyStatsShape {
   total_flashes: number;
   total_logged: number;
   unique_routes: number;
-  grade_pyramid: GradePyramidEntryShape[];
 }
 
-/** GET /api/v1/me/stats — climber summary + grade pyramid. */
+/**
+ * GET /api/v1/me/stats — climber summary counters.
+ *
+ * Returns the four denormalized totals (sends/flashes/logged/unique
+ * routes) read directly from the users row. Sub-millisecond regardless
+ * of how many ascents the climber has logged. The grade pyramid is its
+ * own endpoint (getMyGradePyramid below); the profile page lazy-loads
+ * it so the cheap summary panel renders immediately.
+ */
 export async function getMyStats(signal?: AbortSignal): Promise<MyStatsShape> {
   return request('/me/stats', { signal });
+}
+
+/**
+ * GET /api/v1/me/grade-pyramid — sends grouped by grade.
+ *
+ * Split from /me/stats so the cheap summary doesn't pay for the GROUP
+ * BY scan on every profile load. Empty array when the climber has no
+ * sends.
+ */
+export async function getMyGradePyramid(signal?: AbortSignal): Promise<GradePyramidEntryShape[]> {
+  return request('/me/grade-pyramid', { signal });
 }
 
 // ── Notifications ──────────────────────────────────────────

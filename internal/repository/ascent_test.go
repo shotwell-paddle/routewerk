@@ -199,7 +199,13 @@ func TestAscentRepo_UserStats(t *testing.T) {
 	if stats.UniqueRoutes != 2 {
 		t.Errorf("UniqueRoutes = %d, want 2", stats.UniqueRoutes)
 	}
-	if len(stats.GradePyramid) < 2 {
-		t.Errorf("GradePyramid entries = %d, want >= 2", len(stats.GradePyramid))
+	// Pyramid moved to its own method post-#000037; assert it
+	// independently so the cheap UserStats summary doesn't regress.
+	pyramid, err := repo.UserGradePyramid(ctx, userID)
+	if err != nil {
+		t.Fatalf("UserGradePyramid: %v", err)
+	}
+	if len(pyramid) < 2 {
+		t.Errorf("GradePyramid entries = %d, want >= 2", len(pyramid))
 	}
 }

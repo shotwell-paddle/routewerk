@@ -41,11 +41,18 @@ func (h *Handler) ClimberProfile(w http.ResponseWriter, r *http.Request) {
 		tickFilter.Sort = "date"
 	}
 
-	// Stats
+	// Stats — UserStats now returns just the summary counters (cheap row
+	// read post-#000037), so the orphaned HTMX profile handler also has
+	// to fetch the pyramid separately. Both calls are best-effort; the
+	// page renders with zero values on either failure.
 	stats, err := h.ascentRepo.UserStats(ctx, user.ID)
 	if err != nil {
 		slog.Error("profile stats failed", "user_id", user.ID, "error", err)
 		stats = &repository.UserClimbingStats{}
+	}
+	pyramidRows, err := h.ascentRepo.UserGradePyramid(ctx, user.ID)
+	if err != nil {
+		slog.Error("profile pyramid failed", "user_id", user.ID, "error", err)
 	}
 
 	// Tick list — recent ascents with route info
@@ -73,7 +80,7 @@ func (h *Handler) ClimberProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build grade pyramid data for the template
-	pyramid := buildPyramidBars(stats.GradePyramid)
+	pyramid := buildPyramidBars(pyramidRows)
 
 	// Quest & badge data for the progressions section.
 	// Skipped entirely when the gym hasn't enabled progressions so we don't

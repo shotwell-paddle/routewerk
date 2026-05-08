@@ -8,20 +8,22 @@ import (
 
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
+	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
 // TeamHandler powers the SPA team-management surface (Phase 2.7).
 //
 // The HTMX side has had similar functionality at /settings/team since
 // the early HTMX days; this handler exposes the same operations as JSON
-// so the SPA at /app/team can drive them without reaching for cookie-auth
+// so the SPA at /team can drive them without reaching for cookie-auth
 // HTMX endpoints.
 type TeamHandler struct {
 	users *repository.UserRepo
+	audit *service.AuditService
 }
 
-func NewTeamHandler(users *repository.UserRepo) *TeamHandler {
-	return &TeamHandler{users: users}
+func NewTeamHandler(users *repository.UserRepo, audit *service.AuditService) *TeamHandler {
+	return &TeamHandler{users: users, audit: audit}
 }
 
 // teamMember is the response shape — matches repository.LocationMember
@@ -196,6 +198,17 @@ func (h *TeamHandler) UpdateMembership(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Audit who changed whom. Captures from-role + to-role + target so the
+	// log answers "who demoted whom and when" without having to triangulate
+	// user_memberships.updated_at against the actor's session.
+	if h.audit != nil {
+		h.audit.Record(r, service.AuditMemberRoleChange, "membership", membershipID, target.OrgID, map[string]interface{}{
+			"target_user_id": target.UserID,
+			"from":           target.Role,
+			"to":             req.Role,
+		})
+	}
+
 	m, err := h.users.GetMembershipByID(r.Context(), membershipID)
 	if err != nil || m == nil {
 		Error(w, http.StatusNotFound, "membership not found")
@@ -239,6 +252,13 @@ func (h *TeamHandler) RemoveMembership(w http.ResponseWriter, r *http.Request) {
 	if err := h.users.RemoveMembership(r.Context(), membershipID); err != nil {
 		Error(w, http.StatusInternalServerError, "remove failed")
 		return
+	}
+
+	if h.audit != nil {
+		h.audit.Record(r, service.AuditMemberRemove, "membership", membershipID, target.OrgID, map[string]interface{}{
+			"target_user_id": target.UserID,
+			"role":           target.Role,
+		})
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

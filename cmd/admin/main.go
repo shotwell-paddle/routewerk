@@ -57,6 +57,8 @@ func main() {
 		addMember(ctx, db, os.Args[2:])
 	case "remove-member":
 		removeMember(ctx, db, os.Args[2:])
+	case "set-role":
+		setRole(ctx, db, os.Args[2:])
 	case "list-members":
 		listMembers(ctx, db, os.Args[2:])
 	case "list-orgs":
@@ -93,6 +95,12 @@ Organizations:
 
   remove-member --org <slug-or-id> --email <email>
                Remove a user's membership from an organization.
+
+  set-role     --org <slug-or-id> --email <email> --role <role>
+               Change a user's role in an organization. Account-recovery
+               tool: e.g. restore a head_setter who self-demoted. Errors
+               if the user has multiple memberships in the org.
+               Roles: org_admin, gym_manager, head_setter, setter, climber
 
   list-members --org <slug-or-id>
                List all members of an organization.
@@ -328,6 +336,85 @@ func removeMember(ctx context.Context, db *pgxpool.Pool, args []string) {
 }
 
 // ============================================================
+// set-role
+// ============================================================
+
+// setRole updates a user's role at their existing membership in an
+// org. Account-recovery tool: when a head_setter self-demotes and
+// locks themselves out of the team page, a peer manager can promote
+// them back via the UI — but if no peer at the right level exists,
+// this CLI is the escape hatch.
+//
+// The JSON team API enforces a privilege-escalation guard (caller
+// must outrank target — see internal/handler/team.go); this CLI
+// intentionally bypasses that since it's the rescue path used when
+// no qualifying caller exists.
+//
+// Errors if the user has multiple active memberships in the org —
+// the typical recovery case is a single membership and bulk-updating
+// every membership row could destroy admin access (e.g. an org_admin
+// who also holds a location-specific climber row).
+func setRole(ctx context.Context, db *pgxpool.Pool, args []string) {
+	var orgRef, email, role string
+	for i := 0; i < len(args)-1; i += 2 {
+		switch args[i] {
+		case "--org":
+			orgRef = args[i+1]
+		case "--email":
+			email = args[i+1]
+		case "--role":
+			role = args[i+1]
+		}
+	}
+
+	if orgRef == "" || email == "" || role == "" {
+		fmt.Fprintln(os.Stderr, "error: --org, --email, and --role are required")
+		os.Exit(1)
+	}
+
+	validRoles := map[string]bool{"org_admin": true, "gym_manager": true, "head_setter": true, "setter": true, "climber": true}
+	if !validRoles[role] {
+		log.Fatalf("invalid role: %s (valid: org_admin, gym_manager, head_setter, setter, climber)", role)
+	}
+
+	orgRepo := repository.NewOrgRepo(db)
+	userRepo := repository.NewUserRepo(db)
+
+	org := resolveOrg(ctx, orgRepo, orgRef)
+	user, err := userRepo.GetByEmail(ctx, strings.ToLower(strings.TrimSpace(email)))
+	if err != nil {
+		log.Fatalf("database error: %v", err)
+	}
+	if user == nil {
+		log.Fatalf("user not found: %s", email)
+	}
+
+	var memberCount int
+	err = db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM user_memberships WHERE user_id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+		user.ID, org.ID).Scan(&memberCount)
+	if err != nil {
+		log.Fatalf("database error: %v", err)
+	}
+	if memberCount == 0 {
+		log.Fatalf("%s has no active membership in %q", email, org.Name)
+	}
+	if memberCount > 1 {
+		log.Fatalf("%s has %d active memberships in %q — set-role does not support multi-membership users; patch the row directly via psql", email, memberCount, org.Name)
+	}
+
+	tag, err := db.Exec(ctx,
+		`UPDATE user_memberships SET role = $1::user_role, updated_at = NOW() WHERE user_id = $2 AND org_id = $3 AND deleted_at IS NULL`,
+		role, user.ID, org.ID,
+	)
+	if err != nil {
+		log.Fatalf("database error: %v", err)
+	}
+
+	fmt.Printf("set role=%s for %s in %q (%d row updated)\n", role, email, org.Name, tag.RowsAffected())
+}
+
+// ============================================================
 // list-members
 // ============================================================
 
@@ -416,21 +503,50 @@ func listOrgs(ctx context.Context, db *pgxpool.Pool) {
 // ============================================================
 
 func resolveOrg(ctx context.Context, orgRepo *repository.OrgRepo, ref string) *model.Organization {
-	// Try by ID first (UUIDs contain hyphens), then by slug
-	org, err := orgRepo.GetByID(ctx, ref)
+	// Pick lookup path by format: only attempt GetByID for inputs that
+	// are shaped like a UUID. The previous "try ID first, fall through
+	// to slug" approach crashed Postgres with `invalid input syntax for
+	// type uuid` on any non-UUID input (the SELECT on a uuid column
+	// fails before the caller can fall through), making `--org <slug>`
+	// unusable despite the help text advertising it.
+	var org *model.Organization
+	var err error
+	if looksLikeUUID(ref) {
+		org, err = orgRepo.GetByID(ctx, ref)
+	} else {
+		org, err = orgRepo.GetBySlug(ctx, ref)
+	}
 	if err != nil {
 		log.Fatalf("database error: %v", err)
-	}
-	if org == nil {
-		org, err = orgRepo.GetBySlug(ctx, ref)
-		if err != nil {
-			log.Fatalf("database error: %v", err)
-		}
 	}
 	if org == nil {
 		log.Fatalf("org not found: %s", ref)
 	}
 	return org
+}
+
+// looksLikeUUID returns true for canonical 36-char UUIDs with the
+// 8-4-4-4-12 hex layout (e.g. "f5994c22-d690-4718-bc09-1bde813f7f98").
+// Used by resolveOrg to dispatch between GetByID and GetBySlug
+// without making Postgres parse a non-UUID into a uuid column.
+func looksLikeUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+			continue
+		}
+		isHex := (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+		if !isHex {
+			return false
+		}
+	}
+	return true
 }
 
 func slugify(s string) string {

@@ -136,7 +136,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	// construction up here so both code paths share a single cache.
 	settingsRepo := repository.NewCachedSettingsRepo(repository.NewSettingsRepo(db))
 	routeHandler := handler.NewRouteHandler(routeRepo, settingsRepo, auditService)
-	teamHandler := handler.NewTeamHandler(userRepo)
+	teamHandler := handler.NewTeamHandler(userRepo, auditService)
 	questHandler := handler.NewQuestHandler(deps.QuestSvc)
 	// notifHandler is initialized lower, after notifRepo is constructed
 	// for the web handler bundle.

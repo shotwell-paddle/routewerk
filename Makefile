@@ -1,4 +1,4 @@
-.PHONY: build build-admin run dev test migrate migrate-down migrate-version docker-build docker-run refresh-dev-db spa-install spa-build spa-dev spa-check api-gen api-gen-check
+.PHONY: build build-admin run dev test migrate migrate-down migrate-version docker-build docker-run refresh-dev-db spa-install spa-build spa-dev spa-check api-gen api-gen-check clean-branches
 
 # Build the API binary with the embedded SPA. Requires Node + npm.
 # The spa_embed build tag flips embed.go on; without it, embed_stub.go
@@ -96,3 +96,19 @@ refresh-dev-db:
 	@echo "Restoring to dev via proxy on localhost:15433..."
 	pg_restore --clean --no-owner --no-acl -h localhost -p 15433 -U postgres -d routewerk_dev /tmp/routewerk_prod.dump
 	@echo "Done. Dev database refreshed from production."
+
+# Prune local branches whose upstream has been deleted (typical after a
+# squash-merge with --delete-branch on the remote). Squash rewrites
+# history, so `git branch --merged` can't see these as merged — we
+# need -D to force the cleanup.
+#
+# Safe by construction: only branches with `[gone]` upstream tracking
+# are deleted. Anything still pushed to origin is left alone.
+clean-branches:
+	@git fetch --prune origin >/dev/null
+	@gone=$$(git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads | awk '$$2=="[gone]"{print $$1}'); \
+	if [ -z "$$gone" ]; then \
+		echo "no stale branches to delete"; \
+	else \
+		echo "$$gone" | xargs -n1 git branch -D; \
+	fi

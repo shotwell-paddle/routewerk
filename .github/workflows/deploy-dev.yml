@@ -1,8 +1,25 @@
 name: Deploy Staging
 
+# Manual-fire only after the GitHub Flow migration (chore/github-flow-migration).
+#
+# Was on push-to-dev; the dev branch went away because it generated more
+# drift than coordination value (one developer, no parallel feature work
+# to integrate). The staging Fly app stays around as a deliberate
+# pre-merge smoke target: useful when a PR includes a database
+# migration or a config change that you want to see run against a real
+# (non-prod) environment before it lands on main.
+#
+# Usage:
+#   gh workflow run deploy-dev.yml -f ref=<branch-or-sha>
+# or use the "Run workflow" button in the Actions tab.
+
 on:
-  push:
-    branches: [dev]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or SHA to deploy"
+        required: true
+        default: "main"
 
 jobs:
   deploy:
@@ -12,6 +29,8 @@ jobs:
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 

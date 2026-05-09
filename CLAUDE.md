@@ -120,48 +120,52 @@ The canonical remote is **`shotwell-paddle/routewerk`**. My local git config has
 
 ### Branch model
 
-- `main` — production. Only updated via PRs (never direct push).
-- `dev` — staging / integration. Feature branches merge here first.
-- Feature branches (`fix/...`, `feat/...`, `hotfix/...`) — branch off `dev` (or `main` for hotfixes).
-- **Squash-merge feature PRs into `dev`.** "Create a merge commit" caused divergence (orphan merge commits on main, add/add conflicts on the next release) — stay on squash.
-- **For `dev → main` release PRs, use "Rebase and merge" — NOT squash.** This brings dev's individual feature commits onto main (instead of one squashed "Release:" commit), so main's history stays bisectable per feature.
-- **After the release PR merges, force-push dev to match main** so the two stay aligned:
-  ```
-  git checkout dev && git fetch origin && git reset --hard origin/main && git push --force-with-lease origin dev
-  ```
-  Why this is needed: GitHub's "Rebase and merge" rewrites committer dates and produces new SHAs even when a true fast-forward was possible (verified 2026-04-30 after #27). The only mechanism that would skip the resync is `git push origin origin/dev:main` from local, but main's branch protection requires PR-merging, so direct pushes are blocked. Squash-merge has the same drift; merge-commits cause add/add conflicts on the next release. Resync is the cheapest of the three.
-- If a hotfix landed directly on main between releases, sync dev first (`git checkout dev && git merge --ff-only origin/main && git push`) before opening the next release PR.
+GitHub Flow. One long-lived branch.
 
-### Standard flow: feature → dev → main → deploy
+- `main` — the only long-lived branch. Updated via PRs (never direct push). Push to main triggers prod deploy.
+- Feature branches (`fix/...`, `feat/...`, `hotfix/...`, `chore/...`, `docs/...`) — branch off `main`, PR back into `main`.
+- **Always squash-merge.** One commit per feature on main. Reverting a feature is `git revert <sha>` against the squash commit; no merge-commit -m flags, no per-feature commit hunting. Reviewable in `git log --oneline`.
+
+There is no `dev` branch and no release PR. The unit of release is a feature PR. CI on the PR + a manual staging deploy (when needed) replace the integration buffer that `dev` used to be.
+
+#### Why we changed (2026-05-09)
+
+We had `dev` + `main` with squash-into-dev + rebase-into-main. The rebase rewrites SHAs, which means dev and main drift content-equal but SHA-different after every release. The fix was a force-push resync of `dev` after each release. Forget once and the next release PR conflicts with itself; we hit this on PR #104 and had to fall back to squash-merge anyway.
+
+The structural cause: rebase + squash both rewrite history, so git can't compute "is this in main?" reliably. We were paying recurring drift tax for a benefit (linear bisectable per-feature history on main) that we never actually used. With one developer doing one feature at a time, `dev` never integrated anything — it was a holding pen generating drift.
+
+GitHub Flow drops the staging branch and the dual-merge-strategy ceremony; main is the integration point. Pre-merge testing happens on the PR (CI required) and optionally on the staging Fly app via manual `workflow_dispatch` of `deploy-dev.yml` (see `.github/workflows/deploy-dev.yml`).
+
+### Standard flow: feature → PR → main → deploy
 
 ```
-# branch off dev
-git checkout dev && git pull --ff-only
+# branch off main
+git checkout main && git pull --ff-only
 git checkout -b fix/short-description
 
 # work, commit small logical commits
 git commit -m 'short imperative message'
 git push -u origin fix/short-description
 
-# open PR into dev (NOT main)
-gh pr create --repo shotwell-paddle/routewerk --base dev \
+# open PR into main
+gh pr create --repo shotwell-paddle/routewerk --base main \
   --title 'short title' --body-file /tmp/body.md
+
+# (optional) deploy this branch to staging for migration / config smoke
+gh workflow run deploy-dev.yml --repo shotwell-paddle/routewerk \
+  -f ref=fix/short-description
 
 # after review + CI green, squash-merge
 gh pr merge <N> --repo shotwell-paddle/routewerk --squash --delete-branch
 
-# release to prod: open dev → main PR
-gh pr create --repo shotwell-paddle/routewerk --base main --head dev \
-  --title 'Release: ...' --body-file /tmp/body.md
-
-# after CI green, rebase-merge (not squash) — brings dev's commits onto main
-gh pr merge <N> --repo shotwell-paddle/routewerk --rebase
-
 # deploy is automatic via deploy-prod.yml on push to main.
-
-# resync dev to main (rebase-merge re-stamped SHAs, so they drift content-equal)
-git checkout dev && git fetch origin && git reset --hard origin/main && git push --force-with-lease origin dev
 ```
+
+That's it. No release PR, no resync, no rebase-vs-squash decision.
+
+### Hotfixes
+
+Same flow as features. Branch off main, PR into main, squash-merge, ships on the next push. The `hotfix/` prefix is just a label for `git log` filtering; it doesn't change the merge mechanics.
 
 ### gh merge gotchas
 
@@ -172,8 +176,72 @@ git checkout dev && git fetch origin && git reset --hard origin/main && git push
 ### Force-push safety
 
 - **Never use `git push --force`.** Use `--force-with-lease` so we refuse to overwrite remote work that was pushed since we last fetched.
-- Don't ever force-push `main` or `dev`. If those are wrong, fix forward with a new commit/PR.
+- Don't force-push `main`. If main is wrong, fix forward with a new commit/PR.
 - Feature branches I own: `--force-with-lease` is fine after a rebase or amend.
+
+### Local hygiene
+
+Squash-merge orphans the local branch (it's "merged" by content, but its SHAs aren't on main, so `git branch --merged` doesn't see it). `--delete-branch` on the merge cleans up the remote ref but not the local one. Run periodically:
+
+```
+make clean-branches
+```
+
+That target prunes deleted remote refs and force-deletes local branches whose upstream is `[gone]`. See `Makefile`.
+
+### Staging deploys (preview app)
+
+There is a `routewerk-dev` Fly app at `https://routewerk-dev.fly.dev` with its own Postgres (`routewerk-dev-db`). It used to deploy automatically on push-to-dev; after the GitHub Flow migration (#109), it deploys only on manual `workflow_dispatch`. The staging app exists to catch the class of bugs CI can't catch — anything that needs a real environment.
+
+#### When Claude should fire a staging deploy
+
+Suggest one (and offer to fire it) when ANY of the following is true of a PR:
+
+1. **It includes a database migration** (`internal/database/migrations/000NNN_*.up.sql` is being added). The migration runs on staging exactly the way it'll run on prod — including any backfill UPDATE, trigger creation, or constraint addition. Catch "this won't apply cleanly" and "this locks the table for too long" before prod startup hangs.
+2. **It changes `fly.toml`, `fly.dev.toml`, or any GitHub Actions workflow.** Config changes are invisible to CI. Staging tells you whether the new VM size boots, whether a new secret is reachable, whether a new env var is wired.
+3. **It touches auth, sessions, cookies, CSRF, or any middleware on the request path.** These break in subtle ways CI can't exercise (the CSRF double-submit timing bug we hit locally is the canonical example). Real browser against a real server is the only check that matters.
+4. **It changes the SPA's API client request shape** (cookies, headers, credentials mode) or proxy assumptions. Same reason — CI doesn't run a browser.
+5. **It bumps a Go major version, the Node version in `web/spa/package.json`, or any dependency that affects startup** (pgx, chi middleware, etc.).
+6. **The user explicitly asks** for a staging deploy on this PR, or asks "does this work?" / "did this run cleanly?" before merging.
+
+Do NOT fire one for: pure refactors, comment / doc changes, SPA polish that doesn't touch the API, handler-internal logic changes that have unit-test coverage. CI is the right gate for those.
+
+When in doubt: state the case for a staging deploy in the PR body and let the user decide. Don't fire one without surfacing the intent.
+
+#### How to fire one
+
+```
+gh workflow run deploy-dev.yml --repo shotwell-paddle/routewerk \
+  -f ref=<branch-name-or-sha>
+```
+
+Then watch the run:
+```
+sleep 4 && gh run list --repo shotwell-paddle/routewerk --workflow deploy-dev.yml --limit 1
+gh run watch <run-id> --repo shotwell-paddle/routewerk
+```
+
+After it completes, confirm the new image is live:
+```
+flyctl status -a routewerk-dev | head -10
+curl -s https://routewerk-dev.fly.dev/health
+```
+
+#### What to actually verify after a staging deploy
+
+Pull from this menu based on what the PR changed; don't run all of them every time:
+
+- **For migration PRs:** `flyctl logs -a routewerk-dev --no-tail | grep -E "migration|migrate" | tail -10` to confirm the migration applied (look for `"migrations applied","version":NNN`). Then hit the endpoint that exercises the new schema (e.g. `/api/v1/me/stats` for the counter columns) and verify response shape.
+- **For config PRs:** `flyctl status -a routewerk-dev` shows the live VM size + image. `flyctl logs -a routewerk-dev` for the first minute after deploy shows any startup errors.
+- **For auth/middleware PRs:** Walk a real auth flow — `curl -c jar https://routewerk-dev.fly.dev/login` to grab the CSRF cookie, then POST credentials, then hit a gated endpoint with the cookie jar. Cookie-by-cookie diff vs prod tells you what changed.
+- **Always:** Check `flyctl logs -a routewerk-dev --no-tail | grep -E "ERROR|WARN" | tail -20` for the first 60 seconds after deploy.
+
+#### Awareness items
+
+- **Single shared environment.** Not per-PR isolation. If two PRs need staging at the same time, the second clobbers the first. In practice rare; flag it if it happens.
+- **DB state can drift from prod.** Migrations applied to staging stay applied. If a PR introduces migration 000038, runs it on staging, then gets abandoned, staging's schema is ahead of prod. The fix is `make refresh-dev-db` (which restores from a prod snapshot via two `fly proxy` sessions — see Makefile). Mention this when abandoning a migration PR; the user decides whether to refresh.
+- **Auto-deploy is gone.** Don't assume staging is current. If you need to verify against staging, fire a deploy first (or check `flyctl status -a routewerk-dev` to see what SHA is live).
+- **Don't burn credits.** Each staging deploy costs a few cents and 1-3 minutes. Group changes into a single deploy where possible rather than firing one per file edit.
 
 ### Recovering from a bad reset
 

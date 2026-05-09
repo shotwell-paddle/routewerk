@@ -189,6 +189,60 @@ make clean-branches
 
 That target prunes deleted remote refs and force-deletes local branches whose upstream is `[gone]`. See `Makefile`.
 
+### Staging deploys (preview app)
+
+There is a `routewerk-dev` Fly app at `https://routewerk-dev.fly.dev` with its own Postgres (`routewerk-dev-db`). It used to deploy automatically on push-to-dev; after the GitHub Flow migration (#109), it deploys only on manual `workflow_dispatch`. The staging app exists to catch the class of bugs CI can't catch — anything that needs a real environment.
+
+#### When Claude should fire a staging deploy
+
+Suggest one (and offer to fire it) when ANY of the following is true of a PR:
+
+1. **It includes a database migration** (`internal/database/migrations/000NNN_*.up.sql` is being added). The migration runs on staging exactly the way it'll run on prod — including any backfill UPDATE, trigger creation, or constraint addition. Catch "this won't apply cleanly" and "this locks the table for too long" before prod startup hangs.
+2. **It changes `fly.toml`, `fly.dev.toml`, or any GitHub Actions workflow.** Config changes are invisible to CI. Staging tells you whether the new VM size boots, whether a new secret is reachable, whether a new env var is wired.
+3. **It touches auth, sessions, cookies, CSRF, or any middleware on the request path.** These break in subtle ways CI can't exercise (the CSRF double-submit timing bug we hit locally is the canonical example). Real browser against a real server is the only check that matters.
+4. **It changes the SPA's API client request shape** (cookies, headers, credentials mode) or proxy assumptions. Same reason — CI doesn't run a browser.
+5. **It bumps a Go major version, the Node version in `web/spa/package.json`, or any dependency that affects startup** (pgx, chi middleware, etc.).
+6. **The user explicitly asks** for a staging deploy on this PR, or asks "does this work?" / "did this run cleanly?" before merging.
+
+Do NOT fire one for: pure refactors, comment / doc changes, SPA polish that doesn't touch the API, handler-internal logic changes that have unit-test coverage. CI is the right gate for those.
+
+When in doubt: state the case for a staging deploy in the PR body and let the user decide. Don't fire one without surfacing the intent.
+
+#### How to fire one
+
+```
+gh workflow run deploy-dev.yml --repo shotwell-paddle/routewerk \
+  -f ref=<branch-name-or-sha>
+```
+
+Then watch the run:
+```
+sleep 4 && gh run list --repo shotwell-paddle/routewerk --workflow deploy-dev.yml --limit 1
+gh run watch <run-id> --repo shotwell-paddle/routewerk
+```
+
+After it completes, confirm the new image is live:
+```
+flyctl status -a routewerk-dev | head -10
+curl -s https://routewerk-dev.fly.dev/health
+```
+
+#### What to actually verify after a staging deploy
+
+Pull from this menu based on what the PR changed; don't run all of them every time:
+
+- **For migration PRs:** `flyctl logs -a routewerk-dev --no-tail | grep -E "migration|migrate" | tail -10` to confirm the migration applied (look for `"migrations applied","version":NNN`). Then hit the endpoint that exercises the new schema (e.g. `/api/v1/me/stats` for the counter columns) and verify response shape.
+- **For config PRs:** `flyctl status -a routewerk-dev` shows the live VM size + image. `flyctl logs -a routewerk-dev` for the first minute after deploy shows any startup errors.
+- **For auth/middleware PRs:** Walk a real auth flow — `curl -c jar https://routewerk-dev.fly.dev/login` to grab the CSRF cookie, then POST credentials, then hit a gated endpoint with the cookie jar. Cookie-by-cookie diff vs prod tells you what changed.
+- **Always:** Check `flyctl logs -a routewerk-dev --no-tail | grep -E "ERROR|WARN" | tail -20` for the first 60 seconds after deploy.
+
+#### Awareness items
+
+- **Single shared environment.** Not per-PR isolation. If two PRs need staging at the same time, the second clobbers the first. In practice rare; flag it if it happens.
+- **DB state can drift from prod.** Migrations applied to staging stay applied. If a PR introduces migration 000038, runs it on staging, then gets abandoned, staging's schema is ahead of prod. The fix is `make refresh-dev-db` (which restores from a prod snapshot via two `fly proxy` sessions — see Makefile). Mention this when abandoning a migration PR; the user decides whether to refresh.
+- **Auto-deploy is gone.** Don't assume staging is current. If you need to verify against staging, fire a deploy first (or check `flyctl status -a routewerk-dev` to see what SHA is live).
+- **Don't burn credits.** Each staging deploy costs a few cents and 1-3 minutes. Group changes into a single deploy where possible rather than firing one per file edit.
+
 ### Recovering from a bad reset
 
 Common pattern: a commit gets "lost" because a branch was reset to the wrong ref.

@@ -45,8 +45,12 @@ func (h *Handler) LoginPage(w http.ResponseWriter, r *http.Request) {
 		CSRFToken string
 		Email     string
 		Error     string
+		Next      string
 	}{
 		CSRFToken: middleware.TokenFromRequest(r),
+		// Preserve ?next= (e.g. the SPA auth gate sends /login?next=/walls)
+		// through the form so a successful login lands on the intended page.
+		Next: safeRedirect(r.URL.Query().Get("next"), ""),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -144,12 +148,14 @@ func (h *Handler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		slog.Error("csrf rotate after login failed", "user_id", user.ID, "error", err)
 	}
 
-	// Users with no location need to pick a gym or set up the first one
+	// Users with no location need to pick a gym or set up the first one —
+	// deep-linking into the app before joining a gym is pointless, so the
+	// next target is ignored in that case.
 	if locationID == nil {
 		http.Redirect(w, r, h.postAuthRedirect(r), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, safeRedirect(r.FormValue("next"), "/"), http.StatusSeeOther)
 }
 
 // loginError re-renders the login page with an error message.
@@ -164,10 +170,14 @@ func (h *Handler) loginError(w http.ResponseWriter, r *http.Request, msg, email 
 		CSRFToken string
 		Email     string
 		Error     string
+		Next      string
 	}{
 		CSRFToken: middleware.TokenFromRequest(r),
 		Email:     email,
 		Error:     msg,
+		// FormValue covers both the POST body and query string, so the
+		// next target survives a failed submit and gets re-posted.
+		Next: safeRedirect(r.FormValue("next"), ""),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

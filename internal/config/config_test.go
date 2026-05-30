@@ -34,6 +34,31 @@ func TestValidate_ValidProdPasses(t *testing.T) {
 	}
 }
 
+func TestValidate_MagicLinkEnabledWithoutSMTPFails(t *testing.T) {
+	c := validProdConfig()
+	c.MagicLinkEnabled = true // no SMTP_HOST / SMTP_FROM set
+	problems := c.Validate()
+	found := false
+	for _, p := range problems {
+		if strings.Contains(p, "MAGIC_LINK_ENABLED") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected MAGIC_LINK_ENABLED problem when SMTP unconfigured, got none")
+	}
+}
+
+func TestValidate_MagicLinkEnabledWithSMTPPasses(t *testing.T) {
+	c := validProdConfig()
+	c.MagicLinkEnabled = true
+	c.SMTPHost = "smtp.postmarkapp.com"
+	c.SMTPFrom = "noreply@routewerk.com"
+	if problems := c.Validate(); len(problems) > 0 {
+		t.Errorf("magic link with SMTP configured should pass, got %v", problems)
+	}
+}
+
 func TestValidate_DefaultDatabaseURLFails(t *testing.T) {
 	c := validProdConfig()
 	c.DatabaseURL = "postgres://routewerk:password@localhost:5432/routewerk?sslmode=disable"

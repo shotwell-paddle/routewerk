@@ -29,16 +29,21 @@ func (c EmailConfig) IsConfigured() bool {
 }
 
 // EmailService sends transactional emails via SMTP. In dev mode (no SMTP
-// configured), it logs emails to stdout instead of sending them.
+// configured), it logs emails to stdout instead of sending them. When
+// requireDelivery is set (production), an unconfigured send is a hard error
+// so jobs fail loudly and dead-letter rather than silently dropping mail.
 type EmailService struct {
-	cfg         EmailConfig
-	frontendURL string
+	cfg             EmailConfig
+	frontendURL     string
+	requireDelivery bool
 }
 
-// NewEmailService creates an email service. If cfg is not configured,
-// emails are logged instead of sent.
-func NewEmailService(cfg EmailConfig, frontendURL string) *EmailService {
-	return &EmailService{cfg: cfg, frontendURL: frontendURL}
+// NewEmailService creates an email service. If cfg is not configured and
+// requireDelivery is false (dev), emails are logged instead of sent. If
+// requireDelivery is true (production), send returns an error when SMTP is
+// not configured.
+func NewEmailService(cfg EmailConfig, frontendURL string, requireDelivery bool) *EmailService {
+	return &EmailService{cfg: cfg, frontendURL: frontendURL, requireDelivery: requireDelivery}
 }
 
 // ── Email Types ─────────────────────────────────────────────────
@@ -157,6 +162,13 @@ func (s *EmailService) handleWelcome(_ context.Context, job jobs.Job) error {
 
 func (s *EmailService) send(to, subject, htmlBody string) error {
 	if !s.cfg.IsConfigured() {
+		if s.requireDelivery {
+			// Production with no SMTP configured. Returning an error (rather
+			// than logging and swallowing) makes the job fail and retry/
+			// dead-letter so the misconfiguration is visible instead of mail
+			// vanishing behind a 202.
+			return fmt.Errorf("email not sent: SMTP not configured (to=%s subject=%q)", to, subject)
+		}
 		// Dev mode: log the email
 		slog.Info("email (dev mode, not sent)",
 			"to", to,

@@ -80,7 +80,7 @@ func main() {
 		Username: cfg.SMTPUsername,
 		Password: cfg.SMTPPassword,
 		From:     cfg.SMTPFrom,
-	}, cfg.FrontendURL)
+	}, cfg.FrontendURL, !cfg.IsDev())
 	emailSvc.RegisterHandlers(jobQueue)
 
 	// Notification service — in-app notifications backed by job queue

@@ -318,8 +318,11 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			// Magic-link verify: GET so clicking a link from email works.
 			// CSRF doesn't apply (GET); auth not required (the token is
 			// the credential). The handler sets the session cookie on
-			// success and redirects to next/dashboard.
-			r.Get("/verify-magic", magicVerifyHandler.Verify)
+			// success and redirects to next/dashboard. Gated off until
+			// email delivery is wired (cfg.MagicLinkEnabled).
+			if cfg.MagicLinkEnabled {
+				r.Get("/verify-magic", magicVerifyHandler.Verify)
+			}
 		})
 
 		// Authenticated HTMX surfaces. After Phase 2.10 swapped the SPA
@@ -405,7 +408,12 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 			// above; per-email throttle (3 / 15 min) is enforced inside
 			// the service against the DB so it survives process restarts
 			// and isn't bypassed by hitting different API instances.
-			r.Post("/auth/magic/request", magicAuthHandler.Request)
+			// Gated off until email delivery is wired (cfg.MagicLinkEnabled);
+			// while off the path 404s so the SPA can't request an
+			// undeliverable link and show a false "check your inbox".
+			if cfg.MagicLinkEnabled {
+				r.Post("/auth/magic/request", magicAuthHandler.Request)
+			}
 		})
 
 		// Refresh token — accepts expired access tokens (signature still verified).

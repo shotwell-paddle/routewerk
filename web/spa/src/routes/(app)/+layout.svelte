@@ -32,10 +32,17 @@
   // Auth gate at the layout level — every page in the (app) route group
   // inherits it. The (app) prefix is a SvelteKit route group so the URL
   // is just /, /walls, /routes, …
+  //
+  // Unauthenticated users go to the server-rendered /login (password auth),
+  // which mints the same _rw_session cookie the SPA reads. Magic-link
+  // (/sign-in) is parked until email delivery is wired — see
+  // MAGIC_LINK_ENABLED. /login is a full-page nav out of the SPA; on success
+  // it redirects back to ?next=.
   $effect(() => {
     const a = authState();
     if (a.loaded && a.me === null) {
-      goto('/sign-in?next=' + encodeURIComponent(page.url.pathname + page.url.search));
+      window.location.href =
+        '/login?next=' + encodeURIComponent(page.url.pathname + page.url.search);
     }
   });
 

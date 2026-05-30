@@ -37,13 +37,21 @@ type Config struct {
 	DBHealthCheckPeriod   time.Duration
 	QueryTimeout          time.Duration
 
-	// SMTP (optional — if not configured, emails are logged to stdout)
+	// SMTP (optional — if not configured, emails are logged to stdout in
+	// dev. In production, an unconfigured send is a hard error: see
+	// EmailService.send and the MagicLinkEnabled guardrail in Validate.)
 	SMTPHost     string
 	SMTPPort     string
 	SMTPUsername string
 	SMTPPassword string
 	SMTPFrom     string
 
+	// MagicLinkEnabled gates the passwordless sign-in flow. Default false:
+	// the magic-link request endpoint and UI entry points stay off until
+	// email delivery is actually wired up. When true in production, Validate
+	// requires SMTP to be configured so links can never be silently dropped.
+	// Env: MAGIC_LINK_ENABLED.
+	MagicLinkEnabled bool
 }
 
 func Load() *Config {
@@ -87,6 +95,8 @@ func Load() *Config {
 		SMTPUsername: getEnv("SMTP_USERNAME", ""),
 		SMTPPassword: getEnv("SMTP_PASSWORD", ""),
 		SMTPFrom:     getEnv("SMTP_FROM", ""),
+
+		MagicLinkEnabled: getEnvBool("MAGIC_LINK_ENABLED", false),
 	}
 }
 
@@ -143,6 +153,15 @@ func (c *Config) Validate() []string {
 		"FRONTEND_URL must be set to the production origin")
 	check(!strings.HasPrefix(c.FrontendURL, "http://"),
 		"FRONTEND_URL must use HTTPS in production")
+
+	// Magic-link delivery. The flow generates a token, stores it, and emails
+	// the link via SMTP. If MAGIC_LINK_ENABLED is on but SMTP isn't set, every
+	// request would silently succeed (202 "check your email") while delivering
+	// nothing — so refuse to boot. Keep the flag off until email is wired.
+	if c.MagicLinkEnabled {
+		check(c.SMTPHost != "" && c.SMTPFrom != "",
+			"MAGIC_LINK_ENABLED requires SMTP_HOST and SMTP_FROM (magic links can't be delivered without them)")
+	}
 
 	return problems
 }

@@ -119,9 +119,26 @@ func TestWelcomeTemplate(t *testing.T) {
 }
 
 func TestNewEmailService(t *testing.T) {
-	svc := NewEmailService(EmailConfig{}, "https://routewerk.com")
+	svc := NewEmailService(EmailConfig{}, "https://routewerk.com", false)
 	if svc == nil {
 		t.Fatal("NewEmailService returned nil")
+	}
+}
+
+func TestEmailService_Send_UnconfiguredDev(t *testing.T) {
+	// Dev (requireDelivery=false) with no SMTP: logs and swallows.
+	svc := NewEmailService(EmailConfig{}, "https://routewerk.com", false)
+	if err := svc.send("user@test.com", "Hi", "<p>hi</p>"); err != nil {
+		t.Errorf("dev send should not error when SMTP unconfigured: %v", err)
+	}
+}
+
+func TestEmailService_Send_UnconfiguredProd(t *testing.T) {
+	// Production (requireDelivery=true) with no SMTP: hard error so the job
+	// fails loudly instead of silently dropping the email.
+	svc := NewEmailService(EmailConfig{}, "https://routewerk.com", true)
+	if err := svc.send("user@test.com", "Hi", "<p>hi</p>"); err == nil {
+		t.Error("prod send should error when SMTP unconfigured")
 	}
 }
 

@@ -130,6 +130,37 @@
 
   const isCircuit = $derived(form.grading_system === 'circuit');
 
+  // Normalize a hex for comparison: lowercase + expand 3-digit shorthand.
+  // A stored route color can differ in case/shorthand from the palette hex
+  // (the backend matches case-insensitively too — see route.go holdColorNames),
+  // so a strict === would fail to highlight the right swatch in edit mode.
+  function normHex(h: string | null | undefined): string {
+    let s = (h ?? '').trim().toLowerCase();
+    if (/^#[0-9a-f]{3}$/.test(s)) {
+      s = '#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3];
+    }
+    return s;
+  }
+
+  function isPickedColor(hex: string): boolean {
+    return normHex(form.color) === normHex(hex);
+  }
+
+  // Name of the currently-picked hold color (for the readout next to the
+  // swatch grid). Empty when nothing is selected or the hex isn't in the
+  // gym palette.
+  const selectedColorName = $derived(
+    holdColors.find((c) => isPickedColor(c.hex))?.name ?? '',
+  );
+
+  // Switching boulder style clears the grade so a stale V-grade can't ride
+  // along as an invalid circuit name (or vice versa).
+  function selectStyle(sys: string) {
+    if (form.grading_system === sys) return;
+    form.grading_system = sys;
+    form.grade = '';
+  }
+
   function buildBody(): SessionRouteWriteShape | null {
     if (!form.grade) {
       localError = isCircuit ? 'Pick a circuit.' : 'Pick a grade.';
@@ -163,45 +194,50 @@
 </script>
 
 <form class="climb-form" onsubmit={handleSubmit}>
-  <div class="grid">
-    {#if !isRopeWall}
-      <!-- Setters can always choose either system; the dropdown just
-           defaults to the gym's boulder_method preference. -->
-      <label class="field">
-        <span>Style</span>
-        <select bind:value={form.grading_system}>
-          <option value="v_scale">V-scale</option>
-          <option value="circuit">Circuit</option>
-        </select>
-      </label>
-    {/if}
+  {#if !isRopeWall}
+    <!-- Setters can always choose either system; it just defaults to the
+         gym's boulder_method preference. -->
+    <div class="field">
+      <span>Style</span>
+      <div class="seg" role="group" aria-label="Grading style">
+        <button type="button" class="seg-btn" class:on={form.grading_system === 'v_scale'}
+                aria-pressed={form.grading_system === 'v_scale'}
+                onclick={() => selectStyle('v_scale')}>V-scale</button>
+        <button type="button" class="seg-btn" class:on={form.grading_system === 'circuit'}
+                aria-pressed={form.grading_system === 'circuit'}
+                onclick={() => selectStyle('circuit')}>Circuit</button>
+      </div>
+    </div>
+  {/if}
 
-    <label class="field">
-      <span>{isCircuit ? 'Circuit *' : 'Grade *'}</span>
-      <select bind:value={form.grade}>
-        <option value="">{isCircuit ? 'Pick a circuit…' : 'Pick a grade…'}</option>
-        {#each gradeOptions as g}
-          <option value={g}>{g}</option>
+  <div class="field">
+    <span>{isCircuit ? 'Circuit *' : 'Grade *'}</span>
+    <div class="chips">
+      {#each gradeOptions as g}
+        <button type="button" class="chip" class:on={form.grade === g}
+                aria-pressed={form.grade === g}
+                onclick={() => (form.grade = g)}>{g}</button>
+      {/each}
+    </div>
+  </div>
+
+  <div class="field">
+    <span>Hold color *{#if selectedColorName}<span class="picked"> · {selectedColorName}</span>{/if}</span>
+    {#if holdColors.length > 0}
+      <div class="swatches">
+        {#each holdColors as c (c.name)}
+          <button type="button" class="sw" class:on={isPickedColor(c.hex)}
+                  aria-pressed={isPickedColor(c.hex)}
+                  style="background:{c.hex}" title={c.name} aria-label={c.name}
+                  onclick={() => (form.color = c.hex)}></button>
         {/each}
-      </select>
-    </label>
-
-    <label class="field">
-      <span>Hold color *</span>
+      </div>
+    {:else}
       <div class="color-input">
-        {#if holdColors.length > 0}
-          <select bind:value={form.color}>
-            <option value="">Pick…</option>
-            {#each holdColors as c (c.name)}
-              <option value={c.hex}>{c.name}</option>
-            {/each}
-          </select>
-        {:else}
-          <input type="color" bind:value={form.color} />
-        {/if}
+        <input type="color" bind:value={form.color} />
         <span class="swatch" style="background:{form.color || '#e8e6e1'}"></span>
       </div>
-    </label>
+    {/if}
   </div>
 
   <div class="grid">
@@ -289,6 +325,70 @@
     border-radius: 50%;
     border: 1px solid var(--rw-border-strong);
     flex-shrink: 0;
+  }
+  .picked {
+    font-weight: 500;
+    color: var(--rw-text-muted);
+  }
+  .seg {
+    display: inline-flex;
+    align-self: flex-start;
+    border: 1px solid var(--rw-border-strong);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .seg-btn {
+    border: none;
+    border-radius: 0;
+    padding: 0.4rem 0.95rem;
+    background: var(--rw-surface);
+    color: var(--rw-text-muted);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+  .seg-btn + .seg-btn {
+    border-left: 1px solid var(--rw-border-strong);
+  }
+  .seg-btn.on {
+    background: var(--rw-accent);
+    color: var(--rw-accent-ink);
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .chip {
+    border: 1px solid var(--rw-border-strong);
+    border-radius: 6px;
+    padding: 0.35rem 0.7rem;
+    background: var(--rw-surface);
+    color: var(--rw-text);
+    font-size: 0.85rem;
+    font-weight: 600;
+    min-width: 2.5rem;
+  }
+  .chip.on {
+    border-color: var(--rw-accent);
+    background: var(--rw-accent);
+    color: var(--rw-accent-ink);
+  }
+  .swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .sw {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--rw-border-strong);
+    padding: 0;
+  }
+  .sw.on {
+    box-shadow:
+      0 0 0 2px var(--rw-surface),
+      0 0 0 4px var(--rw-accent);
   }
   .actions {
     display: flex;

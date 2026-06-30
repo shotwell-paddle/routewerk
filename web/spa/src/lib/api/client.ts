@@ -607,7 +607,9 @@ export async function unarchiveWall(
 // Mirror `internal/model/models.go::Route` and `RouteHandler.Create`.
 
 export type RouteType = 'boulder' | 'route';
-export type RouteStatus = 'active' | 'flagged' | 'archived';
+// 'draft' is the status of a route built inside a setting session before
+// it's published (Publish flips draft → active). See SessionRouteWriteShape.
+export type RouteStatus = 'draft' | 'active' | 'flagged' | 'archived';
 
 export interface RouteShape {
   id: string;
@@ -1309,6 +1311,68 @@ export async function listSessionRoutes(
   signal?: AbortSignal,
 ): Promise<SessionRouteDetailShape[]> {
   return request(`/locations/${locationId}/sessions/${sessionId}/routes`, { signal });
+}
+
+/**
+ * Write shape for a climb added/edited inside the session builder.
+ * Mirrors RouteWriteShape (so a session draft is stored identically to a
+ * normal route) plus an optional setter_id — the builder lets the head
+ * setter record who set each climb. The server forces status=draft,
+ * session_id, and date_set=session date.
+ */
+export interface SessionRouteWriteShape {
+  wall_id: string;
+  route_type: RouteType;
+  grading_system: string;
+  grade: string;
+  color: string;
+  circuit_color?: string | null;
+  grade_low?: string | null;
+  grade_high?: string | null;
+  name?: string | null;
+  description?: string | null;
+  setter_id?: string | null;
+}
+
+/** POST /locations/{locationId}/sessions/{sessionId}/routes — head_setter+. */
+export async function addSessionRoute(
+  locationId: string,
+  sessionId: string,
+  body: SessionRouteWriteShape,
+  signal?: AbortSignal,
+): Promise<RouteShape> {
+  return request(`/locations/${locationId}/sessions/${sessionId}/routes`, {
+    method: 'POST',
+    body,
+    signal,
+  });
+}
+
+/** PUT /locations/{locationId}/sessions/{sessionId}/routes/{routeId} — head_setter+. */
+export async function updateSessionRoute(
+  locationId: string,
+  sessionId: string,
+  routeId: string,
+  body: SessionRouteWriteShape,
+  signal?: AbortSignal,
+): Promise<RouteShape> {
+  return request(
+    `/locations/${locationId}/sessions/${sessionId}/routes/${routeId}`,
+    { method: 'PUT', body, signal },
+  );
+}
+
+/** DELETE /locations/{locationId}/sessions/{sessionId}/routes/{routeId} — head_setter+. */
+export async function deleteSessionRoute(
+  locationId: string,
+  sessionId: string,
+  routeId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request(
+    `/locations/${locationId}/sessions/${sessionId}/routes/${routeId}`,
+    { method: 'DELETE', signal },
+  );
 }
 
 /** POST /locations/{locationId}/sessions/{sessionId}/strip-targets — head_setter+. */

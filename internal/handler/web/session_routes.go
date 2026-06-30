@@ -257,7 +257,7 @@ func (h *Handler) SessionDeleteRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.sessionRepo.DeleteSessionRoute(ctx, sessionID, routeID); err != nil {
+	if _, err := h.sessionRepo.DeleteSessionRoute(ctx, sessionID, routeID); err != nil {
 		slog.Error("delete session route failed", "error", err)
 	}
 

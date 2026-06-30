@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -122,9 +123,17 @@ func (r *SessionRepo) Update(ctx context.Context, s *model.SettingSession) error
 }
 
 func (r *SessionRepo) AddAssignment(ctx context.Context, a *model.SettingSessionAssignment) error {
+	// Idempotent on (session, setter, wall): re-adding the same setter to a
+	// wall updates their target grades / notes instead of erroring on the
+	// UNIQUE constraint. Lets the builder add a setter to several walls at
+	// once without worrying about which pairs already exist. (The conflict
+	// only fires for non-null wall_id — Postgres treats NULL walls as
+	// distinct, matching the original wall-less behavior.)
 	query := `
 		INSERT INTO setting_session_assignments (session_id, setter_id, wall_id, target_grades, notes)
 		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (session_id, setter_id, wall_id)
+			DO UPDATE SET target_grades = EXCLUDED.target_grades, notes = EXCLUDED.notes
 		RETURNING id`
 
 	return r.db.QueryRow(ctx, query,
@@ -579,13 +588,48 @@ func (r *SessionRepo) PublishSessionRoutes(ctx context.Context, sessionID string
 	return int(tag.RowsAffected()), nil
 }
 
-// DeleteSessionRoute hard-deletes a draft route by ID (only if it belongs to the session).
-func (r *SessionRepo) DeleteSessionRoute(ctx context.Context, sessionID, routeID string) error {
-	_, err := r.db.Exec(ctx,
+// DeleteSessionRoute hard-deletes a draft route by ID (only if it belongs to
+// the session). Returns the number of rows removed so callers can tell a real
+// delete from a no-op (wrong id, already-published route, or another session).
+func (r *SessionRepo) DeleteSessionRoute(ctx context.Context, sessionID, routeID string) (int64, error) {
+	tag, err := r.db.Exec(ctx,
 		`DELETE FROM routes WHERE id = $1 AND session_id = $2 AND status = 'draft'`,
 		routeID, sessionID,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// GetSessionDraftRoute loads a single draft route that belongs to the
+// given session, or nil if no such draft exists. Scoped at the query level
+// (session_id match + status='draft') so the session builder's edit
+// endpoint can't reach a published route or a draft in another session.
+// Note: RouteRepo.GetByID does NOT select session_id, so callers that need
+// to verify session ownership must use this method, not GetByID.
+func (r *SessionRepo) GetSessionDraftRoute(ctx context.Context, sessionID, routeID string) (*model.Route, error) {
+	query := `
+		SELECT id, location_id, wall_id, setter_id, route_type, status,
+			grading_system, grade, grade_low, grade_high, circuit_color,
+			name, color, description, photo_url, date_set, projected_strip_date, date_stripped, session_id
+		FROM routes
+		WHERE id = $1 AND session_id = $2 AND status = 'draft' AND deleted_at IS NULL`
+
+	var rt model.Route
+	err := r.db.QueryRow(ctx, query, routeID, sessionID).Scan(
+		&rt.ID, &rt.LocationID, &rt.WallID, &rt.SetterID, &rt.RouteType, &rt.Status,
+		&rt.GradingSystem, &rt.Grade, &rt.GradeLow, &rt.GradeHigh, &rt.CircuitColor,
+		&rt.Name, &rt.Color, &rt.Description, &rt.PhotoURL, &rt.DateSet,
+		&rt.ProjectedStripDate, &rt.DateStripped, &rt.SessionID,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get session draft route: %w", err)
+	}
+	return &rt, nil
 }
 
 // ── Session Checklist ──────────────────────────────────────

@@ -63,18 +63,23 @@
 
   const isRopeWall = $derived(wall.wall_type === 'route');
 
-  // Boulder grading systems this gym allows. Routes always use YDS.
-  const allowedBoulderSystems = $derived.by((): string[] => {
-    const m = settings?.grading.boulder_method;
-    if (m === 'circuits') return ['circuit'];
-    if (m === 'v-scale') return ['V-scale'];
-    return ['V-scale', 'circuit'];
-  });
+  // grading_system values MUST match the Postgres `grading_system` enum
+  // exactly: 'v_scale' | 'yds' | 'circuit' (lowercase). Sending 'V-scale'
+  // or 'YDS' makes the INSERT fail the enum constraint — which is why
+  // rope (YDS) and V-scale boulder climbs silently failed to save.
+
+  // The gym's preferred default boulder system. The backend stores
+  // boulder_method as 'v_scale' | 'circuit' | 'both'; only 'circuit'
+  // defaults a new climb to circuits, everything else defaults to v_scale.
+  // This sets the DEFAULT only — the setter can always switch below.
+  const preferredBoulderSystem = $derived(
+    settings?.grading.boulder_method === 'circuit' ? 'circuit' : 'v_scale',
+  );
 
   function initialGradingSystem(): string {
     if (initial?.grading_system) return initial.grading_system;
-    if (wall.wall_type === 'route') return 'YDS';
-    return allowedBoulderSystems[0] ?? 'V-scale';
+    if (wall.wall_type === 'route') return 'yds';
+    return settings?.grading.boulder_method === 'circuit' ? 'circuit' : 'v_scale';
   }
 
   // svelte-ignore state_referenced_locally
@@ -95,20 +100,22 @@
   );
   const holdColors = $derived(settings?.hold_colors.colors ?? []);
 
-  // For a rope wall, always YDS. For a boulder wall, snap to an allowed
-  // system if the current pick isn't offered (e.g. gym is circuit-only).
+  // Rope walls are always YDS. Boulder walls must be v_scale or circuit;
+  // snap a stale/invalid value (e.g. a leftover 'yds' from a wall-type
+  // switch) to the gym's preferred default. The setter's own v_scale⇄
+  // circuit choice is preserved.
   $effect(() => {
     if (isRopeWall) {
-      if (form.grading_system !== 'YDS') form.grading_system = 'YDS';
+      if (form.grading_system !== 'yds') form.grading_system = 'yds';
       return;
     }
-    if (allowedBoulderSystems.length > 0 && !allowedBoulderSystems.includes(form.grading_system)) {
-      form.grading_system = allowedBoulderSystems[0];
+    if (form.grading_system !== 'v_scale' && form.grading_system !== 'circuit') {
+      form.grading_system = preferredBoulderSystem;
     }
   });
 
   const gradeOptions = $derived.by((): string[] => {
-    if (form.grading_system === 'YDS') {
+    if (form.grading_system === 'yds') {
       return settings?.grading.yds_range && settings.grading.yds_range.length > 0
         ? settings.grading.yds_range
         : DEFAULT_YDS_GRADES;
@@ -157,16 +164,14 @@
 
 <form class="climb-form" onsubmit={handleSubmit}>
   <div class="grid">
-    {#if !isRopeWall && allowedBoulderSystems.length > 1}
+    {#if !isRopeWall}
+      <!-- Setters can always choose either system; the dropdown just
+           defaults to the gym's boulder_method preference. -->
       <label class="field">
         <span>Style</span>
         <select bind:value={form.grading_system}>
-          {#if allowedBoulderSystems.includes('V-scale')}
-            <option value="V-scale">V-scale</option>
-          {/if}
-          {#if allowedBoulderSystems.includes('circuit')}
-            <option value="circuit">Circuit</option>
-          {/if}
+          <option value="v_scale">V-scale</option>
+          <option value="circuit">Circuit</option>
         </select>
       </label>
     {/if}

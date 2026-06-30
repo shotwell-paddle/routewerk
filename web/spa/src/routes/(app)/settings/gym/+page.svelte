@@ -150,6 +150,18 @@
     settings.hold_colors.colors = settings.hold_colors.colors.filter((_, i) => i !== idx);
   }
 
+  // Reorder the hold-color palette. Hold colors carry no sort_order field —
+  // array order IS the display order — so a swap is all that's needed. The
+  // route/climb forms render the swatch grid in this same order.
+  function moveHoldColor(idx: number, dir: -1 | 1) {
+    if (!settings) return;
+    const arr = settings.hold_colors.colors.slice();
+    const target = idx + dir;
+    if (target < 0 || target >= arr.length) return;
+    [arr[idx], arr[target]] = [arr[target], arr[idx]];
+    settings.hold_colors.colors = arr;
+  }
+
   // ── Save ──────────────────────────────────────────────────
 
   async function save(e: Event) {
@@ -253,8 +265,9 @@
       <section class="card">
         <h2>Hold colors</h2>
         <p class="muted small">
-          What hold colors are stocked at this gym. Used as the picker on the
-          route create form and the color chip on cards.
+          What hold colors are stocked at this gym. Used as the swatch picker
+          on the route create form and the color chip on cards. The up/down
+          arrows set the order colors appear in the picker.
         </p>
         <ul class="color-list">
           {#each settings.hold_colors.colors as c, i (i + ':' + c.name)}
@@ -262,6 +275,8 @@
               <span class="swatch" style="background:{c.hex}"></span>
               <input bind:value={c.name} class="name-field" />
               <input type="color" bind:value={c.hex} class="hex-field" />
+              <button type="button" class="icon" onclick={() => moveHoldColor(i, -1)} disabled={i === 0} aria-label="Move up">↑</button>
+              <button type="button" class="icon" onclick={() => moveHoldColor(i, 1)} disabled={i === settings.hold_colors.colors.length - 1} aria-label="Move down">↓</button>
               <button type="button" class="icon danger" onclick={() => removeHoldColor(i)} aria-label="Remove">✕</button>
             </li>
           {/each}

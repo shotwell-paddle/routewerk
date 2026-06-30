@@ -21,6 +21,14 @@ interface AuthState {
   loaded: boolean;
   /** The error from the last /me fetch, if any. */
   error: Error | null;
+  /**
+   * True ONLY when /me returned a real 401 (server says: not logged in).
+   * A transient failure (network blip, 5xx, 503 from a DB timeout under
+   * load) does NOT set this — it must not be mistaken for a logout, or the
+   * user gets bounced to /login despite a valid session. The layout's
+   * login redirect keys off THIS flag, not `me === null`.
+   */
+  unauthenticated: boolean;
 }
 
 const state = $state<AuthState>({
@@ -28,7 +36,14 @@ const state = $state<AuthState>({
   loading: false,
   loaded: false,
   error: null,
+  unauthenticated: false,
 });
+
+// A transient /me failure (network, 5xx, 503) is retried a few times with
+// backoff before giving up — so a brief server hiccup or cold start doesn't
+// surface to the user at all. A 401 is NOT retried (getMe resolves null,
+// no throw): a real logout should redirect immediately.
+const MAX_TRANSIENT_RETRIES = 3;
 
 /** The current auth state — components read fields from this. */
 export function authState() {
@@ -56,16 +71,32 @@ export function loadMe(): Promise<void> {
   state.loading = true;
   state.error = null;
   inflight = (async () => {
-    try {
-      state.me = await getMe();
-    } catch (err) {
-      state.error = err instanceof Error ? err : new Error(String(err));
-      state.me = null;
-    } finally {
-      state.loading = false;
-      state.loaded = true;
-      inflight = null;
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt++) {
+      try {
+        // getMe resolves null on 401 (a real logout) and throws otherwise.
+        const result = await getMe();
+        state.me = result;
+        state.unauthenticated = result === null;
+        state.error = null;
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (attempt < MAX_TRANSIENT_RETRIES) {
+          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+        }
+      }
     }
+    if (lastErr) {
+      // Every attempt failed transiently. Do NOT drop the session or flip
+      // `unauthenticated` — keep whatever `me` we had and surface the error
+      // so the shell can offer a retry instead of forcing a re-login.
+      state.error = lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+    }
+    state.loading = false;
+    state.loaded = true;
+    inflight = null;
   })();
   return inflight;
 }
@@ -75,6 +106,7 @@ export function clear() {
   state.me = null;
   state.loaded = true;
   state.error = null;
+  state.unauthenticated = true;
 }
 
 // Role rank — mirrors internal/middleware/authz.go::RankValue. Climber-only

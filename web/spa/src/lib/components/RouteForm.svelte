@@ -72,7 +72,7 @@
     // Defaults to V-scale; the snap-to-allowed effect below picks the
     // gym's preference once settings load. Routes use YDS via a separate
     // branch in the template.
-    grading_system: seed?.grading_system ?? 'V-scale',
+    grading_system: seed?.grading_system ?? 'v_scale',
     grade: seed?.grade ?? '',
     name: seed?.name ?? '',
     color: seed?.color ?? '',
@@ -108,15 +108,18 @@
   const stripAgeDays = $derived(settings?.display.default_strip_age_days ?? 0);
 
   // The boulder grading systems the gym allows climbers to set under.
-  // - 'circuits' → only circuit; setters can't fall back to V-scale.
-  // - 'v-scale'  → V-scale only.
-  // - default    → both, gym hasn't expressed a preference.
-  // Routes (not boulders) always allow YDS regardless.
+  // Values MUST match the Postgres `grading_system` enum: 'v_scale' |
+  // 'circuit' (and 'yds' for routes). Sending 'V-scale'/'YDS' fails the
+  // enum on insert.
+  // NOTE: the boulder_method keys below ('circuits'/'v-scale') don't match
+  // the stored values ('circuit'/'v_scale'/'both'), so this currently
+  // always falls through to "both". That preference-restriction bug is
+  // tracked separately; this change only corrects the emitted values.
   const allowedBoulderSystems = $derived.by((): string[] => {
     const m = settings?.grading.boulder_method;
     if (m === 'circuits') return ['circuit'];
-    if (m === 'v-scale') return ['V-scale'];
-    return ['V-scale', 'circuit'];
+    if (m === 'v-scale') return ['v_scale'];
+    return ['v_scale', 'circuit'];
   });
 
   // If the gym only allows one boulder system and the current selection
@@ -192,7 +195,7 @@
   // Pick the right grade list for the selected scale. Honor any custom
   // ranges the gym has set; fall back to the full default list otherwise.
   const gradeOptions = $derived.by((): string[] => {
-    if (form.grading_system === 'YDS') {
+    if (form.grading_system === 'yds') {
       return settings?.grading.yds_range && settings.grading.yds_range.length > 0
         ? settings.grading.yds_range
         : DEFAULT_YDS_GRADES;
@@ -232,14 +235,14 @@
       <label for="r-system">Grading system</label>
       <select id="r-system" bind:value={form.grading_system}>
         {#if form.route_type === 'boulder'}
-          {#if allowedBoulderSystems.includes('V-scale')}
-            <option value="V-scale">V-scale</option>
+          {#if allowedBoulderSystems.includes('v_scale')}
+            <option value="v_scale">V-scale</option>
           {/if}
           {#if allowedBoulderSystems.includes('circuit')}
             <option value="circuit">Circuit</option>
           {/if}
         {:else}
-          <option value="YDS">YDS</option>
+          <option value="yds">YDS</option>
         {/if}
       </select>
     </div>

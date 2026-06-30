@@ -40,7 +40,10 @@
   // it redirects back to ?next=.
   $effect(() => {
     const a = authState();
-    if (a.loaded && a.me === null) {
+    // Only a confirmed 401 (server says not-logged-in) bounces to /login.
+    // A transient /me failure leaves `unauthenticated` false, so the user
+    // keeps their session and gets a retry instead of a spurious logout.
+    if (a.loaded && a.unauthenticated) {
       window.location.href =
         '/login?next=' + encodeURIComponent(page.url.pathname + page.url.search);
     }
@@ -374,6 +377,14 @@
         <p class="loading-shell">Loading…</p>
       {:else if isAuthenticated()}
         {@render children()}
+      {:else if authState().error}
+        <div class="conn-error">
+          <p class="conn-title">Couldn't reach the server</p>
+          <p class="conn-sub">Your session is still active — this is usually a brief hiccup.</p>
+          <button class="conn-retry" onclick={() => loadMe()} disabled={authState().loading}>
+            {authState().loading ? 'Retrying…' : 'Retry'}
+          </button>
+        </div>
       {/if}
     </main>
   </div>
@@ -705,6 +716,39 @@
   }
   .loading-shell {
     color: var(--rw-text-faint);
+  }
+  .conn-error {
+    max-width: 28rem;
+    margin: 3rem auto;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .conn-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 0;
+  }
+  .conn-sub {
+    color: var(--rw-text-muted);
+    font-size: 0.9rem;
+    margin: 0;
+  }
+  .conn-retry {
+    margin-top: 0.5rem;
+    background: var(--rw-accent);
+    color: var(--rw-accent-ink);
+    border: none;
+    border-radius: 6px;
+    padding: 0.5rem 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .conn-retry:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   /* ── Mobile ──────────────────────────────────────────── */

@@ -665,6 +665,11 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 						r.Post("/{sessionID}/status", sessionHandler.UpdateStatus)
 						r.Post("/{sessionID}/assignments", sessionHandler.Assign)
 						r.Delete("/{sessionID}/assignments/{assignmentID}", sessionHandler.Unassign)
+						// Draft-route building: the session builder adds the
+						// climbs being set as drafts; Publish flips them active.
+						r.Post("/{sessionID}/routes", sessionHandler.AddRoute)
+						r.Put("/{sessionID}/routes/{routeID}", sessionHandler.EditRoute)
+						r.Delete("/{sessionID}/routes/{routeID}", sessionHandler.DeleteRoute)
 						r.Post("/{sessionID}/strip-targets", sessionHandler.AddStripTarget)
 						r.Delete("/{sessionID}/strip-targets/{targetID}", sessionHandler.RemoveStripTarget)
 						// Combined publish: archives strip-targets, activates

@@ -69,9 +69,9 @@
   let form = $state({
     wall_id: seed?.wall_id ?? '',
     route_type: (seed?.route_type ?? 'boulder') as RouteType,
-    // Defaults to V-scale; the snap-to-allowed effect below picks the
-    // gym's preference once settings load. Routes use YDS via a separate
-    // branch in the template.
+    // grading_system MUST match the Postgres grading_system enum:
+    // 'v_scale' | 'yds' | 'circuit'. The effect below snaps a fresh boulder
+    // to the gym's preferred default once settings load; routes are YDS.
     grading_system: seed?.grading_system ?? 'v_scale',
     grade: seed?.grade ?? '',
     name: seed?.name ?? '',
@@ -107,32 +107,50 @@
   const holdColors = $derived(settings?.hold_colors.colors ?? []);
   const stripAgeDays = $derived(settings?.display.default_strip_age_days ?? 0);
 
-  // The boulder grading systems the gym allows climbers to set under.
-  // Values MUST match the Postgres `grading_system` enum: 'v_scale' |
-  // 'circuit' (and 'yds' for routes). Sending 'V-scale'/'YDS' fails the
-  // enum on insert.
-  // NOTE: the boulder_method keys below ('circuits'/'v-scale') don't match
-  // the stored values ('circuit'/'v_scale'/'both'), so this currently
-  // always falls through to "both". That preference-restriction bug is
-  // tracked separately; this change only corrects the emitted values.
-  const allowedBoulderSystems = $derived.by((): string[] => {
-    const m = settings?.grading.boulder_method;
-    if (m === 'circuits') return ['circuit'];
-    if (m === 'v-scale') return ['v_scale'];
-    return ['v_scale', 'circuit'];
-  });
+  // The gym's preferred default boulder system ('circuit' only when
+  // boulder_method is 'circuit'; otherwise V-scale). It sets the DEFAULT —
+  // the setter can always toggle to the other system below.
+  const preferredBoulderSystem = $derived(
+    settings?.grading.boulder_method === 'circuit' ? 'circuit' : 'v_scale',
+  );
 
-  // If the gym only allows one boulder system and the current selection
-  // isn't it, snap to the allowed one. Keeps a stale seed (or a manual
-  // toggle to a hidden option) from leaving the form in an unsubmittable
-  // state.
+  // Once the user picks a boulder system (or we're editing an existing
+  // route) we stop auto-applying the gym default.
+  // svelte-ignore state_referenced_locally
+  let systemTouched = $state(!!seed);
+
+  // Keep grading_system valid for the chosen type, and default a fresh
+  // boulder to the gym's preference until the setter toggles. Routes are
+  // always YDS.
   $effect(() => {
-    if (form.route_type !== 'boulder') return;
-    if (allowedBoulderSystems.length === 0) return;
-    if (!allowedBoulderSystems.includes(form.grading_system)) {
-      form.grading_system = allowedBoulderSystems[0];
+    if (form.route_type === 'route') {
+      if (form.grading_system !== 'yds') form.grading_system = 'yds';
+      return;
+    }
+    if (form.grading_system !== 'v_scale' && form.grading_system !== 'circuit') {
+      form.grading_system = preferredBoulderSystem;
+      form.grade = '';
+    } else if (!systemTouched && form.grading_system !== preferredBoulderSystem) {
+      // Settings loaded late and revealed a different gym default — clear
+      // any grade picked under the old system so a stale V-grade can't ship
+      // as a circuit name (or vice versa).
+      form.grading_system = preferredBoulderSystem;
+      form.grade = '';
     }
   });
+
+  function selectStyle(sys: string) {
+    systemTouched = true;
+    if (form.grading_system === sys) return;
+    form.grading_system = sys;
+    form.grade = '';
+  }
+
+  // Switching boulder ⇄ route changes what a grade means; clear it so a
+  // stale value can't carry across. The effect above fixes grading_system.
+  function onTypeChange() {
+    form.grade = '';
+  }
 
   // Auto-fill projected_strip_date as date_set + default_strip_age_days
   // unless the user has already typed one in. Only runs on date_set
@@ -147,13 +165,49 @@
     }
   });
 
+  const isCircuit = $derived(form.grading_system === 'circuit');
+
+  // Pick the right grade list for the selected scale. Honor any custom
+  // ranges the gym has set; fall back to the full default list otherwise.
+  const gradeOptions = $derived.by((): string[] => {
+    if (form.grading_system === 'yds') {
+      return settings?.grading.yds_range && settings.grading.yds_range.length > 0
+        ? settings.grading.yds_range
+        : DEFAULT_YDS_GRADES;
+    }
+    if (form.grading_system === 'circuit') {
+      // Circuit "grade" is the circuit color (mirrors the HTMX form).
+      return circuits.map((c) => c.name);
+    }
+    return settings?.grading.v_scale_range && settings.grading.v_scale_range.length > 0
+      ? settings.grading.v_scale_range
+      : DEFAULT_V_GRADES;
+  });
+
+  // Case/shorthand-insensitive hex match so a stored color highlights the
+  // right swatch even if its casing differs from the palette (the backend
+  // matches case-insensitively too — see route.go holdColorNames).
+  function normHex(h: string | null | undefined): string {
+    let s = (h ?? '').trim().toLowerCase();
+    if (/^#[0-9a-f]{3}$/.test(s)) {
+      s = '#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3];
+    }
+    return s;
+  }
+  function isPickedColor(hex: string): boolean {
+    return normHex(form.color) === normHex(hex);
+  }
+  const selectedColorName = $derived(
+    holdColors.find((c) => isPickedColor(c.hex))?.name ?? '',
+  );
+
   function buildBody(): RouteWriteShape | null {
     if (!form.wall_id) {
       localError = 'Wall is required.';
       return null;
     }
     if (!form.grade) {
-      localError = 'Grade is required.';
+      localError = isCircuit ? 'Pick a circuit.' : 'Grade is required.';
       return null;
     }
     if (!form.color) {
@@ -191,23 +245,6 @@
     if (!body) return;
     onSubmit(body);
   }
-
-  // Pick the right grade list for the selected scale. Honor any custom
-  // ranges the gym has set; fall back to the full default list otherwise.
-  const gradeOptions = $derived.by((): string[] => {
-    if (form.grading_system === 'yds') {
-      return settings?.grading.yds_range && settings.grading.yds_range.length > 0
-        ? settings.grading.yds_range
-        : DEFAULT_YDS_GRADES;
-    }
-    if (form.grading_system === 'circuit') {
-      // Circuit "grade" is the circuit color (mirrors the HTMX form).
-      return circuits.map((c) => c.name);
-    }
-    return settings?.grading.v_scale_range && settings.grading.v_scale_range.length > 0
-      ? settings.grading.v_scale_range
-      : DEFAULT_V_GRADES;
-  });
 </script>
 
 <form class="form" onsubmit={handleSubmit}>
@@ -223,66 +260,60 @@
     </div>
     <div class="field">
       <label for="r-type">Type *</label>
-      <select id="r-type" bind:value={form.route_type}>
+      <select id="r-type" bind:value={form.route_type} onchange={onTypeChange}>
         <option value="boulder">Boulder</option>
         <option value="route">Route</option>
       </select>
     </div>
   </div>
 
-  <div class="row">
+  {#if form.route_type === 'boulder'}
     <div class="field">
-      <label for="r-system">Grading system</label>
-      <select id="r-system" bind:value={form.grading_system}>
-        {#if form.route_type === 'boulder'}
-          {#if allowedBoulderSystems.includes('v_scale')}
-            <option value="v_scale">V-scale</option>
-          {/if}
-          {#if allowedBoulderSystems.includes('circuit')}
-            <option value="circuit">Circuit</option>
-          {/if}
-        {:else}
-          <option value="yds">YDS</option>
-        {/if}
-      </select>
+      <span class="field-label">Style</span>
+      <div class="seg" role="group" aria-label="Grading style">
+        <button type="button" class="seg-btn" class:on={form.grading_system === 'v_scale'}
+                aria-pressed={form.grading_system === 'v_scale'}
+                onclick={() => selectStyle('v_scale')}>V-scale</button>
+        <button type="button" class="seg-btn" class:on={form.grading_system === 'circuit'}
+                aria-pressed={form.grading_system === 'circuit'}
+                onclick={() => selectStyle('circuit')}>Circuit</button>
+      </div>
     </div>
-    <div class="field">
-      <label for="r-grade">
-        {form.grading_system === 'circuit' ? 'Circuit *' : 'Grade *'}
-      </label>
-      <select id="r-grade" bind:value={form.grade}>
-        <option value="">
-          {form.grading_system === 'circuit' ? 'Pick a circuit…' : 'Pick a grade…'}
-        </option>
-        {#each gradeOptions as g}
-          <option value={g}>{g}</option>
-        {/each}
-      </select>
+  {/if}
+
+  <div class="field">
+    <span class="field-label">{isCircuit ? 'Circuit *' : 'Grade *'}</span>
+    <div class="chips">
+      {#each gradeOptions as g}
+        <button type="button" class="chip" class:on={form.grade === g}
+                aria-pressed={form.grade === g}
+                onclick={() => (form.grade = g)}>{g}</button>
+      {/each}
     </div>
   </div>
 
-  <div class="row">
-    <div class="field">
-      <label for="r-name">Name</label>
-      <input id="r-name" bind:value={form.name} placeholder="optional" />
-    </div>
-    <div class="field">
-      <label for="r-color">Hold color *</label>
-      <div class="color-input">
-        {#if holdColors.length > 0}
-          <select id="r-color" bind:value={form.color}>
-            <option value="">Pick a color…</option>
-            {#each holdColors as c (c.name)}
-              <option value={c.hex}>{c.name}</option>
-            {/each}
-          </select>
-          <span class="color-swatch" style="background:{form.color || '#e8e6e1'}"></span>
-        {:else}
-          <input id="r-color" type="color" bind:value={form.color} />
-          <span class="color-hex">{form.color || '#e8e6e1'}</span>
-        {/if}
+  <div class="field">
+    <span class="field-label">Hold color *{#if selectedColorName}<span class="picked"> · {selectedColorName}</span>{/if}</span>
+    {#if holdColors.length > 0}
+      <div class="swatches">
+        {#each holdColors as c (c.name)}
+          <button type="button" class="sw" class:on={isPickedColor(c.hex)}
+                  aria-pressed={isPickedColor(c.hex)}
+                  style="background:{c.hex}" title={c.name} aria-label={c.name}
+                  onclick={() => (form.color = c.hex)}></button>
+        {/each}
       </div>
-    </div>
+    {:else}
+      <div class="color-input">
+        <input id="r-color" type="color" bind:value={form.color} />
+        <span class="color-hex">{form.color || '#e8e6e1'}</span>
+      </div>
+    {/if}
+  </div>
+
+  <div class="field">
+    <label for="r-name">Name</label>
+    <input id="r-name" bind:value={form.name} placeholder="optional" />
   </div>
 
   <div class="field">
@@ -357,7 +388,8 @@
     flex-direction: column;
     gap: 4px;
   }
-  .field label {
+  .field label,
+  .field-label {
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--rw-text-muted);
@@ -379,23 +411,21 @@
     grid-template-columns: 1fr auto;
     gap: 8px;
     align-items: center;
+    max-width: 16rem;
   }
   .color-input input[type='color'] {
     height: 38px;
     padding: 2px;
     cursor: pointer;
   }
-  .color-swatch {
-    display: inline-block;
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    border: 1px solid var(--rw-border-strong);
-  }
   .color-hex {
     color: var(--rw-text-muted);
     font-size: 0.85rem;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .picked {
+    font-weight: 500;
+    color: var(--rw-text-muted);
   }
   .hint-tag {
     margin-left: 6px;
@@ -411,6 +441,71 @@
     outline: none;
     border-color: var(--rw-accent);
   }
+
+  .seg {
+    display: inline-flex;
+    align-self: flex-start;
+    border: 1px solid var(--rw-border-strong);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .seg-btn {
+    border: none;
+    border-radius: 0;
+    padding: 0.4rem 0.95rem;
+    background: var(--rw-surface);
+    color: var(--rw-text-muted);
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .seg-btn + .seg-btn {
+    border-left: 1px solid var(--rw-border-strong);
+  }
+  .seg-btn.on {
+    background: var(--rw-accent);
+    color: var(--rw-accent-ink);
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .chip {
+    border: 1px solid var(--rw-border-strong);
+    border-radius: 6px;
+    padding: 0.35rem 0.7rem;
+    background: var(--rw-surface);
+    color: var(--rw-text);
+    font-size: 0.85rem;
+    font-weight: 600;
+    min-width: 2.5rem;
+    cursor: pointer;
+  }
+  .chip.on {
+    border-color: var(--rw-accent);
+    background: var(--rw-accent);
+    color: var(--rw-accent-ink);
+  }
+  .swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .sw {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--rw-border-strong);
+    padding: 0;
+    cursor: pointer;
+  }
+  .sw.on {
+    box-shadow:
+      0 0 0 2px var(--rw-surface),
+      0 0 0 4px var(--rw-accent);
+  }
+
   .actions {
     display: flex;
     gap: 8px;

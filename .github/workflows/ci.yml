@@ -69,6 +69,23 @@ jobs:
       - name: Check coverage
         run: go tool cover -func=coverage.out | tail -1
 
+  spa-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/spa/package-lock.json
+
+      - name: Install SPA dependencies
+        run: cd web/spa && npm ci --no-audit --no-fund
+
+      - name: SPA unit tests
+        run: cd web/spa && npm run test
+
   build:
     runs-on: ubuntu-latest
     needs: test

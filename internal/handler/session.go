@@ -182,11 +182,22 @@ func (h *SessionHandler) Assign(w http.ResponseWriter, r *http.Request) {
 }
 
 // Unassign — DELETE /sessions/{sessionID}/assignments/{assignmentID}.
-// head_setter+ enforced by router middleware.
+// head_setter+ enforced by router middleware. resolveSession guards the
+// session's location; the repo scopes the delete to that session so a
+// foreign assignment id is a 404, not a cross-tenant delete.
 func (h *SessionHandler) Unassign(w http.ResponseWriter, r *http.Request) {
+	session, ok := h.resolveSession(w, r)
+	if !ok {
+		return
+	}
 	id := chi.URLParam(r, "assignmentID")
-	if err := h.sessions.RemoveAssignment(r.Context(), id); err != nil {
+	n, err := h.sessions.RemoveAssignment(r.Context(), session.ID, id)
+	if err != nil {
 		Error(w, http.StatusInternalServerError, "failed to remove assignment")
+		return
+	}
+	if n == 0 {
+		Error(w, http.StatusNotFound, "assignment not found in this session")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -389,10 +400,20 @@ func (h *SessionHandler) AddStripTarget(w http.ResponseWriter, r *http.Request) 
 }
 
 // RemoveStripTarget — DELETE /sessions/{sessionID}/strip-targets/{targetID}.
+// Session-scoped: a foreign target id is a 404, not a cross-tenant delete.
 func (h *SessionHandler) RemoveStripTarget(w http.ResponseWriter, r *http.Request) {
+	session, ok := h.resolveSession(w, r)
+	if !ok {
+		return
+	}
 	id := chi.URLParam(r, "targetID")
-	if err := h.sessions.RemoveStripTarget(r.Context(), id); err != nil {
+	n, err := h.sessions.RemoveStripTarget(r.Context(), session.ID, id)
+	if err != nil {
 		Error(w, http.StatusInternalServerError, "failed to remove strip target")
+		return
+	}
+	if n == 0 {
+		Error(w, http.StatusNotFound, "strip target not found in this session")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -417,14 +438,23 @@ func (h *SessionHandler) ListChecklist(w http.ResponseWriter, r *http.Request) {
 }
 
 // ToggleChecklistItem — POST /sessions/{sessionID}/checklist/{itemID}/toggle.
-// Marks an item done/undone for the calling user. Returns the new
+// Marks an item done/undone for the calling user. Session-scoped: a
+// foreign item id is a 404, not a cross-tenant toggle. Returns the new
 // completion count.
 func (h *SessionHandler) ToggleChecklistItem(w http.ResponseWriter, r *http.Request) {
+	session, ok := h.resolveSession(w, r)
+	if !ok {
+		return
+	}
 	itemID := chi.URLParam(r, "itemID")
 	userID := middleware.GetUserID(r.Context())
-	count, err := h.sessions.ToggleChecklistItem(r.Context(), itemID, userID)
+	count, err := h.sessions.ToggleChecklistItem(r.Context(), session.ID, itemID, userID)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "failed to toggle item")
+		return
+	}
+	if count == 0 {
+		Error(w, http.StatusNotFound, "checklist item not found in this session")
 		return
 	}
 	JSON(w, http.StatusOK, map[string]interface{}{"completion_count": count})

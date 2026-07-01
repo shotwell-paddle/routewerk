@@ -25,8 +25,20 @@
     route_type: '' as RouteType | '',
     wall_id: '',
     grade: '',
+    q: '',
     offset: 0,
   });
+
+  // Debounce the free-text search so we don't fire a request per keystroke.
+  let searchDebounce: ReturnType<typeof setTimeout> | null = null;
+  function onSearchInput(e: Event) {
+    const v = (e.target as HTMLInputElement).value;
+    if (searchDebounce) clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => {
+      filters.q = v.trim();
+      filters.offset = 0;
+    }, 300);
+  }
 
   const locId = $derived(effectiveLocationId());
   // Setter+ may create routes; the API enforces this server-side, the UI
@@ -67,6 +79,7 @@
     if (filters.route_type) f.route_type = filters.route_type;
     if (filters.wall_id) f.wall_id = filters.wall_id;
     if (filters.grade) f.grade = filters.grade;
+    if (filters.q) f.q = filters.q;
     listRoutes(locId, f)
       .then((res) => {
         if (cancelled) return;
@@ -125,6 +138,13 @@
     <p class="muted">Pick a location from the sidebar.</p>
   {:else}
     <div class="filter-bar">
+      <label class="search-input">
+        <span>Search</span>
+        <input
+          type="search"
+          oninput={onSearchInput}
+          placeholder="name, grade, or wall…" />
+      </label>
       <label>
         <span>Status</span>
         <select bind:value={filters.status} onchange={onFilterChange}>

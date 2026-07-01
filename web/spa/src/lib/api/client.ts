@@ -669,6 +669,8 @@ export interface RouteListFilters {
   route_type?: RouteType;
   grade?: string;
   setter_id?: string;
+  /** Case-insensitive substring across route name, grade, circuit, and wall name. */
+  q?: string;
   limit?: number;
   offset?: number;
 }

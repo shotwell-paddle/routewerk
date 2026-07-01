@@ -184,6 +184,14 @@ func (h *RouteHandler) List(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 
+	// Cap the free-text search: ILIKE '%...%' can't use an index, so an
+	// arbitrarily long pattern makes each row comparison disproportionately
+	// expensive. 100 chars is far beyond any real route/wall name.
+	q := r.URL.Query().Get("q")
+	if len(q) > 100 {
+		q = q[:100]
+	}
+
 	filter := repository.RouteFilter{
 		LocationID: locationID,
 		WallID:     r.URL.Query().Get("wall_id"),
@@ -191,6 +199,7 @@ func (h *RouteHandler) List(w http.ResponseWriter, r *http.Request) {
 		RouteType:  r.URL.Query().Get("route_type"),
 		Grade:      r.URL.Query().Get("grade"),
 		SetterID:   r.URL.Query().Get("setter_id"),
+		Query:      q,
 		Limit:      limit,
 		Offset:     offset,
 	}

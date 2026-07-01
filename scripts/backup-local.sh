@@ -2,11 +2,10 @@
 # backup-local.sh — pull a nightly logical backup of the production
 # Postgres (routewerk-db) onto a local machine.
 #
-# This is the CURRENT backup strategy (single-gym scale): free, keeps
-# prod credentials entirely off GitHub, and the backup lives off-site
-# relative to Fly. The cloud path (.github/workflows/backup-db.yml →
-# Tigris) is kept for when the app scales to machines nobody owns —
-# see docs/backup-restore.md.
+# MANUAL/EXTRA tool: the default backup is now server-side (the API
+# dumps itself nightly to Tigris — see internal/service/backup.go and
+# docs/backup-restore.md). Use this script for an additional off-Tigris
+# copy, or ad-hoc dumps before risky work.
 #
 # Requirements on the backup machine:
 #   - flyctl, authenticated (`fly auth login`) or FLY_API_TOKEN in env

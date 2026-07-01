@@ -506,34 +506,29 @@
   }
 
   // ── Strip targets ────────────────────────────────────────
-  let stripForm = $state({ wall_id: '', route_id: '' });
-  let stripSaving = $state(false);
+  // Redesigned picker: choose a section (wall), then either a "whole wall"
+  // checkbox or individual route chips. No two-dropdown submit dance —
+  // every toggle takes effect immediately, same as the in-section pills.
+  let stripWallId = $state('');
   let stripError = $state<string | null>(null);
+  let wholeWallBusy = $state(false);
 
-  const stripCandidateRoutes = $derived(
-    stripForm.wall_id ? activeRoutes.filter((r) => r.wall_id === stripForm.wall_id) : [],
-  );
-
-  async function addStrip(e: Event) {
-    e.preventDefault();
-    if (!locId || !sessionId) return;
-    if (!stripForm.wall_id) {
-      stripError = 'Pick a wall.';
-      return;
-    }
-    stripSaving = true;
+  async function toggleWholeWall(wallId: string) {
+    if (!locId || !sessionId || !wallId || wholeWallBusy) return;
+    const existing = stripTargets.find((t) => !t.route_id && t.wall_id === wallId);
+    wholeWallBusy = true;
     stripError = null;
     try {
-      await addStripTarget(locId, sessionId, {
-        wall_id: stripForm.wall_id,
-        route_id: stripForm.route_id || null,
-      });
-      stripForm = { wall_id: '', route_id: '' };
-      await refresh();
+      if (existing) {
+        await removeStripTarget(locId, sessionId, existing.id);
+      } else {
+        await addStripTarget(locId, sessionId, { wall_id: wallId, route_id: null });
+      }
+      stripTargets = await listStripTargets(locId, sessionId);
     } catch (err) {
-      stripError = err instanceof ApiClientError ? err.message : 'Could not add strip target.';
+      stripError = err instanceof ApiClientError ? err.message : 'Could not update strip list.';
     } finally {
-      stripSaving = false;
+      wholeWallBusy = false;
     }
   }
 
@@ -605,6 +600,32 @@
 <svelte:head>
   <title>Session {session ? fmtDate(session.scheduled_date) : ''} — Routewerk</title>
 </svelte:head>
+
+{#snippet stripPills(wallId: string)}
+  <!-- Tap-to-strip chips for a wall's active routes. Shared by the per-
+       section "currently up" rows and the strip-targets card picker. -->
+  {@const wholeWall = wholeWallStripWalls.has(wallId)}
+  <div class="strip-pills">
+    {#each activeRoutesOnWall(wallId) as r (r.id)}
+      {@const targeted = wholeWall || stripTargetByRouteId.has(r.id)}
+      <button type="button" class="strip-pill"
+              class:targeted
+              aria-pressed={targeted}
+              disabled={wholeWall || stripBusy[r.id]}
+              title={wholeWall
+                ? 'Covered by the whole-wall strip target'
+                : targeted
+                  ? 'Remove from strip list'
+                  : 'Add to strip list'}
+              onclick={() => toggleStripRoute(r)}>
+        <span class="strip-pill-color" style="background:{r.color || '#cbd5e1'}"></span>
+        <span>{r.grade}</span>
+        {#if r.name}<span class="muted">{r.name}</span>{/if}
+        {#if targeted}<span class="strip-mark">✕ strip</span>{/if}
+      </button>
+    {/each}
+  </div>
+{/snippet}
 
 <div class="page">
   <a class="back" href="/sessions">← Sessions</a>
@@ -763,32 +784,12 @@
             <!-- Current routes on this wall — tap to add/remove from the
                  strip list without leaving the section. -->
             {#if canBuild && activeRoutesOnWall(sec.wall.id).length > 0}
-              {@const wholeWall = wholeWallStripWalls.has(sec.wall.id)}
               <div class="section-strip">
                 <span class="pick-label">
                   Currently up — tap to strip
-                  {#if wholeWall}<span class="muted"> · whole wall already on the strip list</span>{/if}
+                  {#if wholeWallStripWalls.has(sec.wall.id)}<span class="muted"> · whole wall already on the strip list</span>{/if}
                 </span>
-                <div class="strip-pills">
-                  {#each activeRoutesOnWall(sec.wall.id) as r (r.id)}
-                    {@const targeted = wholeWall || stripTargetByRouteId.has(r.id)}
-                    <button type="button" class="strip-pill"
-                            class:targeted
-                            aria-pressed={targeted}
-                            disabled={wholeWall || stripBusy[r.id]}
-                            title={wholeWall
-                              ? 'Covered by the whole-wall strip target'
-                              : targeted
-                                ? 'Remove from strip list'
-                                : 'Add to strip list'}
-                            onclick={() => toggleStripRoute(r)}>
-                      <span class="strip-pill-color" style="background:{r.color || '#cbd5e1'}"></span>
-                      <span>{r.grade}</span>
-                      {#if r.name}<span class="muted">{r.name}</span>{/if}
-                      {#if targeted}<span class="strip-mark">✕ strip</span>{/if}
-                    </button>
-                  {/each}
-                </div>
+                {@render stripPills(sec.wall.id)}
               </div>
             {/if}
 
@@ -994,36 +995,38 @@
           {/if}
 
           {#if canBuild}
-            <form class="strip-form" onsubmit={addStrip}>
-              <h3>Add target</h3>
-              <div class="row">
-                <label>
-                  <span>Wall *</span>
-                  <select bind:value={stripForm.wall_id}>
-                    <option value="">Pick a wall…</option>
-                    {#each walls as w (w.id)}
-                      <option value={w.id}>{w.name}</option>
-                    {/each}
-                  </select>
+            <div class="strip-form">
+              <h3>Add targets</h3>
+              <label class="strip-wall-pick">
+                <span>Section</span>
+                <select bind:value={stripWallId}>
+                  <option value="">Pick a wall…</option>
+                  {#each walls as w (w.id)}
+                    <option value={w.id}>{w.name}</option>
+                  {/each}
+                </select>
+              </label>
+              {#if stripWallId}
+                <label class="whole-wall-check">
+                  <input type="checkbox"
+                         checked={wholeWallStripWalls.has(stripWallId)}
+                         disabled={wholeWallBusy}
+                         onchange={() => toggleWholeWall(stripWallId)} />
+                  <span>Strip the whole wall</span>
                 </label>
-                <label>
-                  <span>Route (or leave blank for whole wall)</span>
-                  <select bind:value={stripForm.route_id} disabled={!stripForm.wall_id}>
-                    <option value="">Whole wall</option>
-                    {#each stripCandidateRoutes as r (r.id)}
-                      <option value={r.id}>
-                        {r.grade}
-                        {#if r.name}— {r.name}{/if}
-                      </option>
-                    {/each}
-                  </select>
-                </label>
-              </div>
+                {#if activeRoutesOnWall(stripWallId).length > 0}
+                  <span class="pick-label">
+                    {wholeWallStripWalls.has(stripWallId)
+                      ? 'Covered by the whole-wall strip'
+                      : 'Or tap individual routes'}
+                  </span>
+                  {@render stripPills(stripWallId)}
+                {:else}
+                  <p class="muted small">No active routes on this wall.</p>
+                {/if}
+              {/if}
               {#if stripError}<p class="error">{stripError}</p>{/if}
-              <button class="primary" type="submit" disabled={stripSaving}>
-                {stripSaving ? 'Adding…' : 'Add target'}
-              </button>
-            </form>
+            </div>
           {/if}
         </section>
       {/if}
@@ -1398,6 +1401,30 @@
     margin-top: 1rem;
     padding-top: 0.85rem;
     border-top: 1px dashed var(--rw-border);
+  }
+  .strip-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .strip-wall-pick {
+    max-width: 18rem;
+  }
+  .whole-wall-check {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    color: var(--rw-text);
+    cursor: pointer;
+    user-select: none;
+  }
+  .whole-wall-check input {
+    margin: 0;
+    width: 16px;
+    height: 16px;
+    accent-color: var(--rw-accent);
+    cursor: pointer;
   }
   .add-section-note {
     margin-top: 0.85rem;

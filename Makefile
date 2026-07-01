@@ -1,4 +1,4 @@
-.PHONY: build build-admin run dev test migrate migrate-down migrate-version docker-build docker-run refresh-dev-db spa-install spa-build spa-dev spa-check api-gen api-gen-check clean-branches
+.PHONY: build build-admin run dev test migrate migrate-down migrate-version docker-build docker-run refresh-dev-db backup-now restore-staging spa-install spa-build spa-dev spa-check api-gen api-gen-check clean-branches
 
 # Build the API binary with the embedded SPA. Requires Node + npm.
 # The spa_embed build tag flips embed.go on; without it, embed_stub.go
@@ -96,6 +96,27 @@ refresh-dev-db:
 	@echo "Restoring to dev via proxy on localhost:15433..."
 	pg_restore --clean --no-owner --no-acl -h localhost -p 15433 -U postgres -d routewerk_dev /tmp/routewerk_prod.dump
 	@echo "Done. Dev database refreshed from production."
+
+# One-off local backup of production (same dump the nightly GitHub
+# Actions workflow uploads to Tigris — see .github/workflows/backup-db.yml
+# and docs/backup-restore.md). Requires a proxy running first:
+#   fly proxy 15432:5432 -a routewerk-db
+backup-now:
+	@mkdir -p backups
+	@echo "Dumping production via proxy on localhost:15432..."
+	pg_dump --no-owner --no-acl -Fc -h localhost -p 15432 -U routewerk -d routewerk -f backups/routewerk-$$(date -u +%Y-%m-%d).dump
+	@echo "Done. Wrote backups/routewerk-$$(date -u +%Y-%m-%d).dump"
+
+# Restore a backup dump into STAGING (clobbers staging data — see
+# docs/backup-restore.md for the full drill). Requires a proxy first:
+#   fly proxy 15433:5432 -a routewerk-dev-db
+# Usage: make restore-staging DUMP=backups/routewerk-2026-07-01.dump
+restore-staging:
+	@test -n "$(DUMP)" || { echo "Usage: make restore-staging DUMP=path/to/backup.dump"; exit 1; }
+	@test -f "$(DUMP)" || { echo "ERROR: no such file: $(DUMP)"; exit 1; }
+	@echo "Restoring $(DUMP) to staging via proxy on localhost:15433..."
+	pg_restore --clean --no-owner --no-acl -h localhost -p 15433 -U postgres -d routewerk_dev "$(DUMP)"
+	@echo "Done. Staging database restored from $(DUMP)."
 
 # Prune local branches whose upstream has been deleted (typical after a
 # squash-merge with --delete-branch on the remote). Squash rewrites

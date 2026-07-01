@@ -39,7 +39,7 @@ func (h *PlaybookHandler) List(w http.ResponseWriter, r *http.Request) {
 	steps, err := h.sessions.ListPlaybookSteps(r.Context(), locationID)
 	if err != nil {
 		slog.Error("list playbook", "location_id", locationID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if steps == nil {
@@ -78,7 +78,7 @@ func (h *PlaybookHandler) Create(w http.ResponseWriter, r *http.Request) {
 	step, err := h.sessions.CreatePlaybookStep(r.Context(), locationID, title)
 	if err != nil {
 		slog.Error("create playbook step", "location_id", locationID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusCreated, step)
@@ -90,7 +90,7 @@ func (h *PlaybookHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *PlaybookHandler) resolveStep(w http.ResponseWriter, r *http.Request, locationID, stepID string) (*model.LocationPlaybookStep, bool) {
 	step, err := h.sessions.GetPlaybookStep(r.Context(), stepID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return nil, false
 	}
 	if step == nil || step.LocationID != locationID {
@@ -127,7 +127,7 @@ func (h *PlaybookHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.sessions.UpdatePlaybookStep(r.Context(), stepID, title); err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -147,7 +147,7 @@ func (h *PlaybookHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.sessions.DeletePlaybookStep(r.Context(), stepID); err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -184,7 +184,7 @@ func (h *PlaybookHandler) Move(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		slog.Error("move playbook step", "step_id", stepID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

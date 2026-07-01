@@ -45,7 +45,7 @@ func (h *RatingHandler) Rate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.ratings.Upsert(r.Context(), rating); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to save rating")
+		InternalError(w, r, "failed to save rating", err)
 		return
 	}
 
@@ -63,7 +63,7 @@ func (h *RatingHandler) RouteRatings(w http.ResponseWriter, r *http.Request) {
 
 	ratings, err := h.ratings.ListByRoute(r.Context(), routeID, locationID, limit, offset)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 

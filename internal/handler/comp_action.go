@@ -60,7 +60,7 @@ func (h *CompHandler) SubmitActions(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		slog.Error("registration lookup", "competition_id", compID, "user_id", callerID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if !reg.IsActive() {
@@ -88,7 +88,7 @@ func (h *CompHandler) SubmitActions(w http.ResponseWriter, r *http.Request) {
 	events, err := h.repo.ListEvents(r.Context(), compID)
 	if err != nil {
 		slog.Error("list events", "competition_id", compID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	eventByID := make(map[string]*model.CompetitionEvent, len(events))
@@ -104,7 +104,7 @@ func (h *CompHandler) SubmitActions(w http.ResponseWriter, r *http.Request) {
 	allProblems, err := h.repo.ListProblemsForEvents(r.Context(), eventIDs)
 	if err != nil {
 		slog.Error("list problems for events", "competition_id", compID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	problemByID := make(map[string]*model.CompetitionProblem, len(allProblems))

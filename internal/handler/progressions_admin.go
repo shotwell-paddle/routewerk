@@ -61,7 +61,7 @@ func (h *ProgressionsAdminHandler) ListAllQuests(w http.ResponseWriter, r *http.
 	locationID := chi.URLParam(r, "locationID")
 	items, err := h.quests.ListByLocation(r.Context(), locationID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if items == nil {
@@ -85,7 +85,7 @@ func (h *ProgressionsAdminHandler) CreateQuest(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if err := h.quests.Create(r.Context(), &q); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to create quest")
+		InternalError(w, r, "failed to create quest", err)
 		return
 	}
 	JSON(w, http.StatusCreated, q)
@@ -99,7 +99,7 @@ func (h *ProgressionsAdminHandler) UpdateQuest(w http.ResponseWriter, r *http.Re
 	existing, err := h.quests.GetByID(r.Context(), id)
 	if err != nil {
 		slog.Error("update quest: lookup failed", "quest_id", id, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if existing == nil {
@@ -120,7 +120,7 @@ func (h *ProgressionsAdminHandler) UpdateQuest(w http.ResponseWriter, r *http.Re
 	q.ID = id
 	q.LocationID = existing.LocationID
 	if err := h.quests.Update(r.Context(), &q); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to update quest")
+		InternalError(w, r, "failed to update quest", err)
 		return
 	}
 	JSON(w, http.StatusOK, q)
@@ -132,7 +132,7 @@ func (h *ProgressionsAdminHandler) DeactivateQuest(w http.ResponseWriter, r *htt
 	locationID := chi.URLParam(r, "locationID")
 	id := chi.URLParam(r, "questID")
 	if err := h.quests.Deactivate(r.Context(), id, locationID); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to deactivate quest")
+		InternalError(w, r, "failed to deactivate quest", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -146,7 +146,7 @@ func (h *ProgressionsAdminHandler) DuplicateQuest(w http.ResponseWriter, r *http
 	id := chi.URLParam(r, "questID")
 	q, err := h.quests.Duplicate(r.Context(), id, locationID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "failed to duplicate quest")
+		InternalError(w, r, "failed to duplicate quest", err)
 		return
 	}
 	JSON(w, http.StatusCreated, q)
@@ -159,7 +159,7 @@ func (h *ProgressionsAdminHandler) ListDomains(w http.ResponseWriter, r *http.Re
 	locationID := chi.URLParam(r, "locationID")
 	domains, err := h.quests.ListDomains(r.Context(), locationID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if domains == nil {
@@ -182,7 +182,7 @@ func (h *ProgressionsAdminHandler) CreateDomain(w http.ResponseWriter, r *http.R
 		return
 	}
 	if err := h.quests.CreateDomain(r.Context(), &d); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to create domain")
+		InternalError(w, r, "failed to create domain", err)
 		return
 	}
 	JSON(w, http.StatusCreated, d)
@@ -195,7 +195,7 @@ func (h *ProgressionsAdminHandler) UpdateDomain(w http.ResponseWriter, r *http.R
 	existing, err := h.quests.GetDomainByID(r.Context(), id)
 	if err != nil {
 		slog.Error("update domain: lookup failed", "domain_id", id, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if existing == nil {
@@ -214,7 +214,7 @@ func (h *ProgressionsAdminHandler) UpdateDomain(w http.ResponseWriter, r *http.R
 	d.ID = id
 	d.LocationID = existing.LocationID
 	if err := h.quests.UpdateDomain(r.Context(), &d); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to update domain")
+		InternalError(w, r, "failed to update domain", err)
 		return
 	}
 	JSON(w, http.StatusOK, d)
@@ -226,7 +226,7 @@ func (h *ProgressionsAdminHandler) DeleteDomain(w http.ResponseWriter, r *http.R
 	locationID := chi.URLParam(r, "locationID")
 	id := chi.URLParam(r, "domainID")
 	if err := h.quests.DeleteDomain(r.Context(), id, locationID); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to delete domain")
+		InternalError(w, r, "failed to delete domain", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -239,7 +239,7 @@ func (h *ProgressionsAdminHandler) ListBadges(w http.ResponseWriter, r *http.Req
 	locationID := chi.URLParam(r, "locationID")
 	badges, err := h.badges.ListByLocation(r.Context(), locationID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if badges == nil {
@@ -262,7 +262,7 @@ func (h *ProgressionsAdminHandler) CreateBadge(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if err := h.badges.Create(r.Context(), &b); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to create badge")
+		InternalError(w, r, "failed to create badge", err)
 		return
 	}
 	JSON(w, http.StatusCreated, b)
@@ -275,7 +275,7 @@ func (h *ProgressionsAdminHandler) UpdateBadge(w http.ResponseWriter, r *http.Re
 	existing, err := h.badges.GetByID(r.Context(), id)
 	if err != nil {
 		slog.Error("update badge: lookup failed", "badge_id", id, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if existing == nil {
@@ -294,7 +294,7 @@ func (h *ProgressionsAdminHandler) UpdateBadge(w http.ResponseWriter, r *http.Re
 	b.ID = id
 	b.LocationID = existing.LocationID
 	if err := h.badges.Update(r.Context(), &b); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to update badge")
+		InternalError(w, r, "failed to update badge", err)
 		return
 	}
 	JSON(w, http.StatusOK, b)
@@ -307,7 +307,7 @@ func (h *ProgressionsAdminHandler) DeleteBadge(w http.ResponseWriter, r *http.Re
 	existing, err := h.badges.GetByID(r.Context(), id)
 	if err != nil {
 		slog.Error("delete badge: lookup failed", "badge_id", id, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if existing == nil {
@@ -319,7 +319,7 @@ func (h *ProgressionsAdminHandler) DeleteBadge(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := h.badges.Delete(r.Context(), id); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to delete badge")
+		InternalError(w, r, "failed to delete badge", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

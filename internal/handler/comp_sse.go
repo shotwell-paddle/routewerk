@@ -61,7 +61,7 @@ func (h *CompHandler) StreamLeaderboard(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		// Should never happen with stdlib net/http; defensive against
 		// custom middleware that might wrap the response writer.
-		Error(w, http.StatusInternalServerError, "streaming not supported")
+		InternalError(w, r, "streaming not supported", nil)
 		return
 	}
 
@@ -76,7 +76,7 @@ func (h *CompHandler) StreamLeaderboard(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		slog.Error("sse: initial build", "competition_id", compID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 

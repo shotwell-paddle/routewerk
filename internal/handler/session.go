@@ -9,18 +9,27 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
+	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
 type SessionHandler struct {
 	sessions *repository.SessionRepo
-	// Used by Publish to archive routes targeted by strip-targets
-	// before flipping the session to complete. Mirrors the HTMX
-	// flow at internal/handler/web/sessions_lifecycle.go.
+	// routes is retained for the web HTMX publish-path parity; the JSON
+	// Publish now runs entirely inside SessionRepo.PublishSession.
 	routes *repository.RouteRepo
+	audit  *service.AuditService
 }
 
-func NewSessionHandler(sessions *repository.SessionRepo, routes *repository.RouteRepo) *SessionHandler {
-	return &SessionHandler{sessions: sessions, routes: routes}
+func NewSessionHandler(sessions *repository.SessionRepo, routes *repository.RouteRepo, audit *service.AuditService) *SessionHandler {
+	return &SessionHandler{sessions: sessions, routes: routes, audit: audit}
+}
+
+// record is a nil-safe audit shim — tests construct the handler without
+// an audit service.
+func (h *SessionHandler) record(r *http.Request, action, sessionID string, meta map[string]interface{}) {
+	if h.audit != nil {
+		h.audit.Record(r, action, "session", sessionID, "", meta)
+	}
 }
 
 type createSessionRequest struct {
@@ -64,9 +73,14 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.sessions.Create(r.Context(), session); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to create session")
+		InternalError(w, r, "failed to create session", err)
 		return
 	}
+
+	h.record(r, service.AuditSessionCreate, session.ID, map[string]interface{}{
+		"location_id":    locationID,
+		"scheduled_date": req.ScheduledDate,
+	})
 
 	JSON(w, http.StatusCreated, session)
 }
@@ -77,7 +91,7 @@ func (h *SessionHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	sessions, err := h.sessions.ListByLocation(r.Context(), locationID, limit, offset)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -119,9 +133,11 @@ func (h *SessionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.sessions.Update(r.Context(), session); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to update session")
+		InternalError(w, r, "failed to update session", err)
 		return
 	}
+
+	h.record(r, service.AuditSessionUpdate, session.ID, nil)
 
 	session, _ = h.sessions.GetByID(r.Context(), session.ID)
 	JSON(w, http.StatusOK, session)
@@ -136,7 +152,7 @@ func (h *SessionHandler) resolveSession(w http.ResponseWriter, r *http.Request) 
 	sessionID := chi.URLParam(r, "sessionID")
 	session, err := h.sessions.GetByID(r.Context(), sessionID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return nil, false
 	}
 	if session == nil || session.LocationID != locationID {
@@ -173,9 +189,13 @@ func (h *SessionHandler) Assign(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.sessions.AddAssignment(r.Context(), assignment); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to add assignment")
+		InternalError(w, r, "failed to add assignment", err)
 		return
 	}
+
+	h.record(r, service.AuditSessionAssign, sessionID, map[string]interface{}{
+		"setter_id": req.SetterID,
+	})
 
 	JSON(w, http.StatusCreated, assignment)
 }
@@ -192,7 +212,7 @@ func (h *SessionHandler) Unassign(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "assignmentID")
 	n, err := h.sessions.RemoveAssignment(r.Context(), session.ID, id)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "failed to remove assignment")
+		InternalError(w, r, "failed to remove assignment", err)
 		return
 	}
 	if n == 0 {
@@ -235,7 +255,7 @@ func (h *SessionHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.sessions.UpdateStatus(r.Context(), session.ID, req.Status); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to update status")
+		InternalError(w, r, "failed to update status", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -248,8 +268,11 @@ func (h *SessionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	h.record(r, service.AuditSessionDelete, session.ID, map[string]interface{}{
+		"location_id": session.LocationID,
+	})
 	if err := h.sessions.Delete(r.Context(), session.ID); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to delete session")
+		InternalError(w, r, "failed to delete session", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -288,9 +311,14 @@ func (h *SessionHandler) Publish(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusConflict, "session is already complete")
 			return
 		}
-		Error(w, http.StatusInternalServerError, "failed to publish session")
+		InternalError(w, r, "failed to publish session", err)
 		return
 	}
+
+	h.record(r, service.AuditSessionPublish, session.ID, map[string]interface{}{
+		"stripped":  stripped,
+		"published": published,
+	})
 
 	JSON(w, http.StatusOK, publishResult{
 		StrippedRouteCount: stripped,
@@ -311,7 +339,7 @@ func (h *SessionHandler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 	sessionID := session.ID
 	routes, err := h.sessions.ListSessionRoutes(r.Context(), sessionID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if routes == nil {
@@ -330,7 +358,7 @@ func (h *SessionHandler) ListStripTargets(w http.ResponseWriter, r *http.Request
 	}
 	targets, err := h.sessions.ListStripTargets(r.Context(), session.ID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusOK, targets)
@@ -369,7 +397,7 @@ func (h *SessionHandler) AddStripTarget(w http.ResponseWriter, r *http.Request) 
 			Error(w, http.StatusConflict, "already on the strip list")
 			return
 		}
-		Error(w, http.StatusInternalServerError, "failed to add strip target")
+		InternalError(w, r, "failed to add strip target", err)
 		return
 	}
 	JSON(w, http.StatusCreated, target)
@@ -385,7 +413,7 @@ func (h *SessionHandler) RemoveStripTarget(w http.ResponseWriter, r *http.Reques
 	id := chi.URLParam(r, "targetID")
 	n, err := h.sessions.RemoveStripTarget(r.Context(), session.ID, id)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "failed to remove strip target")
+		InternalError(w, r, "failed to remove strip target", err)
 		return
 	}
 	if n == 0 {
@@ -407,7 +435,7 @@ func (h *SessionHandler) ListChecklist(w http.ResponseWriter, r *http.Request) {
 	}
 	items, err := h.sessions.ListChecklistItems(r.Context(), session.ID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusOK, items)
@@ -426,7 +454,7 @@ func (h *SessionHandler) ToggleChecklistItem(w http.ResponseWriter, r *http.Requ
 	userID := middleware.GetUserID(r.Context())
 	count, err := h.sessions.ToggleChecklistItem(r.Context(), session.ID, itemID, userID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "failed to toggle item")
+		InternalError(w, r, "failed to toggle item", err)
 		return
 	}
 	if count == 0 {

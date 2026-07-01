@@ -110,7 +110,7 @@ func (h *CompHandler) List(w http.ResponseWriter, r *http.Request) {
 	comps, err := h.repo.ListByLocation(r.Context(), locationID, status)
 	if err != nil {
 		slog.Error("list competitions", "location_id", locationID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	out := make([]api.Competition, 0, len(comps))
@@ -118,7 +118,7 @@ func (h *CompHandler) List(w http.ResponseWriter, r *http.Request) {
 		c, err := modelToAPI(&comps[i])
 		if err != nil {
 			slog.Error("competition serialization", "id", comps[i].ID, "error", err)
-			Error(w, http.StatusInternalServerError, "internal error")
+			InternalError(w, r, "internal error", err)
 			return
 		}
 		out = append(out, c)
@@ -152,13 +152,13 @@ func (h *CompHandler) GetBySlug(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		slog.Error("find competition by slug", "slug", slug, "user_id", userID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	out, err := modelToAPI(comp)
 	if err != nil {
 		slog.Error("competition serialization", "id", comp.ID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusOK, out)
@@ -178,13 +178,13 @@ func (h *CompHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		slog.Error("get competition", "id", id, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	out, err := modelToAPI(comp)
 	if err != nil {
 		slog.Error("competition serialization", "id", id, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusOK, out)
@@ -218,13 +218,13 @@ func (h *CompHandler) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		slog.Error("create competition", "location_id", locationID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	out, err := modelToAPI(comp)
 	if err != nil {
 		slog.Error("competition serialization", "id", comp.ID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusCreated, out)
@@ -251,7 +251,7 @@ func (h *CompHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		slog.Error("get competition for update", "id", id, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -273,13 +273,13 @@ func (h *CompHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.repo.Update(r.Context(), existing); err != nil {
 		slog.Error("update competition", "id", id, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	out, err := modelToAPI(existing)
 	if err != nil {
 		slog.Error("competition serialization", "id", id, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusOK, out)

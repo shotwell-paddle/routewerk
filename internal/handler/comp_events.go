@@ -39,7 +39,7 @@ func (h *CompHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
 	events, err := h.repo.ListEvents(r.Context(), compID)
 	if err != nil {
 		slog.Error("list events", "competition_id", compID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	out := make([]api.CompetitionEvent, 0, len(events))
@@ -47,7 +47,7 @@ func (h *CompHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
 		ev, err := eventToAPI(&events[i])
 		if err != nil {
 			slog.Error("event serialization", "id", events[i].ID, "error", err)
-			Error(w, http.StatusInternalServerError, "internal error")
+			InternalError(w, r, "internal error", err)
 			return
 		}
 		out = append(out, ev)
@@ -81,13 +81,13 @@ func (h *CompHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	ev := eventCreateToModel(compID, &body)
 	if err := h.repo.CreateEvent(r.Context(), ev); err != nil {
 		slog.Error("create event", "competition_id", compID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	out, err := eventToAPI(ev)
 	if err != nil {
 		slog.Error("event serialization", "id", ev.ID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusCreated, out)
@@ -126,13 +126,13 @@ func (h *CompHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.repo.UpdateEvent(r.Context(), existing); err != nil {
 		slog.Error("update event", "id", eventID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	out, err := eventToAPI(existing)
 	if err != nil {
 		slog.Error("event serialization", "id", eventID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusOK, out)
@@ -148,7 +148,7 @@ func (h *CompHandler) loadComp(w http.ResponseWriter, r *http.Request, compID st
 	}
 	if err != nil {
 		slog.Error("load competition", "id", compID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return nil, false
 	}
 	return comp, true
@@ -165,7 +165,7 @@ func (h *CompHandler) findEventAndComp(w http.ResponseWriter, r *http.Request, e
 	}
 	if err != nil {
 		slog.Error("get event", "id", eventID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return nil, nil, false
 	}
 	comp, ok := h.loadComp(w, r, ev.CompetitionID)

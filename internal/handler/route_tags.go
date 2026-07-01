@@ -55,7 +55,7 @@ func (h *RouteTagHandler) List(w http.ResponseWriter, r *http.Request) {
 	tags, err := h.userTags.ListByRoute(r.Context(), routeID, viewerID)
 	if err != nil {
 		slog.Error("list community tags", "route_id", routeID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	// Normalize nil → [] so the SPA can call `.length` without a guard.
@@ -114,7 +114,7 @@ func (h *RouteTagHandler) Add(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.userTags.Add(r.Context(), routeID, userID, tagName); err != nil {
 		slog.Error("add community tag failed", "route_id", routeID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -164,7 +164,7 @@ func (h *RouteTagHandler) Remove(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.userTags.Remove(r.Context(), routeID, userID, tagName); err != nil {
 		slog.Error("remove community tag failed", "route_id", routeID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -208,7 +208,7 @@ func (h *RouteTagHandler) Moderate(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.userTags.DeleteTagFromRoute(r.Context(), routeID, tagName); err != nil {
 		slog.Error("moderate community tag failed", "route_id", routeID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

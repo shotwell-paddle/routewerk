@@ -37,7 +37,7 @@ func (h *DashboardHandler) Stats(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := h.analytics.LocationDashboardStats(r.Context(), locationID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 

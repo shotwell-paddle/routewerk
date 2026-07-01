@@ -81,7 +81,7 @@ func (h *CardBatchHandler) List(w http.ResponseWriter, r *http.Request) {
 	batches, err := h.batches.ListByLocation(r.Context(), locationID, 50)
 	if err != nil {
 		slog.Error("card batch list: db error", "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	out := make([]batchResponse, 0, len(batches))
@@ -130,7 +130,7 @@ func (h *CardBatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 	valid, err := h.svc.ValidateRouteIDs(r.Context(), locationID, req.RouteIDs)
 	if err != nil {
 		slog.Error("card batch create: validate failed", "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if len(valid) == 0 {
@@ -148,7 +148,7 @@ func (h *CardBatchHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.batches.Create(r.Context(), batch); err != nil {
 		slog.Error("card batch create: db error", "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -174,7 +174,7 @@ func (h *CardBatchHandler) Get(w http.ResponseWriter, r *http.Request) {
 	b, err := h.batches.GetByID(r.Context(), batchID)
 	if err != nil {
 		slog.Error("card batch get: db error", "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if b == nil || b.LocationID != locationID {
@@ -199,7 +199,7 @@ func (h *CardBatchHandler) Download(w http.ResponseWriter, r *http.Request) {
 	b, err := h.batches.GetByID(r.Context(), batchID)
 	if err != nil {
 		slog.Error("card batch download: db error", "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if b == nil || b.LocationID != locationID {
@@ -213,7 +213,7 @@ func (h *CardBatchHandler) Download(w http.ResponseWriter, r *http.Request) {
 	tmp, err := os.CreateTemp("", "routewerk-cardbatch-*.pdf")
 	if err != nil {
 		slog.Error("card batch download: tmpfile create failed", "batch_id", batchID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	defer func() {
@@ -230,7 +230,7 @@ func (h *CardBatchHandler) Download(w http.ResponseWriter, r *http.Request) {
 		if mErr := h.batches.MarkFailed(r.Context(), batchID, err.Error()); mErr != nil {
 			slog.Error("card batch mark-failed failed", "batch_id", batchID, "error", mErr)
 		}
-		Error(w, http.StatusInternalServerError, "render failed")
+		InternalError(w, r, "render failed", err)
 		return
 	}
 	if count == 0 {
@@ -240,7 +240,7 @@ func (h *CardBatchHandler) Download(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := tmp.Seek(0, 0); err != nil {
 		slog.Error("card batch download: tmpfile seek failed", "batch_id", batchID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -265,7 +265,7 @@ func (h *CardBatchHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	b, err := h.batches.GetByID(r.Context(), batchID)
 	if err != nil {
 		slog.Error("card batch delete: db error", "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if b == nil || b.LocationID != locationID {
@@ -285,7 +285,7 @@ func (h *CardBatchHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.batches.Delete(r.Context(), batchID); err != nil {
 		slog.Error("card batch delete: db error", "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -315,7 +315,7 @@ func (h *CardBatchHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	b, err := h.batches.GetByID(r.Context(), batchID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if b == nil || b.LocationID != locationID {
@@ -353,7 +353,7 @@ func (h *CardBatchHandler) Update(w http.ResponseWriter, r *http.Request) {
 	valid, err := h.svc.ValidateRouteIDs(r.Context(), b.LocationID, req.RouteIDs)
 	if err != nil {
 		slog.Error("card batch update: validate failed", "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if len(valid) == 0 {
@@ -363,7 +363,7 @@ func (h *CardBatchHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.batches.UpdateRouteIDs(r.Context(), b.ID, valid); err != nil {
 		slog.Error("card batch update: db error", "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -379,7 +379,7 @@ func (h *CardBatchHandler) Update(w http.ResponseWriter, r *http.Request) {
 	// status the caller can use to refresh their view.
 	updated, err := h.batches.GetByID(r.Context(), b.ID)
 	if err != nil || updated == nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusOK, toBatchResponse(*updated))
@@ -398,7 +398,7 @@ func (h *CardBatchHandler) Retry(w http.ResponseWriter, r *http.Request) {
 	b, err := h.batches.GetByID(r.Context(), batchID)
 	if err != nil {
 		slog.Error("card batch retry: db error", "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if b == nil || b.LocationID != locationID {
@@ -418,13 +418,13 @@ func (h *CardBatchHandler) Retry(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.batches.InvalidateStorageKey(r.Context(), batchID); err != nil {
 		slog.Error("card batch retry: db error", "batch_id", batchID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
 	updated, err := h.batches.GetByID(r.Context(), batchID)
 	if err != nil || updated == nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusOK, toBatchResponse(*updated))

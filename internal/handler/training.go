@@ -61,7 +61,7 @@ func (h *TrainingHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.training.Create(r.Context(), plan); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to create plan")
+		InternalError(w, r, "failed to create plan", err)
 		return
 	}
 
@@ -73,7 +73,7 @@ func (h *TrainingHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	plans, err := h.training.ListByLocation(r.Context(), locationID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -93,7 +93,7 @@ func (h *TrainingHandler) resolvePlan(w http.ResponseWriter, r *http.Request) (*
 	planID := chi.URLParam(r, "planID")
 	plan, err := h.training.GetByID(r.Context(), planID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return nil, false
 	}
 	if plan == nil || plan.LocationID != locationID {
@@ -138,7 +138,7 @@ func (h *TrainingHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.training.Update(r.Context(), plan); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to update plan")
+		InternalError(w, r, "failed to update plan", err)
 		return
 	}
 
@@ -172,7 +172,7 @@ func (h *TrainingHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.training.AddItem(r.Context(), item); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to add item")
+		InternalError(w, r, "failed to add item", err)
 		return
 	}
 
@@ -198,7 +198,7 @@ func (h *TrainingHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 	// location, so a foreign item id is a 404, not a cross-tenant write.
 	n, err := h.training.UpdateItem(r.Context(), locationID, itemID, completed, req.Title, req.Notes)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "failed to update item")
+		InternalError(w, r, "failed to update item", err)
 		return
 	}
 	if n == 0 {
@@ -214,7 +214,7 @@ func (h *TrainingHandler) MyPlans(w http.ResponseWriter, r *http.Request) {
 
 	plans, err := h.training.ListByClimber(r.Context(), userID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 

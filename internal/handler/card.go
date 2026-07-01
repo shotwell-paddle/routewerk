@@ -41,7 +41,7 @@ func (h *CardHandler) PrintPNG(w http.ResponseWriter, r *http.Request) {
 	}
 	pngBytes, err := h.cardGen.GeneratePrintPNG(data)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "failed to generate card")
+		InternalError(w, r, "failed to generate card", err)
 		return
 	}
 	w.Header().Set("Content-Type", "image/png")
@@ -57,7 +57,7 @@ func (h *CardHandler) PrintPDF(w http.ResponseWriter, r *http.Request) {
 	}
 	pdfBytes, err := h.cardGen.GeneratePrintPDF(data)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "failed to generate card")
+		InternalError(w, r, "failed to generate card", err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/pdf")
@@ -74,7 +74,7 @@ func (h *CardHandler) DigitalPNG(w http.ResponseWriter, r *http.Request) {
 	}
 	pngBytes, err := h.cardGen.GenerateDigitalPNG(data)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "failed to generate card")
+		InternalError(w, r, "failed to generate card", err)
 		return
 	}
 	w.Header().Set("Content-Type", "image/png")
@@ -90,7 +90,7 @@ func (h *CardHandler) DigitalPDF(w http.ResponseWriter, r *http.Request) {
 	}
 	pdfBytes, err := h.cardGen.GenerateDigitalPDF(data)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "failed to generate card")
+		InternalError(w, r, "failed to generate card", err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/pdf")
@@ -106,7 +106,7 @@ func (h *CardHandler) resolveCardData(w http.ResponseWriter, r *http.Request) (s
 
 	rt, err := h.routes.GetByID(r.Context(), routeID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return service.CardData{}, false
 	}
 	if rt == nil {

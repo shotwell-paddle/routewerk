@@ -31,14 +31,14 @@ func (h *CompHandler) VerifyAttempt(w http.ResponseWriter, r *http.Request) {
 	actor := middleware.GetUserID(r.Context())
 	if err := h.attemptRepo.Verify(r.Context(), att.ID, actor); err != nil {
 		slog.Error("verify attempt", "id", att.ID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	// Re-fetch to return the verified_at/by populated.
 	updated, err := h.attemptRepo.GetByID(r.Context(), att.ID)
 	if err != nil {
 		slog.Error("get attempt after verify", "id", att.ID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	// Bust the leaderboard cache for this comp — verification doesn't
@@ -106,7 +106,7 @@ func (h *CompHandler) OverrideAttempt(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("apply override", "id", att.ID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	h.cache.invalidate(comp.ID)
@@ -130,13 +130,13 @@ func (h *CompHandler) loadAttemptForStaff(w http.ResponseWriter, r *http.Request
 	}
 	if err != nil {
 		slog.Error("get attempt", "id", attemptID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return nil, nil, false
 	}
 	reg, err := h.regRepo.GetByID(r.Context(), att.RegistrationID)
 	if err != nil {
 		slog.Error("get registration for attempt", "id", att.RegistrationID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return nil, nil, false
 	}
 	comp, ok := h.loadComp(w, r, reg.CompetitionID)

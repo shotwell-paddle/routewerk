@@ -22,7 +22,7 @@ func (h *AnalyticsHandler) GradeDistribution(w http.ResponseWriter, r *http.Requ
 
 	grades, err := h.analytics.GradeDistribution(r.Context(), locationID, wallID, "")
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -34,7 +34,7 @@ func (h *AnalyticsHandler) RouteLifecycle(w http.ResponseWriter, r *http.Request
 
 	routes, err := h.analytics.RouteLifecycle(r.Context(), locationID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -47,7 +47,7 @@ func (h *AnalyticsHandler) Engagement(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := h.analytics.Engagement(r.Context(), locationID, days)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -60,7 +60,7 @@ func (h *AnalyticsHandler) SetterProductivity(w http.ResponseWriter, r *http.Req
 
 	stats, err := h.analytics.SetterProductivity(r.Context(), locationID, days)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -72,7 +72,7 @@ func (h *AnalyticsHandler) OrgOverview(w http.ResponseWriter, r *http.Request) {
 
 	overview, err := h.analytics.OrgOverview(r.Context(), orgID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 

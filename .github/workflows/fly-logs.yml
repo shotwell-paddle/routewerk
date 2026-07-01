@@ -1,0 +1,31 @@
+name: Fly Logs
+
+# Ops utility: fetch recent Fly logs from CI (useful when debugging from
+# an environment without local flyctl auth). Manual-trigger only.
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: "Fly app (routewerk or routewerk-dev)"
+        required: true
+        default: "routewerk-dev"
+      grep:
+        description: "Optional case-insensitive filter"
+        required: false
+        default: ""
+
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Fetch logs
+        env:
+          FLY_API_TOKEN: ${{ inputs.app == 'routewerk' && secrets.FLY_API_TOKEN_PROD || secrets.FLY_API_TOKEN_DEV }}
+        run: |
+          if [ -n "${{ inputs.grep }}" ]; then
+            flyctl logs -a "${{ inputs.app }}" --no-tail | grep -i "${{ inputs.grep }}" | tail -80
+          else
+            flyctl logs -a "${{ inputs.app }}" --no-tail | tail -120
+          fi

@@ -36,7 +36,7 @@ func (h *NotificationHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	notifs, err := h.notifs.ListUnread(r.Context(), userID, limit)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if notifs == nil {
@@ -52,7 +52,7 @@ func (h *NotificationHandler) UnreadCount(w http.ResponseWriter, r *http.Request
 	userID := middleware.GetUserID(r.Context())
 	count, err := h.notifs.UnreadCount(r.Context(), userID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusOK, map[string]interface{}{"count": count})
@@ -84,7 +84,7 @@ func (h *NotificationHandler) MarkAllRead(w http.ResponseWriter, r *http.Request
 	userID := middleware.GetUserID(r.Context())
 	count, err := h.notifs.MarkAllRead(r.Context(), userID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusOK, map[string]interface{}{"marked": count})

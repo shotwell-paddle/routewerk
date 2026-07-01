@@ -46,7 +46,7 @@ func (h *TagHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.tags.Create(r.Context(), tag); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to create tag")
+		InternalError(w, r, "failed to create tag", err)
 		return
 	}
 
@@ -64,7 +64,7 @@ func (h *TagHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	tags, err := h.tags.ListByOrg(r.Context(), orgID, category)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -80,7 +80,7 @@ func (h *TagHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tagID := chi.URLParam(r, "tagID")
 
 	if err := h.tags.Delete(r.Context(), tagID); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to delete tag")
+		InternalError(w, r, "failed to delete tag", err)
 		return
 	}
 

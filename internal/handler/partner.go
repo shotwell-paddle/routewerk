@@ -31,7 +31,7 @@ func (h *PartnerHandler) Search(w http.ResponseWriter, r *http.Request) {
 
 	partners, err := h.partners.Search(r.Context(), locationID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -60,7 +60,7 @@ func (h *PartnerHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.partners.Upsert(r.Context(), profile); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to update profile")
+		InternalError(w, r, "failed to update profile", err)
 		return
 	}
 
@@ -72,7 +72,7 @@ func (h *PartnerHandler) MyProfile(w http.ResponseWriter, r *http.Request) {
 
 	profile, err := h.partners.GetByUser(r.Context(), userID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if profile == nil {

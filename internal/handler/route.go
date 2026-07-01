@@ -141,13 +141,20 @@ func (h *RouteHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.routes.CreateWithTags(r.Context(), rt, req.TagIDs); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to create route")
+		InternalError(w, r, "failed to create route", err)
 		return
 	}
 
-	// Reload to include tags in response
+	// Reload to include tags in response. Best-effort: on a transient
+	// reload failure keep the already-created route rather than nil —
+	// dereferencing the discarded-error nil here was a latent panic that
+	// also lost the audit record.
 	if len(req.TagIDs) > 0 {
-		rt, _ = h.routes.GetByID(r.Context(), rt.ID)
+		if reloaded, rErr := h.routes.GetByID(r.Context(), rt.ID); rErr == nil && reloaded != nil {
+			rt = reloaded
+		} else if rErr != nil {
+			slog.Warn("route create: reload with tags failed", "route_id", rt.ID, "error", rErr)
+		}
 	}
 
 	h.audit.Record(r, service.AuditRouteCreate, "route", rt.ID, "", map[string]interface{}{
@@ -168,7 +175,7 @@ func (h *RouteHandler) Distribution(w http.ResponseWriter, r *http.Request) {
 	out, err := h.routes.RouteDistribution(r.Context(), locationID)
 	if err != nil {
 		slog.Error("route distribution", "location_id", locationID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if out == nil {
@@ -204,7 +211,7 @@ func (h *RouteHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	routes, total, err := h.routes.List(r.Context(), filter)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -281,17 +288,28 @@ func (h *RouteHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.routes.Update(r.Context(), rt); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to update route")
+		InternalError(w, r, "failed to update route", err)
 		return
 	}
 
 	if len(req.TagIDs) > 0 {
-		h.routes.SetTags(r.Context(), rt.ID, req.TagIDs)
+		// A failed tag write previously returned 200 with silently-stale
+		// tags; surface it — the route field update already committed, but
+		// the client must know its tag change didn't stick.
+		if err := h.routes.SetTags(r.Context(), rt.ID, req.TagIDs); err != nil {
+			InternalError(w, r, "route updated but tags failed to save", err)
+			return
+		}
 	}
 
-	// Only reload if tags changed; otherwise return what we have
+	// Only reload if tags changed; otherwise return what we have.
+	// Best-effort — see the matching block in Create.
 	if len(req.TagIDs) > 0 {
-		rt, _ = h.routes.GetByID(r.Context(), rt.ID)
+		if reloaded, rErr := h.routes.GetByID(r.Context(), rt.ID); rErr == nil && reloaded != nil {
+			rt = reloaded
+		} else if rErr != nil {
+			slog.Warn("route update: reload with tags failed", "route_id", rt.ID, "error", rErr)
+		}
 	}
 
 	h.audit.Record(r, service.AuditRouteUpdate, "route", rt.ID, "", map[string]interface{}{
@@ -324,7 +342,7 @@ func (h *RouteHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.routes.UpdateStatus(r.Context(), rt.ID, req.Status); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to update status")
+		InternalError(w, r, "failed to update status", err)
 		return
 	}
 
@@ -349,7 +367,7 @@ func (h *RouteHandler) resolveRoute(w http.ResponseWriter, r *http.Request) (*mo
 	routeID := chi.URLParam(r, "routeID")
 	rt, err := h.routes.GetByID(r.Context(), routeID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return nil, false
 	}
 	if rt == nil || rt.LocationID != locationID {
@@ -384,7 +402,7 @@ func (h *RouteHandler) BulkArchive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "failed to archive routes")
+		InternalError(w, r, "failed to archive routes", err)
 		return
 	}
 

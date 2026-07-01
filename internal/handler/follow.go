@@ -26,7 +26,7 @@ func (h *FollowHandler) Follow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.follows.Follow(r.Context(), userID, targetID); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to follow")
+		InternalError(w, r, "failed to follow", err)
 		return
 	}
 
@@ -38,7 +38,7 @@ func (h *FollowHandler) Unfollow(w http.ResponseWriter, r *http.Request) {
 	targetID := chi.URLParam(r, "userID")
 
 	if err := h.follows.Unfollow(r.Context(), userID, targetID); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to unfollow")
+		InternalError(w, r, "failed to unfollow", err)
 		return
 	}
 
@@ -51,7 +51,7 @@ func (h *FollowHandler) Followers(w http.ResponseWriter, r *http.Request) {
 
 	users, err := h.follows.Followers(r.Context(), targetID, limit, offset)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -64,7 +64,7 @@ func (h *FollowHandler) Following(w http.ResponseWriter, r *http.Request) {
 
 	users, err := h.follows.Following(r.Context(), targetID, limit, offset)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -79,7 +79,7 @@ func (h *FollowHandler) Feed(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.follows.ActivityFeed(r.Context(), userID, limit, offset)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 

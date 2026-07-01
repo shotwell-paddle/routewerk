@@ -58,7 +58,7 @@ func (h *LaborHandler) Log(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.labor.Create(r.Context(), log); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to log labor")
+		InternalError(w, r, "failed to log labor", err)
 		return
 	}
 
@@ -71,7 +71,7 @@ func (h *LaborHandler) ListByLocation(w http.ResponseWriter, r *http.Request) {
 
 	logs, err := h.labor.ListByLocation(r.Context(), locationID, limit, offset)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -84,7 +84,7 @@ func (h *LaborHandler) MyLabor(w http.ResponseWriter, r *http.Request) {
 
 	logs, err := h.labor.ListBySetter(r.Context(), userID, limit, offset)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 

@@ -36,7 +36,7 @@ func (h *RouteDistributionTargetHandler) List(w http.ResponseWriter, r *http.Req
 	out, err := h.targets.ListByLocation(r.Context(), locationID)
 	if err != nil {
 		slog.Error("list distribution targets", "location_id", locationID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if out == nil {
@@ -99,14 +99,14 @@ func (h *RouteDistributionTargetHandler) Replace(w http.ResponseWriter, r *http.
 	}
 	if err := h.targets.ReplaceAll(r.Context(), locationID, models); err != nil {
 		slog.Error("replace distribution targets", "location_id", locationID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
 	out, err := h.targets.ListByLocation(r.Context(), locationID)
 	if err != nil {
 		slog.Error("re-list distribution targets after replace", "location_id", locationID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if out == nil {

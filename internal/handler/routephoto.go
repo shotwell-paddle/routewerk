@@ -128,7 +128,7 @@ func (h *RoutePhotoHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	sniff = sniff[:n]
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		slog.Error("photo upload: seek failed", "route_id", routeID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	contentType := http.DetectContentType(sniff)
@@ -145,7 +145,7 @@ func (h *RoutePhotoHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	count, err := h.photos.CountByRoute(r.Context(), routeID)
 	if err != nil {
 		slog.Error("photo upload: count failed", "route_id", routeID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if count >= jsonPhotoMaxPerRoot {
@@ -172,7 +172,7 @@ func (h *RoutePhotoHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	storageKey, photoURL, err := h.storage.Upload(r.Context(), routeID, uploadFilename, processed.ContentType, processed.Data)
 	if err != nil {
 		slog.Error("photo upload: storage failed", "route_id", routeID, "error", err)
-		Error(w, http.StatusInternalServerError, "upload failed — please try again")
+		InternalError(w, r, "upload failed — please try again", err)
 		return
 	}
 
@@ -189,7 +189,7 @@ func (h *RoutePhotoHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		slog.Error("photo upload: db insert failed", "route_id", routeID, "error", err)
 		// Orphan cleanup — drop the just-uploaded blob if the row insert failed.
 		_ = h.storage.Delete(r.Context(), storageKey)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -232,7 +232,7 @@ func (h *RoutePhotoHandler) List(w http.ResponseWriter, r *http.Request) {
 	photos, err := h.photos.ListByRoute(r.Context(), routeID)
 	if err != nil {
 		slog.Error("photo list failed", "route_id", routeID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -293,7 +293,7 @@ func (h *RoutePhotoHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.photos.Delete(r.Context(), photoID); err != nil {
 		slog.Error("photo delete: db failed", "photo_id", photoID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 

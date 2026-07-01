@@ -30,7 +30,7 @@ func (h *OrgHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	orgs, err := h.orgs.ListByUser(r.Context(), userID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -46,7 +46,7 @@ func (h *OrgHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	org, err := h.orgs.GetByID(r.Context(), orgID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if org == nil {
@@ -62,7 +62,7 @@ func (h *OrgHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	org, err := h.orgs.GetByID(r.Context(), orgID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if org == nil {
@@ -87,7 +87,7 @@ func (h *OrgHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.orgs.Update(r.Context(), org); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to update organization")
+		InternalError(w, r, "failed to update organization", err)
 		return
 	}
 

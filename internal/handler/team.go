@@ -60,7 +60,7 @@ func (h *TeamHandler) List(w http.ResponseWriter, r *http.Request) {
 		Offset:     0,
 	})
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -105,7 +105,7 @@ func (h *TeamHandler) ListOrg(w http.ResponseWriter, r *http.Request) {
 		Offset:     0,
 	})
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -194,7 +194,7 @@ func (h *TeamHandler) UpdateMembership(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.users.UpdateMemberRole(r.Context(), membershipID, req.Role); err != nil {
-		Error(w, http.StatusInternalServerError, "update failed")
+		InternalError(w, r, "update failed", err)
 		return
 	}
 
@@ -250,7 +250,7 @@ func (h *TeamHandler) RemoveMembership(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.users.RemoveMembership(r.Context(), membershipID); err != nil {
-		Error(w, http.StatusInternalServerError, "remove failed")
+		InternalError(w, r, "remove failed", err)
 		return
 	}
 

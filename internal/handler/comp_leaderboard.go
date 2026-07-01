@@ -51,7 +51,7 @@ func (h *CompHandler) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		slog.Error("leaderboard", "competition_id", compID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusOK, board)

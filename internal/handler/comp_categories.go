@@ -35,7 +35,7 @@ func (h *CompHandler) ListCategories(w http.ResponseWriter, r *http.Request) {
 	cats, err := h.repo.ListCategories(r.Context(), compID)
 	if err != nil {
 		slog.Error("list categories", "competition_id", compID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	out := make([]api.CompetitionCategory, 0, len(cats))
@@ -43,7 +43,7 @@ func (h *CompHandler) ListCategories(w http.ResponseWriter, r *http.Request) {
 		c, err := categoryToAPI(&cats[i])
 		if err != nil {
 			slog.Error("category serialization", "id", cats[i].ID, "error", err)
-			Error(w, http.StatusInternalServerError, "internal error")
+			InternalError(w, r, "internal error", err)
 			return
 		}
 		out = append(out, c)
@@ -77,13 +77,13 @@ func (h *CompHandler) CreateCategory(w http.ResponseWriter, r *http.Request) {
 	cat := categoryCreateToModel(compID, &body)
 	if err := h.repo.CreateCategory(r.Context(), cat); err != nil {
 		slog.Error("create category", "competition_id", compID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	out, err := categoryToAPI(cat)
 	if err != nil {
 		slog.Error("category serialization", "id", cat.ID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusCreated, out)

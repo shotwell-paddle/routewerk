@@ -60,7 +60,7 @@ func (h *ActivityHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		slog.Error("activity feed failed", "location_id", locationID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if entries == nil {

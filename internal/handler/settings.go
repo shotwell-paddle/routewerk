@@ -7,6 +7,7 @@ import (
 
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
+	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
 // SettingsHandler exposes the location-level settings JSON for the
@@ -14,10 +15,11 @@ import (
 // HTMX uses, so reads stay cheap and writes invalidate the cache.
 type SettingsHandler struct {
 	settings *repository.CachedSettingsRepo
+	audit    *service.AuditService
 }
 
-func NewSettingsHandler(settings *repository.CachedSettingsRepo) *SettingsHandler {
-	return &SettingsHandler{settings: settings}
+func NewSettingsHandler(settings *repository.CachedSettingsRepo, audit *service.AuditService) *SettingsHandler {
+	return &SettingsHandler{settings: settings, audit: audit}
 }
 
 // GetLocationSettings — GET /locations/{locationID}/settings.
@@ -28,7 +30,7 @@ func (h *SettingsHandler) GetLocationSettings(w http.ResponseWriter, r *http.Req
 	locationID := chi.URLParam(r, "locationID")
 	settings, err := h.settings.GetLocationSettings(r.Context(), locationID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusOK, settings)
@@ -45,8 +47,17 @@ func (h *SettingsHandler) UpdateLocationSettings(w http.ResponseWriter, r *http.
 		return
 	}
 	if err := h.settings.UpdateLocationSettings(r.Context(), locationID, settings); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to save settings")
+		InternalError(w, r, "failed to save settings", err)
 		return
+	}
+	// Settings drive grading systems, circuits, and palettes gym-wide —
+	// a privileged mutation worth a trail (audit gap flagged in the
+	// 2026-07 best-practices audit).
+	if h.audit != nil {
+		h.audit.Record(r, service.AuditSettingsUpdate, "location_settings", locationID, "", map[string]interface{}{
+			"boulder_method": settings.Grading.BoulderMethod,
+			"circuit_count":  len(settings.Circuits.Colors),
+		})
 	}
 	// Re-read from the cache (the Update method invalidates) so the
 	// caller sees the post-default-merge state if anything was filled in.
@@ -119,7 +130,7 @@ func (h *SettingsHandler) ApplyPalettePreset(w http.ResponseWriter, r *http.Requ
 
 	settings, err := h.settings.GetLocationSettings(r.Context(), locationID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "could not load settings")
+		InternalError(w, r, "could not load settings", err)
 		return
 	}
 	// Clone to avoid sharing backing storage between locations.
@@ -127,8 +138,13 @@ func (h *SettingsHandler) ApplyPalettePreset(w http.ResponseWriter, r *http.Requ
 	settings.HoldColors.Colors = append([]model.HoldColor(nil), preset.HoldColors...)
 
 	if err := h.settings.UpdateLocationSettings(r.Context(), locationID, settings); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to save settings")
+		InternalError(w, r, "failed to save settings", err)
 		return
+	}
+	if h.audit != nil {
+		h.audit.Record(r, service.AuditSettingsUpdate, "location_settings", locationID, "", map[string]interface{}{
+			"palette_preset": preset.Name,
+		})
 	}
 	saved, err := h.settings.GetLocationSettings(r.Context(), locationID)
 	if err != nil {

@@ -36,7 +36,7 @@ func (h *CompHandler) ListProblems(w http.ResponseWriter, r *http.Request) {
 	problems, err := h.repo.ListProblems(r.Context(), eventID)
 	if err != nil {
 		slog.Error("list problems", "event_id", eventID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	out := make([]api.CompetitionProblem, 0, len(problems))
@@ -44,7 +44,7 @@ func (h *CompHandler) ListProblems(w http.ResponseWriter, r *http.Request) {
 		p, err := problemToAPI(&problems[i])
 		if err != nil {
 			slog.Error("problem serialization", "id", problems[i].ID, "error", err)
-			Error(w, http.StatusInternalServerError, "internal error")
+			InternalError(w, r, "internal error", err)
 			return
 		}
 		out = append(out, p)
@@ -78,13 +78,13 @@ func (h *CompHandler) CreateProblem(w http.ResponseWriter, r *http.Request) {
 	p := problemCreateToModel(eventID, &body)
 	if err := h.repo.CreateProblem(r.Context(), p); err != nil {
 		slog.Error("create problem", "event_id", eventID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	out, err := problemToAPI(p)
 	if err != nil {
 		slog.Error("problem serialization", "id", p.ID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusCreated, out)
@@ -104,7 +104,7 @@ func (h *CompHandler) UpdateProblem(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		slog.Error("get problem", "id", problemID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	// Resolve event → comp for authz.
@@ -123,13 +123,13 @@ func (h *CompHandler) UpdateProblem(w http.ResponseWriter, r *http.Request) {
 	applyProblemUpdate(existing, &body)
 	if err := h.repo.UpdateProblem(r.Context(), existing); err != nil {
 		slog.Error("update problem", "id", problemID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	out, err := problemToAPI(existing)
 	if err != nil {
 		slog.Error("problem serialization", "id", problemID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusOK, out)

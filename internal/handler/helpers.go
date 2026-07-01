@@ -3,10 +3,13 @@ package handler
 import (
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+
+	chimw "github.com/go-chi/chi/v5/middleware"
 )
 
 // maxBodySize limits request body to 1MB to prevent memory exhaustion.
@@ -24,6 +27,26 @@ func JSON(w http.ResponseWriter, status int, data interface{}) {
 // Error writes a JSON error response.
 func Error(w http.ResponseWriter, status int, message string) {
 	JSON(w, status, map[string]string{"error": message})
+}
+
+// InternalError writes the generic 500 JSON AND logs the underlying cause
+// with request context. Handlers previously called Error(w, 500, msg) and
+// discarded err across ~200 sites — half the API produced undiagnosable
+// 500s. Always pass the real error; the client still only sees message.
+func InternalError(w http.ResponseWriter, r *http.Request, message string, err error) {
+	attrs := []any{
+		slog.String("method", r.Method),
+		slog.String("path", r.URL.Path),
+		slog.String("msg", message),
+	}
+	if reqID := chimw.GetReqID(r.Context()); reqID != "" {
+		attrs = append(attrs, slog.String("request_id", reqID))
+	}
+	if err != nil {
+		attrs = append(attrs, slog.Any("error", err))
+	}
+	slog.Error("internal error", attrs...)
+	JSON(w, http.StatusInternalServerError, map[string]string{"error": message})
 }
 
 // Decode reads a JSON request body into the target with a size limit.

@@ -66,7 +66,7 @@ func (h *WallHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.walls.Create(r.Context(), wall); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to create wall")
+		InternalError(w, r, "failed to create wall", err)
 		return
 	}
 
@@ -92,7 +92,7 @@ func (h *WallHandler) List(w http.ResponseWriter, r *http.Request) {
 		walls, err = h.walls.ListByLocation(r.Context(), locationID)
 	}
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -157,7 +157,7 @@ func (h *WallHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.walls.Update(r.Context(), wall); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to update wall")
+		InternalError(w, r, "failed to update wall", err)
 		return
 	}
 
@@ -176,7 +176,7 @@ func (h *WallHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.walls.Delete(r.Context(), wallID); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to delete wall")
+		InternalError(w, r, "failed to delete wall", err)
 		return
 	}
 
@@ -213,7 +213,7 @@ func (h *WallHandler) setArchived(w http.ResponseWriter, r *http.Request, archiv
 		err = h.walls.Unarchive(r.Context(), wallID)
 	}
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "failed to update wall")
+		InternalError(w, r, "failed to update wall", err)
 		return
 	}
 
@@ -232,7 +232,7 @@ func (h *WallHandler) resolveWall(w http.ResponseWriter, r *http.Request) (*mode
 	wallID := chi.URLParam(r, "wallID")
 	wall, err := h.walls.GetByID(r.Context(), wallID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return nil, false
 	}
 	if wall == nil || wall.LocationID != locationID {

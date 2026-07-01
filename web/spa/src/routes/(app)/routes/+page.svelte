@@ -11,6 +11,7 @@
   } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
   import { roleRankAt } from '$lib/stores/auth.svelte';
+  import Notice from '$lib/components/Notice.svelte';
 
   const PAGE_SIZE = 50;
 
@@ -57,9 +58,17 @@
   $effect(() => {
     if (!locId) return;
     let cancelled = false;
-    listWalls(locId).then((res) => {
-      if (!cancelled) walls = res;
-    });
+    listWalls(locId)
+      .then((res) => {
+        if (!cancelled) walls = res;
+      })
+      .catch((err) => {
+        // Walls feed the filter dropdown + card wall names; a failure here
+        // surfaces via the page's existing error affordance instead of
+        // silently rendering a broken filter bar.
+        if (cancelled) return;
+        error = err instanceof ApiClientError ? err.message : 'Could not load walls.';
+      });
     return () => {
       cancelled = true;
     };
@@ -184,7 +193,7 @@
     {#if loading && routes.length === 0}
       <p class="muted">Loading routes…</p>
     {:else if error}
-      <p class="error">{error}</p>
+      <Notice kind="error">{error}</Notice>
     {:else if routes.length === 0}
       <div class="empty-card">
         <h3>No routes match these filters</h3>
@@ -441,12 +450,5 @@
   }
   .muted {
     color: var(--rw-text-muted);
-  }
-  .error {
-    background: #fef2f2;
-    border: 1px solid #fecaca;
-    color: #991b1b;
-    padding: 0.85rem;
-    border-radius: 8px;
   }
 </style>

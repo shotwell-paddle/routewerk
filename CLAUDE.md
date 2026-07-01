@@ -70,7 +70,7 @@ Admin CLI: `./bin/admin migrate`, `migrate-down`, `migrate-version`, `migrate-fo
 
 - `ci.yml` — runs `go vet`, unit + integration tests, and `go build` on every push and PR to `main`/`dev`. Required status checks for merging.
 - `deploy-dev.yml` — on push to `dev`, runs `flyctl deploy --remote-only --app routewerk-dev --config fly.dev.toml`.
-- `deploy-prod.yml` — on push to `main`, runs `flyctl deploy --remote-only --app routewerk`.
+- `deploy-prod.yml` — fires when the `CI` workflow completes successfully on `main` (workflow_run gate, deploys the CI-validated SHA), runs `flyctl deploy --remote-only --app routewerk`, then verifies `https://routewerk.fly.dev/health`.
 
 So the canonical release flow is: merge PR into `dev` → staging auto-deploys; merge `dev → main` PR → production auto-deploys. Do not run `make deploy` unless GHA is broken or you're doing an emergency rollback — it bypasses CI and deploys from your local working directory, which is exactly how we once shipped an old `main` because the merge hadn't actually landed yet.
 
@@ -78,7 +78,7 @@ Config: `fly.toml` (prod, app `routewerk`), `fly.dev.toml` (staging, app `routew
 
 Required Fly.io secrets: `DATABASE_URL`, `JWT_SECRET`, `SESSION_SECRET`, `FRONTEND_URL`, `STORAGE_*` (if using S3).
 
-The Dockerfile builds both the API server and admin CLI. Migrations run automatically on startup.
+The Dockerfile builds both the API server and admin CLI. On Fly, migrations run in a `[deploy] release_command` machine (`/app/admin migrate`) before the new version takes traffic; the API still auto-migrates on startup (a fast no-op after the release command) so local `make run` keeps working. A dirty migration state refuses to start unless `ALLOW_DIRTY_MIGRATION_FORCE=true` — the default is to make an operator run `admin migrate-force N` deliberately.
 
 ### Watching a deploy
 

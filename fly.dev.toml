@@ -3,7 +3,14 @@
 app = "routewerk-dev"
 primary_region = "ord"
 
+# Mirror prod: room for the 15s graceful-shutdown drain (Fly default is 5s).
+kill_timeout = "20s"
+
 [build]
+
+# Mirror prod: migrations run in a release machine before traffic cutover.
+[deploy]
+  release_command = "/app/admin migrate"
 
 [env]
   PORT = "8080"

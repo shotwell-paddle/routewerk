@@ -12,6 +12,7 @@
   } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
   import RouteForm from '$lib/components/RouteForm.svelte';
+  import Notice from '$lib/components/Notice.svelte';
 
   const locId = $derived(effectiveLocationId());
   let walls = $state<WallShape[]>([]);
@@ -22,13 +23,22 @@
   let settings = $state<LocationSettingsShape | null>(null);
   let saving = $state(false);
   let error = $state<string | null>(null);
+  // Walls are REQUIRED for the form — a failed fetch must surface, not
+  // masquerade as the "no walls yet" empty state.
+  let loadError = $state<string | null>(null);
 
   $effect(() => {
     if (!locId) return;
     let cancelled = false;
-    listWalls(locId).then((res) => {
-      if (!cancelled) walls = res;
-    });
+    loadError = null;
+    listWalls(locId)
+      .then((res) => {
+        if (!cancelled) walls = res;
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        loadError = err instanceof ApiClientError ? err.message : 'Could not load walls.';
+      });
     getLocationSettings(locId)
       .then((s) => {
         if (!cancelled) settings = s;
@@ -65,6 +75,8 @@
 
   {#if !locId}
     <p class="muted">Pick a location from the sidebar first.</p>
+  {:else if loadError}
+    <Notice kind="error">{loadError}</Notice>
   {:else if walls.length === 0}
     <p class="muted">
       No walls yet — <a class="link" href="/walls/new">create one first</a>.

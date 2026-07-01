@@ -1,17 +1,31 @@
 name: Deploy Production
 
+# Gate the deploy on CI: this fires when the CI workflow (ci.yml, name "CI")
+# completes on main, and the job only runs if CI succeeded. Previously we
+# deployed on every push to main in parallel with CI, so a red build could
+# still ship.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
+
+# Serialize deploys; never cancel one mid-flight (an interrupted flyctl
+# deploy can leave the app in a mixed-image state).
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    concurrency:
-      group: deploy-production
-      cancel-in-progress: true
+    if: github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Deploy exactly the commit CI validated, not whatever main's HEAD
+          # is when this workflow starts.
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
@@ -19,3 +33,6 @@ jobs:
         run: flyctl deploy --remote-only --app routewerk
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_PROD }}
+
+      - name: Verify deployment
+        run: curl --fail --retry 5 --retry-delay 5 https://routewerk.fly.dev/health

@@ -128,8 +128,16 @@ func main() {
 		MaxHeaderBytes:    1 << 20, // 1 MB
 	}
 
-	// Graceful shutdown — drain existing connections before exiting
+	// Graceful shutdown — drain existing connections before exiting.
+	// srv.Shutdown makes ListenAndServe return http.ErrServerClosed as soon
+	// as it is *called*, not when the drain completes. Main must therefore
+	// block on shutdownDone until this goroutine finishes draining (or the
+	// 15s budget expires); otherwise the deferred stopJobs()/db.Close() run
+	// while requests are still in flight — closing the pgx pool under them
+	// and dropping queued async events on every deploy.
+	shutdownDone := make(chan struct{})
 	go func() {
+		defer close(shutdownDone)
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
@@ -137,6 +145,7 @@ func main() {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
+		// Shutdown blocks until in-flight requests finish or ctx expires.
 		if err := srv.Shutdown(ctx); err != nil {
 			slog.Error("forced shutdown", "error", err)
 		}
@@ -151,6 +160,12 @@ func main() {
 		slog.Error("server error", "error", err)
 		os.Exit(1)
 	}
+
+	// ErrServerClosed means the signal handler called Shutdown. Wait for the
+	// drain to finish before returning, so the deferred cleanup (job queue
+	// stop, then pool close) runs strictly after the last request completes.
+	<-shutdownDone
+	slog.Info("server drained, closing job queue and database pool")
 }
 
 // cleanupExpiredSessions runs every hour to delete expired web sessions.

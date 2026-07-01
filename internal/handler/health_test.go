@@ -72,42 +72,35 @@ func TestHealthCheck_ContentType(t *testing.T) {
 	}
 }
 
-// TestHealthCheck_DegradedStatus verifies the status logic.
-// When either db or storage fails, status should be "degraded".
-func TestHealthCheck_StatusLogic(t *testing.T) {
+// TestHealthStatus verifies the body status + HTTP status code logic.
+// The HTTP status code must reflect ONLY database reachability: a storage
+// blip is reported as degraded in the body but stays 200, so Fly's health
+// check never pulls a working machine from routing over a Tigris outage.
+func TestHealthStatus(t *testing.T) {
 	tests := []struct {
-		name     string
-		dbOK     bool
-		storOK   bool
-		wantStat string
+		name              string
+		dbOK              bool
+		storageConfigured bool
+		storageOK         bool
+		wantStatus        string
+		wantHTTP          int
 	}{
-		{"all ok", true, true, "ok"},
-		{"db error", false, true, "degraded"},
-		{"storage error", true, false, "degraded"},
-		{"both error", false, false, "degraded"},
+		{"all ok", true, true, true, "ok", http.StatusOK},
+		{"storage not configured", true, false, false, "ok", http.StatusOK},
+		{"storage degraded keeps 200", true, true, false, "degraded", http.StatusOK},
+		{"db down", false, true, true, "degraded", http.StatusServiceUnavailable},
+		{"db down and storage degraded", false, true, false, "degraded", http.StatusServiceUnavailable},
+		{"db down, storage not configured", false, false, false, "degraded", http.StatusServiceUnavailable},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			status := "ok"
-			result := map[string]string{"status": status, "database": "ok"}
-
-			if !tc.dbOK {
-				status = "degraded"
-				result["database"] = "error"
+			status, httpStatus := healthStatus(tc.dbOK, tc.storageConfigured, tc.storageOK)
+			if status != tc.wantStatus {
+				t.Errorf("status = %q, want %q", status, tc.wantStatus)
 			}
-
-			if tc.storOK {
-				result["storage"] = "ok"
-			} else {
-				status = "degraded"
-				result["storage"] = "error"
-			}
-
-			result["status"] = status
-
-			if result["status"] != tc.wantStat {
-				t.Errorf("status = %q, want %q", result["status"], tc.wantStat)
+			if httpStatus != tc.wantHTTP {
+				t.Errorf("httpStatus = %d, want %d", httpStatus, tc.wantHTTP)
 			}
 		})
 	}

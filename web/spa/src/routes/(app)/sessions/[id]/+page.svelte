@@ -37,8 +37,10 @@
   } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
   import { roleRankAt } from '$lib/stores/auth.svelte';
+  import { DEFAULT_V_GRADES, DEFAULT_YDS_GRADES } from '$lib/grades';
   import SessionForm from '$lib/components/SessionForm.svelte';
   import SessionClimbForm from '$lib/components/SessionClimbForm.svelte';
+  import Notice from '$lib/components/Notice.svelte';
 
   let session = $state<SessionShape | null>(null);
   let walls = $state<WallShape[]>([]);
@@ -116,11 +118,12 @@
 
   async function refresh() {
     if (!locId || !sessionId) return;
+    const id = sessionId;
     const [s, st, cl, sr, ar] = await Promise.all([
-      getSession(locId, sessionId),
-      listStripTargets(locId, sessionId).catch(() => stripTargets),
-      listSessionChecklist(locId, sessionId).catch(() => checklist),
-      listSessionRoutes(locId, sessionId).catch(() => sessionRoutes),
+      getSession(locId, id),
+      listStripTargets(locId, id).catch(() => stripTargets),
+      listSessionChecklist(locId, id).catch(() => checklist),
+      listSessionRoutes(locId, id).catch(() => sessionRoutes),
       // Keep the per-section "currently up" strip pills honest: publish
       // archives strip targets and activates drafts, so the active set
       // changes mid-session (publish → reopen especially).
@@ -128,6 +131,9 @@
         .then((res) => res.routes ?? [])
         .catch(() => activeRoutes),
     ]);
+    // The user may have navigated to a different session while this was
+    // in flight — a slow response must not overwrite the new page's data.
+    if (page.params.id !== id) return;
     session = s;
     stripTargets = st;
     checklist = cl;
@@ -137,7 +143,10 @@
 
   async function refreshRoutes() {
     if (!locId || !sessionId) return;
-    sessionRoutes = await listSessionRoutes(locId, sessionId);
+    const id = sessionId;
+    const sr = await listSessionRoutes(locId, id);
+    if (page.params.id !== id) return; // stale response after navigation
+    sessionRoutes = sr;
   }
 
   async function submitEdit(body: SessionWriteShape) {
@@ -272,21 +281,6 @@
   });
   let sectionSaving = $state(false);
   let sectionError = $state<string | null>(null);
-
-  // Default grade lists — keep in sync with SessionClimbForm / RouteForm.
-  const DEFAULT_V_GRADES = [
-    'VB', 'V0', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7',
-    'V8', 'V9', 'V10', 'V11', 'V12',
-  ];
-  const DEFAULT_YDS_GRADES = [
-    '5.5', '5.6', '5.7', '5.8-', '5.8', '5.8+',
-    '5.9-', '5.9', '5.9+',
-    '5.10-', '5.10', '5.10+',
-    '5.11-', '5.11', '5.11+',
-    '5.12-', '5.12', '5.12+',
-    '5.13-', '5.13', '5.13+',
-    '5.14-', '5.14',
-  ];
 
   // Target-grade chips follow the picked walls' types: boulder walls
   // offer V grades, rope walls YDS. Nothing picked (= whole-session
@@ -633,7 +627,7 @@
   {#if loading}
     <p class="muted">Loading…</p>
   {:else if error}
-    <p class="error">{error}</p>
+    <Notice kind="error">{error}</Notice>
   {:else if session}
     <header class="page-header">
       <div>
@@ -665,7 +659,7 @@
         {saving}
         error={saveError} />
     {:else}
-      {#if mutateError}<p class="error">{mutateError}</p>{/if}
+      {#if mutateError}<Notice kind="error">{mutateError}</Notice>{/if}
 
       {#if session.notes}
         <section class="card">
@@ -833,7 +827,7 @@
           </div>
         {/if}
 
-        {#if climbError}<p class="error">{climbError}</p>{/if}
+        {#if climbError}<Notice kind="error">{climbError}</Notice>{/if}
 
         <!-- Add wall section form -->
         {#if canBuild}
@@ -882,7 +876,7 @@
                   <input bind:value={sectionForm.notes} placeholder="optional" />
                 </label>
               </div>
-              {#if sectionError}<p class="error">{sectionError}</p>{/if}
+              {#if sectionError}<Notice kind="error">{sectionError}</Notice>{/if}
               <button class="primary" type="submit" disabled={sectionSaving}>
                 {sectionSaving ? 'Adding…' : 'Add to session'}
               </button>
@@ -938,12 +932,12 @@
             {/if}
           </p>
           {#if publishResult}
-            <p class="ok">
+            <Notice kind="ok">
               Published. {publishResult.published} draft{publishResult.published === 1 ? '' : 's'} activated;
               {publishResult.stripped} route{publishResult.stripped === 1 ? '' : 's'} archived.
-            </p>
+            </Notice>
           {/if}
-          {#if publishError}<p class="error">{publishError}</p>{/if}
+          {#if publishError}<Notice kind="error">{publishError}</Notice>{/if}
           <div class="status-actions">
             {#if session.status !== 'complete'}
               <button class="primary" disabled={publishing || mutating} onclick={handlePublish}>
@@ -1025,7 +1019,7 @@
                   <p class="muted small">No active routes on this wall.</p>
                 {/if}
               {/if}
-              {#if stripError}<p class="error">{stripError}</p>{/if}
+              {#if stripError}<Notice kind="error">{stripError}</Notice>{/if}
             </div>
           {/if}
         </section>
@@ -1649,23 +1643,5 @@
   }
   button.danger:hover:not(:disabled) {
     background: #fef2f2;
-  }
-  .error {
-    background: #fef2f2;
-    border: 1px solid #fecaca;
-    color: #991b1b;
-    padding: 0.55rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    margin: 0.5rem 0;
-  }
-  .ok {
-    background: rgba(22, 163, 74, 0.1);
-    border: 1px solid rgba(22, 163, 74, 0.3);
-    color: #15803d;
-    padding: 0.55rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    margin: 0.5rem 0;
   }
 </style>

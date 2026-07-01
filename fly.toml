@@ -1,7 +1,18 @@
 app = "routewerk"
 primary_region = "ord"
 
+# Give the server's 15s graceful-shutdown drain room to finish. Fly's
+# default is 5s SIGTERM→SIGKILL, which would kill the process mid-drain.
+kill_timeout = "20s"
+
 [build]
+
+# Run migrations in a one-off release machine before the new version takes
+# traffic, instead of relying on the startup auto-migrate racing the health
+# check. The startup auto-migrate still runs but becomes a fast no-op.
+# /app/admin is where the Dockerfile puts the admin CLI binary.
+[deploy]
+  release_command = "/app/admin migrate"
 
 [env]
   PORT = "8080"

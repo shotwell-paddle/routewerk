@@ -73,7 +73,7 @@ func (h *Handler) SessionRemoveAssignment(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.sessionRepo.RemoveAssignment(ctx, assignmentID); err != nil {
+	if _, err := h.sessionRepo.RemoveAssignment(ctx, sessionID, assignmentID); err != nil {
 		slog.Error("remove assignment failed", "error", err)
 	}
 
@@ -137,7 +137,7 @@ func (h *Handler) SessionRemoveStripTarget(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.sessionRepo.RemoveStripTarget(ctx, targetID); err != nil {
+	if _, err := h.sessionRepo.RemoveStripTarget(ctx, sessionID, targetID); err != nil {
 		slog.Error("remove strip target failed", "error", err)
 	}
 
@@ -170,7 +170,7 @@ func (h *Handler) SessionToggleChecklist(w http.ResponseWriter, r *http.Request)
 		userID = user.ID
 	}
 
-	rowsAffected, err := h.sessionRepo.ToggleChecklistItem(ctx, itemID, userID)
+	rowsAffected, err := h.sessionRepo.ToggleChecklistItem(ctx, sessionID, itemID, userID)
 	if err != nil {
 		slog.Error("toggle checklist item failed", "error", err, "session_id", sessionID, "item_id", itemID)
 	} else if rowsAffected == 0 {

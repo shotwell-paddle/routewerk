@@ -324,8 +324,11 @@ func (h *AuthHandler) SetViewAs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Compute the caller's true max role across memberships (matches the
-	// HTMX bestRole logic). is_app_admin promotes to org_admin.
-	_, memberships, err := h.auth.GetProfile(r.Context(), userID)
+	// HTMX bestRole logic). is_app_admin promotes to org_admin — the SPA's
+	// realRoleAt applies the same promotion, so without it an app admin
+	// whose highest membership is below head_setter would see the view-as
+	// bar but get 403s from this endpoint.
+	user, memberships, err := h.auth.GetProfile(r.Context(), userID)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "internal error")
 		return
@@ -338,6 +341,10 @@ func (h *AuthHandler) SetViewAs(w http.ResponseWriter, r *http.Request) {
 			realRank = rank
 			realRole = m.Role
 		}
+	}
+	if user != nil && user.IsAppAdmin && realRank < rbac.RankValue(rbac.RoleOrgAdmin) {
+		realRank = rbac.RankValue(rbac.RoleOrgAdmin)
+		realRole = rbac.RoleOrgAdmin
 	}
 	if realRank < rbac.RankValue(rbac.RoleHeadSetter) {
 		Error(w, http.StatusForbidden, "view-as requires head_setter or above")

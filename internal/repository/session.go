@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/shotwell-paddle/routewerk/internal/database"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 )
 
@@ -75,7 +76,7 @@ func (r *SessionRepo) GetByID(ctx context.Context, id string) (*model.SettingSes
 		}
 	}
 
-	return s, nil
+	return s, rows.Err()
 }
 
 func (r *SessionRepo) ListByLocation(ctx context.Context, locationID string, limit, offset int) ([]model.SettingSession, error) {
@@ -302,7 +303,7 @@ func (r *SessionRepo) GetByIDWithDetails(ctx context.Context, id string) (*model
 		}
 	}
 
-	return s, details, nil
+	return s, details, rows.Err()
 }
 
 func (r *SessionRepo) GetAssignments(ctx context.Context, sessionID string) ([]model.SettingSessionAssignment, error) {
@@ -327,7 +328,7 @@ func (r *SessionRepo) GetAssignments(ctx context.Context, sessionID string) ([]m
 		}
 		assignments = append(assignments, a)
 	}
-	return assignments, nil
+	return assignments, rows.Err()
 }
 
 // ── Strip Targets ──────────────────────────────────────────
@@ -345,25 +346,38 @@ type StripTargetDetail struct {
 
 // AddStripTarget adds a wall or individual route as a strip target for a session.
 func (r *SessionRepo) AddStripTarget(ctx context.Context, t *model.SessionStripTarget) error {
+	var err error
 	if t.RouteID == nil {
 		// Whole-wall target — use the partial unique index
-		return r.db.QueryRow(ctx, `
+		err = r.db.QueryRow(ctx, `
 			INSERT INTO session_strip_targets (session_id, wall_id)
 			VALUES ($1, $2)
 			ON CONFLICT (session_id, wall_id) WHERE route_id IS NULL DO NOTHING
 			RETURNING id, created_at`,
 			t.SessionID, t.WallID,
 		).Scan(&t.ID, &t.CreatedAt)
+	} else {
+		// Individual route target
+		err = r.db.QueryRow(ctx, `
+			INSERT INTO session_strip_targets (session_id, wall_id, route_id)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (session_id, wall_id, route_id) DO NOTHING
+			RETURNING id, created_at`,
+			t.SessionID, t.WallID, t.RouteID,
+		).Scan(&t.ID, &t.CreatedAt)
 	}
-	// Individual route target
-	return r.db.QueryRow(ctx, `
-		INSERT INTO session_strip_targets (session_id, wall_id, route_id)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (session_id, wall_id, route_id) DO NOTHING
-		RETURNING id, created_at`,
-		t.SessionID, t.WallID, t.RouteID,
-	).Scan(&t.ID, &t.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// ON CONFLICT DO NOTHING returned no row: the target already
+		// exists. Surface as a typed error, not a 500.
+		return ErrDuplicateStripTarget
+	}
+	return err
 }
+
+// ErrDuplicateStripTarget is returned by AddStripTarget when the target
+// already exists — ON CONFLICT DO NOTHING + RETURNING yields no row on a
+// duplicate, which previously surfaced as a 500 via pgx.ErrNoRows.
+var ErrDuplicateStripTarget = errors.New("strip target already exists")
 
 // RemoveStripTarget deletes a strip target scoped to its session (tenant
 // guard — see RemoveAssignment). Returns rows affected so callers can 404
@@ -411,7 +425,7 @@ func (r *SessionRepo) ListStripTargets(ctx context.Context, sessionID string) ([
 		}
 		targets = append(targets, t)
 	}
-	return targets, nil
+	return targets, rows.Err()
 }
 
 // ActiveRoutesByWall returns active routes grouped by wall for a location.
@@ -483,6 +497,9 @@ func (r *SessionRepo) ActiveRoutesByWall(ctx context.Context, locationID string)
 		}
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	result := make([]WallWithActiveRoutes, 0, len(order))
 	for _, id := range order {
 		result = append(result, *wallMap[id])
@@ -516,6 +533,20 @@ func (r *SessionRepo) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	// Lock the session row FIRST. PublishSession acquires session → routes;
+	// without this, Delete acquired routes → session and a concurrent
+	// publish + delete of the same session (two tabs) interleaved into an
+	// AB-BA deadlock. Locking in the same order removes the cycle.
+	var lockedID string
+	if err := tx.QueryRow(ctx,
+		`SELECT id FROM setting_sessions WHERE id = $1 FOR UPDATE`, id,
+	).Scan(&lockedID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil // already gone — delete is a no-op
+		}
+		return fmt.Errorf("lock session for delete: %w", err)
+	}
 
 	// First delete any draft routes linked to this session
 	if _, err := tx.Exec(ctx,
@@ -601,6 +632,89 @@ func (r *SessionRepo) PublishSessionRoutes(ctx context.Context, sessionID string
 		return 0, fmt.Errorf("publish session routes: %w", err)
 	}
 	return int(tag.RowsAffected()), nil
+}
+
+// ErrSessionAlreadyComplete is returned by PublishSession when the session
+// was already published — the double-submit guard.
+var ErrSessionAlreadyComplete = errors.New("session already complete")
+
+// PublishSession runs the entire publish pipeline atomically: archive the
+// strip targets (whole walls, then individual routes), activate the
+// session's draft routes, and flip the session to complete — one
+// transaction, with the session row locked.
+//
+// Previously these were three separate pool calls with no status guard: a
+// mid-sequence failure or a plain double-submit re-ran the whole-wall
+// strip and archived the routes the previous attempt had just published,
+// with no way to restore them. FOR UPDATE + the status check make retries
+// safe (second publish gets ErrSessionAlreadyComplete), and the single
+// transaction means a failure rolls everything back.
+//
+// Ordering note: whole-wall strips only touch status='active' rows, and
+// this session's drafts are still 'draft' at that point, so fresh routes
+// can never be caught by their own session's strip. Archive semantics
+// mirror RouteRepo.BulkArchive (date_stripped = CURRENT_DATE, skip
+// already-archived).
+func (r *SessionRepo) PublishSession(ctx context.Context, sessionID string) (stripped, published int, err error) {
+	err = database.RunInTx(ctx, r.db, func(tx pgx.Tx) error {
+		var status string
+		if err := tx.QueryRow(ctx,
+			`SELECT status FROM setting_sessions WHERE id = $1 FOR UPDATE`,
+			sessionID,
+		).Scan(&status); err != nil {
+			return fmt.Errorf("lock session: %w", err)
+		}
+		if status == "complete" {
+			return ErrSessionAlreadyComplete
+		}
+
+		// Whole-wall strip targets.
+		tag, err := tx.Exec(ctx, `
+			UPDATE routes SET status = 'archived', date_stripped = CURRENT_DATE, updated_at = NOW()
+			WHERE status = 'active' AND deleted_at IS NULL
+			  AND wall_id IN (
+			    SELECT wall_id FROM session_strip_targets
+			    WHERE session_id = $1 AND route_id IS NULL)`,
+			sessionID)
+		if err != nil {
+			return fmt.Errorf("archive wall strips: %w", err)
+		}
+		stripped += int(tag.RowsAffected())
+
+		// Individual route strip targets.
+		tag, err = tx.Exec(ctx, `
+			UPDATE routes SET status = 'archived', date_stripped = CURRENT_DATE, updated_at = NOW()
+			WHERE status != 'archived' AND deleted_at IS NULL
+			  AND id IN (
+			    SELECT route_id FROM session_strip_targets
+			    WHERE session_id = $1 AND route_id IS NOT NULL)`,
+			sessionID)
+		if err != nil {
+			return fmt.Errorf("archive route strips: %w", err)
+		}
+		stripped += int(tag.RowsAffected())
+
+		// Activate this session's drafts.
+		tag, err = tx.Exec(ctx, `
+			UPDATE routes SET status = 'active', updated_at = NOW()
+			WHERE session_id = $1 AND status = 'draft' AND deleted_at IS NULL`,
+			sessionID)
+		if err != nil {
+			return fmt.Errorf("publish drafts: %w", err)
+		}
+		published = int(tag.RowsAffected())
+
+		if _, err := tx.Exec(ctx,
+			`UPDATE setting_sessions SET status = 'complete', updated_at = NOW() WHERE id = $1`,
+			sessionID); err != nil {
+			return fmt.Errorf("complete session: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	return stripped, published, nil
 }
 
 // DeleteSessionRoute hard-deletes a draft route by ID (only if it belongs to

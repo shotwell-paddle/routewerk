@@ -220,7 +220,7 @@ func (r *RouteRepo) GetByID(ctx context.Context, id string) (*model.Route, error
 		}
 	}
 
-	return rt, nil
+	return rt, rows.Err()
 }
 
 type RouteFilter struct {

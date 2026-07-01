@@ -1,8 +1,8 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -73,8 +73,7 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 func (h *SessionHandler) List(w http.ResponseWriter, r *http.Request) {
 	locationID := chi.URLParam(r, "locationID")
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, offset := clampPage(r, 50, 200)
 
 	sessions, err := h.sessions.ListByLocation(r.Context(), locationID, limit, offset)
 	if err != nil {
@@ -277,46 +276,19 @@ func (h *SessionHandler) Publish(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	sessionID := session.ID
 
-	// Order matters: archive THEN publish, otherwise a whole-wall strip
-	// would catch the freshly-published routes too.
-	stripTargets, err := h.sessions.ListStripTargets(r.Context(), sessionID)
+	// One transaction for the whole pipeline (strip → publish → complete),
+	// with the session row locked and a status guard. Previously three
+	// separate calls: a mid-sequence failure or double-submit re-ran the
+	// whole-wall strip and archived the routes the prior attempt had just
+	// published. See SessionRepo.PublishSession.
+	stripped, published, err := h.sessions.PublishSession(r.Context(), session.ID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "could not load strip targets")
-		return
-	}
-	stripped := 0
-	var routeIDs []string
-	for _, t := range stripTargets {
-		if t.RouteID == nil {
-			n, archErr := h.routes.BulkArchiveByWall(r.Context(), t.WallID)
-			if archErr != nil {
-				Error(w, http.StatusInternalServerError, "failed to archive wall routes")
-				return
-			}
-			stripped += n
-		} else {
-			routeIDs = append(routeIDs, *t.RouteID)
-		}
-	}
-	if len(routeIDs) > 0 {
-		n, archErr := h.routes.BulkArchive(r.Context(), routeIDs)
-		if archErr != nil {
-			Error(w, http.StatusInternalServerError, "failed to archive routes")
+		if errors.Is(err, repository.ErrSessionAlreadyComplete) {
+			Error(w, http.StatusConflict, "session is already complete")
 			return
 		}
-		stripped += n
-	}
-
-	published, err := h.sessions.PublishSessionRoutes(r.Context(), sessionID)
-	if err != nil {
-		Error(w, http.StatusInternalServerError, "failed to publish routes")
-		return
-	}
-
-	if err := h.sessions.UpdateStatus(r.Context(), sessionID, "complete"); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to update session status")
+		Error(w, http.StatusInternalServerError, "failed to publish session")
 		return
 	}
 
@@ -393,6 +365,10 @@ func (h *SessionHandler) AddStripTarget(w http.ResponseWriter, r *http.Request) 
 		RouteID:   req.RouteID,
 	}
 	if err := h.sessions.AddStripTarget(r.Context(), target); err != nil {
+		if errors.Is(err, repository.ErrDuplicateStripTarget) {
+			Error(w, http.StatusConflict, "already on the strip list")
+			return
+		}
 		Error(w, http.StatusInternalServerError, "failed to add strip target")
 		return
 	}

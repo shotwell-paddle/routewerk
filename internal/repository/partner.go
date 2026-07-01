@@ -80,7 +80,7 @@ func (r *PartnerRepo) Search(ctx context.Context, locationID string) ([]PartnerW
 		}
 		partners = append(partners, p)
 	}
-	return partners, nil
+	return partners, rows.Err()
 }
 
 type PartnerWithUser struct {

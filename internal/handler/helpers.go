@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -39,6 +40,26 @@ func Decode(r *http.Request, target interface{}) error {
 	}
 
 	return err
+}
+
+// clampPage parses limit/offset query values into sane bounds: limit
+// defaults to def when missing/invalid/zero and is capped at max; offset
+// floors at 0. Repos apply their own defaults for zero limits, but an
+// unbounded client-supplied ?limit=1000000 previously reached the SQL
+// unchecked on every list endpoint.
+func clampPage(r *http.Request, def, max int) (limit, offset int) {
+	limit, _ = strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ = strconv.Atoi(r.URL.Query().Get("offset"))
+	if limit <= 0 {
+		limit = def
+	}
+	if limit > max {
+		limit = max
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
 }
 
 var nonAlphaNum = regexp.MustCompile(`[^a-z0-9]+`)

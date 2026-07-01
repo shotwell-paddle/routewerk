@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -68,8 +67,7 @@ func (h *LaborHandler) Log(w http.ResponseWriter, r *http.Request) {
 
 func (h *LaborHandler) ListByLocation(w http.ResponseWriter, r *http.Request) {
 	locationID := chi.URLParam(r, "locationID")
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, offset := clampPage(r, 50, 200)
 
 	logs, err := h.labor.ListByLocation(r.Context(), locationID, limit, offset)
 	if err != nil {
@@ -82,8 +80,7 @@ func (h *LaborHandler) ListByLocation(w http.ResponseWriter, r *http.Request) {
 
 func (h *LaborHandler) MyLabor(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, offset := clampPage(r, 50, 200)
 
 	logs, err := h.labor.ListBySetter(r.Context(), userID, limit, offset)
 	if err != nil {

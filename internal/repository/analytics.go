@@ -198,20 +198,31 @@ func (r *AnalyticsRepo) SetterProductivity(ctx context.Context, locationID strin
 		days = 30
 	}
 
+	// Pre-aggregate routes and labor separately BEFORE joining: the old
+	// double LEFT JOIN produced a routes×labor row explosion per setter,
+	// multiplying routes_set by labor-log count and total_hours by route
+	// count (classic join fan-out — COUNT/SUM over the cross product).
 	query := `
 		SELECT u.id, u.display_name,
-			COUNT(r.id) as routes_set,
-			COALESCE(AVG(r.avg_rating), 0) as avg_route_rating,
-			COALESCE(SUM(l.hours_worked), 0) as total_hours
+			COALESCE(rs.routes_set, 0) as routes_set,
+			COALESCE(rs.avg_route_rating, 0) as avg_route_rating,
+			COALESCE(lb.total_hours, 0) as total_hours
 		FROM users u
 		JOIN user_memberships um ON um.user_id = u.id
-		LEFT JOIN routes r ON r.setter_id = u.id AND r.location_id = $1
-			AND r.date_set >= CURRENT_DATE - $2
-			AND r.deleted_at IS NULL
-		LEFT JOIN setter_labor_logs l ON l.user_id = u.id AND l.location_id = $1
-			AND l.date >= CURRENT_DATE - $2
+		LEFT JOIN (
+			SELECT setter_id, COUNT(*) as routes_set, AVG(avg_rating) as avg_route_rating
+			FROM routes
+			WHERE location_id = $1 AND date_set >= CURRENT_DATE - $2 AND deleted_at IS NULL
+			GROUP BY setter_id
+		) rs ON rs.setter_id = u.id
+		LEFT JOIN (
+			SELECT user_id, SUM(hours_worked) as total_hours
+			FROM setter_labor_logs
+			WHERE location_id = $1 AND date >= CURRENT_DATE - $2
+			GROUP BY user_id
+		) lb ON lb.user_id = u.id
 		WHERE um.location_id = $1 AND um.role IN ('setter', 'head_setter') AND um.deleted_at IS NULL
-		GROUP BY u.id, u.display_name
+		GROUP BY u.id, u.display_name, rs.routes_set, rs.avg_route_rating, lb.total_hours
 		ORDER BY routes_set DESC`
 
 	rows, err := r.db.Query(ctx, query, locationID, days)

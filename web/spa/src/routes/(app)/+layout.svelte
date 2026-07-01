@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { afterNavigate, goto } from '$app/navigation';
   import {
     authState,
     isAuthenticated,
@@ -16,6 +16,7 @@
     locationState,
     setSelectedLocation,
     effectiveLocationId,
+    reconcileSelectedLocation,
   } from '$lib/stores/location.svelte';
   import {
     getLocation,
@@ -55,6 +56,12 @@
       await new Promise((r) => setTimeout(r, 30));
     }
     if (!isAuthenticated()) return;
+    const me = authState().me!;
+
+    // Drop/replace a persisted location the user no longer has access to
+    // (left the gym, or stale localStorage from another account) before
+    // anything scopes queries by it.
+    reconcileSelectedLocation(me.memberships);
 
     // Default to the first location membership if nothing stored.
     if (!locationState().selectedId) {
@@ -64,7 +71,6 @@
 
     // Load metadata for every location the user has access to so the
     // picker can show names instead of UUIDs.
-    const me = authState().me!;
     const ids = Array.from(
       new Set(me.memberships.map((m) => m.location_id).filter((x): x is string => !!x)),
     );
@@ -229,6 +235,11 @@
   }
 
   let mobileNavOpen = $state(false);
+
+  // Close the mobile drawer after any client-side navigation — tapping a
+  // nav link should reveal the destination page, not leave the drawer
+  // covering it.
+  afterNavigate(() => (mobileNavOpen = false));
 
   // Notification badge — same 60s poll cadence as the HTMX sidebar
   // (see web/templates/partials/sidebar.html for the HTMX equivalent).

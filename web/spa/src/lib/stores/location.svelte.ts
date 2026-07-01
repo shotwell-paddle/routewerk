@@ -6,6 +6,7 @@
 // writes here; pages that scope by location read from here.
 
 import { authState } from './auth.svelte';
+import type { MembershipShape } from '$lib/api/client';
 
 const STORAGE_KEY = 'rw.selectedLocationId';
 
@@ -28,6 +29,24 @@ export function setSelectedLocation(id: string | null) {
     if (id) localStorage.setItem(STORAGE_KEY, id);
     else localStorage.removeItem(STORAGE_KEY);
   }
+}
+
+/**
+ * Validate the persisted selection against the user's actual memberships
+ * (from /me). localStorage can hold a location the user no longer has —
+ * they left the gym, or another account used this browser. A stale id
+ * would silently scope every page's queries to a location the server
+ * rejects. Replaces an invalid selection with the first membership
+ * location (or clears it when there is none); leaves a valid one alone.
+ *
+ * Called from the (app) layout once /me settles.
+ */
+export function reconcileSelectedLocation(memberships: MembershipShape[]) {
+  if (!state.selectedId) return;
+  const valid = memberships.some((m) => m.location_id === state.selectedId);
+  if (valid) return;
+  const fallback = memberships.find((m) => m.location_id)?.location_id ?? null;
+  setSelectedLocation(fallback);
 }
 
 /**

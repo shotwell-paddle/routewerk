@@ -18,9 +18,14 @@ name: Backup Database
 #   BACKUP_BUCKET                the backup bucket name
 # Reuses FLY_API_TOKEN_PROD (already set for deploys) for the proxy.
 
+# NOTE: the nightly cron is intentionally disabled. The current backup
+# strategy (single-gym scale) is pull-based from a local machine via
+# scripts/backup-local.sh — free, and prod credentials never touch
+# GitHub. When the app scales to multiple gyms, re-enable the schedule
+# below and run the one-time setup in docs/backup-restore.md.
 on:
-  schedule:
-    - cron: "0 9 * * *" # nightly at 09:00 UTC (~04:00 US Central, low traffic)
+  # schedule:
+  #   - cron: "0 9 * * *" # nightly at 09:00 UTC (~04:00 US Central, low traffic)
   workflow_dispatch:
 
 jobs:

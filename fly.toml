@@ -30,12 +30,13 @@ primary_region = "ord"
     method = "GET"
     path = "/health"
 
-# Bumped from 256mb to 512mb on 2026-05-06 alongside the SPA-at-root
-# deploy (PR #98 + follow-ups). The new shape fires multiple parallel
-# JSON requests per page load; we're not memory-constrained at 256 in
-# steady state but headroom around the card-batch render + image
-# pipeline is cheap insurance during the cutover.
+# Bumped 256mb→512mb on 2026-05-06 (SPA-at-root, PR #98), then
+# 512mb/1cpu→1024mb/2cpu on 2026-06-30. The single shared CPU was the
+# ceiling under the dashboard's 4-6 parallel XHR fan-out + card/image
+# rendering: session lookups could exceed the 5s query timeout and return
+# 503, which (before the auth fix) bounced users to /login. More CPU +
+# RAM headroom cuts those transient failures.
 [[vm]]
-  memory = "512mb"
+  memory = "1024mb"
   cpu_kind = "shared"
-  cpus = 1
+  cpus = 2

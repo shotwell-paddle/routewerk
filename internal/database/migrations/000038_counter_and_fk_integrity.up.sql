@@ -89,18 +89,14 @@ BEGIN
         WHERE id = NEW.user_id;
         RETURN NEW;
     END IF;
-    -- Re-parented ascent (user and/or route changed): subtract the old
-    -- contribution from the old user, add the new to the new user.
+    -- Re-parented ascent (user and/or route changed): NOT supported.
+    -- No application path re-parents ascents, and doing the counter math
+    -- correctly here means moving total_sends/total_flashes AND
+    -- total_logged AND unique_routes across both users plus both routes'
+    -- counters — easy to get silently wrong (000037's placeholder proved
+    -- it). Fail loudly instead of drifting.
     -- (Replaces the invalid PERFORM placeholder from 000037.)
-    UPDATE users SET
-        total_sends   = GREATEST(0, total_sends   - old_send),
-        total_flashes = GREATEST(0, total_flashes - old_flash)
-    WHERE id = OLD.user_id;
-    UPDATE users SET
-        total_sends   = total_sends   + new_send,
-        total_flashes = total_flashes + new_flash
-    WHERE id = NEW.user_id;
-    RETURN NEW;
+    RAISE EXCEPTION 'ascent re-parenting (user_id/route_id change) is not supported';
 END;
 $$ LANGUAGE plpgsql;
 

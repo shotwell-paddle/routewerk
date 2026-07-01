@@ -73,7 +73,9 @@ func (h *FollowHandler) Following(w http.ResponseWriter, r *http.Request) {
 
 func (h *FollowHandler) Feed(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
-	limit, offset := clampPage(r, 50, 200)
+	// 30, not 50: preserve the feed's pre-clampPage default (the repo's
+	// own limit<=0 default was 30 and is now dead code behind this).
+	limit, offset := clampPage(r, 30, 200)
 
 	items, err := h.follows.ActivityFeed(r.Context(), userID, limit, offset)
 	if err != nil {

@@ -534,6 +534,20 @@ func (r *SessionRepo) Delete(ctx context.Context, id string) error {
 	}
 	defer tx.Rollback(ctx)
 
+	// Lock the session row FIRST. PublishSession acquires session → routes;
+	// without this, Delete acquired routes → session and a concurrent
+	// publish + delete of the same session (two tabs) interleaved into an
+	// AB-BA deadlock. Locking in the same order removes the cycle.
+	var lockedID string
+	if err := tx.QueryRow(ctx,
+		`SELECT id FROM setting_sessions WHERE id = $1 FOR UPDATE`, id,
+	).Scan(&lockedID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil // already gone — delete is a no-op
+		}
+		return fmt.Errorf("lock session for delete: %w", err)
+	}
+
 	// First delete any draft routes linked to this session
 	if _, err := tx.Exec(ctx,
 		`DELETE FROM routes WHERE session_id = $1 AND status = 'draft'`, id); err != nil {

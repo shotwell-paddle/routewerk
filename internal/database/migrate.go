@@ -4,6 +4,8 @@ import (
 	"embed"
 	"fmt"
 	"log/slog"
+	"os"
+	"strconv"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
@@ -31,17 +33,28 @@ func Migrate(databaseURL string) error {
 	}
 	defer m.Close()
 
-	// Auto-recover from dirty state: force back to the previous version
-	// so golang-migrate will re-attempt the failed migration. This works
-	// because all migrations are written to be idempotent (IF NOT EXISTS,
-	// IF EXISTS, etc.), so re-running them is safe.
+	// A dirty state means a migration failed halfway. Recovering requires
+	// forcing the version back so golang-migrate will re-attempt it, but
+	// doing that automatically at startup is unattended recovery against a
+	// half-applied schema — dangerous even though our migrations are written
+	// to be idempotent (IF NOT EXISTS, IF EXISTS, etc.). It is therefore
+	// gated behind ALLOW_DIRTY_MIGRATION_FORCE=true (default false): without
+	// the opt-in we refuse to start so an operator can inspect the schema
+	// and run `admin migrate-force N` deliberately.
 	version, dirty, verr := m.Version()
 	if verr == nil && dirty {
 		prev := int(version) - 1
 		if prev < 0 {
 			prev = -1 // special value: no version applied
 		}
-		slog.Warn("dirty migration detected, auto-recovering",
+		if !allowDirtyForce() {
+			return fmt.Errorf(
+				"database is dirty at migration version %d (a migration failed halfway); "+
+					"refusing to auto-recover — inspect the schema, then run `admin migrate-force %d` "+
+					"to retry it (or set ALLOW_DIRTY_MIGRATION_FORCE=true to opt in to automatic recovery)",
+				version, prev)
+		}
+		slog.Warn("dirty migration detected, auto-recovering (ALLOW_DIRTY_MIGRATION_FORCE=true)",
 			"dirty_version", version, "forcing_to", prev)
 		if ferr := m.Force(prev); ferr != nil {
 			return fmt.Errorf("auto-recover dirty migration %d: %w", version, ferr)
@@ -125,6 +138,14 @@ func MigrateVersion(databaseURL string) (uint, bool, error) {
 	defer m.Close()
 
 	return m.Version()
+}
+
+// allowDirtyForce reports whether the operator has explicitly opted in to
+// automatic dirty-state recovery via ALLOW_DIRTY_MIGRATION_FORCE=true.
+// Anything unset or unparseable means false — never force unattended.
+func allowDirtyForce() bool {
+	b, err := strconv.ParseBool(os.Getenv("ALLOW_DIRTY_MIGRATION_FORCE"))
+	return err == nil && b
 }
 
 // toPgx5URL converts a postgres:// or postgresql:// URL to the pgx5://

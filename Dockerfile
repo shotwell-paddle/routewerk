@@ -33,7 +33,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /admin ./cmd/admin
 # ── Runtime stage ──────────────────────────────────────────
 FROM alpine:3.19
 
-RUN apk add --no-cache ca-certificates tzdata \
+# postgresql16-client provides pg_dump/pg_restore for the in-app nightly
+# backup (service/backup.go). Client major version pinned to the server's
+# (Postgres 16) — bump together.
+RUN apk add --no-cache ca-certificates tzdata postgresql16-client \
     && addgroup -S routewerk && adduser -S routewerk -G routewerk
 
 WORKDIR /app

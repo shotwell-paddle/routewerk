@@ -15,6 +15,11 @@ kill_timeout = "20s"
 [env]
   PORT = "8080"
   ENV = "staging"
+  # Take a real backup on every boot: each staging deploy becomes an
+  # end-to-end smoke test of the backup pipeline (prod runs nightly only).
+  BACKUP_RUN_ON_BOOT = "true"
+  # Keep staging dumps out of the prod retention window's namespace.
+  BACKUP_PREFIX = "backups-dev/"
 
 [http_service]
   internal_port = 8080

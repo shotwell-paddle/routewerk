@@ -14,6 +14,7 @@ import (
 	"github.com/shotwell-paddle/routewerk/internal/database"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
+	"github.com/shotwell-paddle/routewerk/internal/service"
 
 	// Register pgx5 driver for golang-migrate
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
@@ -41,6 +42,12 @@ func main() {
 		return
 	case "migrate-force":
 		migrateForce(cfg, os.Args[2:])
+		return
+	case "backup":
+		// Manual one-off of the same pipeline the in-app scheduler runs
+		// nightly (pg_dump → object storage → prune). Run on the server:
+		//   fly ssh console -a routewerk -C "/app/admin backup"
+		runBackup(ctx, cfg)
 		return
 	}
 
@@ -85,6 +92,9 @@ Database:
   migrate-down     Roll back the last applied migration.
   migrate-version  Show current migration version.
   migrate-force <version>  Force migration version and clear dirty flag.
+  backup           Take a database backup now (pg_dump → object storage).
+                   Same pipeline the API runs nightly; run on the server:
+                   fly ssh console -a routewerk -C "/app/admin backup"
 
 Organizations:
   create-org   --name <name> --slug <slug> --owner-email <email>
@@ -648,4 +658,19 @@ func setDomain(ctx context.Context, db *pgxpool.Pool, args []string) {
 	}
 
 	fmt.Println("done")
+}
+
+// runBackup takes one backup with the same service the API's nightly
+// scheduler uses. Needs pg_dump on PATH (present in the app image) and
+// the STORAGE_* env — i.e. run it on the server via fly ssh console.
+func runBackup(ctx context.Context, cfg *config.Config) {
+	svc := service.NewBackupService(cfg)
+	if svc == nil {
+		log.Fatal("backup: object storage not configured (STORAGE_ENDPOINT/STORAGE_ACCESS_KEY)")
+	}
+	key, size, err := svc.RunOnce(ctx)
+	if err != nil {
+		log.Fatalf("backup failed: %v", err)
+	}
+	fmt.Printf("backup complete: %s (%d bytes)\n", key, size)
 }

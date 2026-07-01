@@ -108,12 +108,28 @@ func main() {
 	stopJobs := jobQueue.Start(context.Background())
 	defer stopJobs()
 
+	// Server-side database backups: nightly pg_dump → object storage using
+	// the credentials the app already holds. nil when storage isn't
+	// configured; BACKUP_ENABLED=false opts out explicitly. Last-success is
+	// surfaced on /health so a silently failing backup is visible.
+	var backupSvc *service.BackupService
+	if cfg.BackupEnabled {
+		if backupSvc = service.NewBackupService(cfg); backupSvc != nil {
+			backupSvc.StartScheduler(context.Background(), cfg.BackupRunOnBoot)
+			slog.Info("database backup scheduler started",
+				"hour_utc", cfg.BackupHourUTC, "run_on_boot", cfg.BackupRunOnBoot)
+		} else {
+			slog.Warn("database backups disabled: object storage not configured")
+		}
+	}
+
 	// Build router
 	r := router.New(cfg, db, &router.Deps{
-		JobQueue: jobQueue,
-		EventBus: bus,
-		NotifSvc: notifSvc,
-		QuestSvc: questSvc,
+		JobQueue:  jobQueue,
+		EventBus:  bus,
+		NotifSvc:  notifSvc,
+		QuestSvc:  questSvc,
+		BackupSvc: backupSvc,
 	})
 
 	// Start server with timeouts to prevent slowloris and resource exhaustion

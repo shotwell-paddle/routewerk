@@ -11,7 +11,7 @@ import (
 // We can't easily mock pgxpool.Pool, but we can verify the JSON structure and
 // storage reporting when storage is nil.
 func TestHealthCheck_NilStorage(t *testing.T) {
-	h := NewHealthHandler(nil, nil)
+	h := NewHealthHandler(nil, nil, nil)
 
 	// With nil db, Ping will panic — so we test only the code path where
 	// storage is nil. The health handler needs a non-nil pool for the db check,
@@ -54,7 +54,7 @@ func TestHealthCheck_ResponseFormat(t *testing.T) {
 }
 
 func TestNewHealthHandler(t *testing.T) {
-	h := NewHealthHandler(nil, nil)
+	h := NewHealthHandler(nil, nil, nil)
 	if h == nil {
 		t.Fatal("NewHealthHandler returned nil")
 	}

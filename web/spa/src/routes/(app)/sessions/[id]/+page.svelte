@@ -116,16 +116,23 @@
 
   async function refresh() {
     if (!locId || !sessionId) return;
-    const [s, st, cl, sr] = await Promise.all([
+    const [s, st, cl, sr, ar] = await Promise.all([
       getSession(locId, sessionId),
       listStripTargets(locId, sessionId).catch(() => stripTargets),
       listSessionChecklist(locId, sessionId).catch(() => checklist),
       listSessionRoutes(locId, sessionId).catch(() => sessionRoutes),
+      // Keep the per-section "currently up" strip pills honest: publish
+      // archives strip targets and activates drafts, so the active set
+      // changes mid-session (publish → reopen especially).
+      listRoutes(locId, { status: 'active', limit: 200 })
+        .then((res) => res.routes ?? [])
+        .catch(() => activeRoutes),
     ]);
     session = s;
     stripTargets = st;
     checklist = cl;
     sessionRoutes = sr;
+    activeRoutes = ar;
   }
 
   async function refreshRoutes() {
@@ -256,57 +263,152 @@
 
   const draftCount = $derived(sessionRoutes.filter((r) => r.status === 'draft').length);
 
-  // ── Add wall sections (= assign a setter to one or more walls) ──
+  // ── Add wall sections (= assign setters to one or more walls) ──
   let sectionForm = $state({
     wall_ids: [] as string[],
-    setter_id: '',
-    target_grades: '',
+    setter_ids: [] as string[],
+    target_grades: [] as string[],
     notes: '',
   });
   let sectionSaving = $state(false);
   let sectionError = $state<string | null>(null);
 
+  // Default grade lists — keep in sync with SessionClimbForm / RouteForm.
+  const DEFAULT_V_GRADES = [
+    'VB', 'V0', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7',
+    'V8', 'V9', 'V10', 'V11', 'V12',
+  ];
+  const DEFAULT_YDS_GRADES = [
+    '5.5', '5.6', '5.7', '5.8-', '5.8', '5.8+',
+    '5.9-', '5.9', '5.9+',
+    '5.10-', '5.10', '5.10+',
+    '5.11-', '5.11', '5.11+',
+    '5.12-', '5.12', '5.12+',
+    '5.13-', '5.13', '5.13+',
+    '5.14-', '5.14',
+  ];
+
+  // Target-grade chips follow the picked walls' types: boulder walls
+  // offer V grades, rope walls YDS. Nothing picked (= whole-session
+  // assignment) offers both.
+  const targetGradeOptions = $derived.by((): string[] => {
+    const picked = sectionForm.wall_ids
+      .map((id) => wallsById.get(id))
+      .filter((w): w is WallShape => !!w);
+    const showV = picked.length === 0 || picked.some((w) => w.wall_type === 'boulder');
+    const showYds = picked.length === 0 || picked.some((w) => w.wall_type === 'route');
+    const v = settings?.grading.v_scale_range?.length
+      ? settings.grading.v_scale_range
+      : DEFAULT_V_GRADES;
+    const yds = settings?.grading.yds_range?.length
+      ? settings.grading.yds_range
+      : DEFAULT_YDS_GRADES;
+    return [...(showV ? v : []), ...(showYds ? yds : [])];
+  });
+
+  function toggleTargetGrade(g: string) {
+    sectionForm.target_grades = sectionForm.target_grades.includes(g)
+      ? sectionForm.target_grades.filter((x) => x !== g)
+      : [...sectionForm.target_grades, g];
+  }
+
   async function addWallSection(e: Event) {
     e.preventDefault();
     if (!locId || !sessionId) return;
-    if (!sectionForm.setter_id) {
-      sectionError = 'Pick a setter.';
+    if (sectionForm.setter_ids.length === 0) {
+      sectionError = 'Pick at least one setter.';
       return;
     }
     sectionSaving = true;
     sectionError = null;
     try {
-      const grades = sectionForm.target_grades
-        .split(',')
-        .map((g) => g.trim())
-        .filter(Boolean);
-      const setter = sectionForm.setter_id;
       const notes = sectionForm.notes.trim() || null;
-      const targetGrades = grades.length ? grades : undefined;
-      // No walls picked → one whole-session (wall-less) assignment. One or
-      // more walls → one assignment per wall (a section each). The repo
-      // upserts on (session, setter, wall), so re-picking an existing pair
-      // is a no-op instead of a UNIQUE-constraint error.
+      // Keep only grades still offered (a wall-type change can strand a
+      // pick from the other scale's chip set).
+      const targetGrades = sectionForm.target_grades.filter((g) =>
+        targetGradeOptions.includes(g),
+      );
+      // No walls picked → one whole-session (wall-less) assignment per
+      // setter. Walls picked → one assignment per (wall, setter) pair. The
+      // repo upserts on (session, setter, wall) — but ONLY for non-null
+      // walls: Postgres treats NULLs as distinct in the unique constraint,
+      // so re-adding a wall-less assignment would silently duplicate it.
+      // Replace instead: remove each setter's existing wall-less row first,
+      // preserving the update-grades/notes-in-place semantics.
+      if (sectionForm.wall_ids.length === 0) {
+        const existing = (session?.assignments ?? []).filter(
+          (a) => !a.wall_id && sectionForm.setter_ids.includes(a.setter_id),
+        );
+        await Promise.all(
+          existing.map((a) => removeSessionAssignment(locId, sessionId, a.id)),
+        );
+      }
       const wallTargets: (string | null)[] = sectionForm.wall_ids.length
         ? sectionForm.wall_ids
         : [null];
       await Promise.all(
-        wallTargets.map((wid) =>
-          addSessionAssignment(locId, sessionId, {
-            setter_id: setter,
-            wall_id: wid,
-            target_grades: targetGrades,
-            notes,
-          }),
+        wallTargets.flatMap((wid) =>
+          sectionForm.setter_ids.map((sid) =>
+            addSessionAssignment(locId, sessionId, {
+              setter_id: sid,
+              wall_id: wid,
+              target_grades: targetGrades.length ? targetGrades : undefined,
+              notes,
+            }),
+          ),
         ),
       );
-      sectionForm = { wall_ids: [], setter_id: '', target_grades: '', notes: '' };
+      sectionForm = { wall_ids: [], setter_ids: [], target_grades: [], notes: '' };
       await refresh();
     } catch (err) {
       sectionError = err instanceof ApiClientError ? err.message : 'Could not add to session.';
       await refresh(); // reflect any assignments that did land
     } finally {
       sectionSaving = false;
+    }
+  }
+
+  // ── Per-section strip picking ─────────────────────────────
+  // Current active routes on a section's wall, tap-to-strip. A route
+  // already on the strip list shows as targeted; tapping again removes it.
+  const stripTargetByRouteId = $derived.by(() => {
+    const m = new Map<string, StripTargetShape>();
+    for (const t of stripTargets) if (t.route_id) m.set(t.route_id, t);
+    return m;
+  });
+
+  // Walls covered by a WHOLE-WALL strip target (route_id null). Their
+  // routes are already coming down — pills render targeted + disabled so
+  // a tap can't add a redundant per-route target.
+  const wholeWallStripWalls = $derived.by(() => {
+    const s = new Set<string>();
+    for (const t of stripTargets) if (!t.route_id) s.add(t.wall_id);
+    return s;
+  });
+
+  function activeRoutesOnWall(wallId: string): RouteShape[] {
+    return activeRoutes.filter((r) => r.wall_id === wallId);
+  }
+
+  // Per-route in-flight tracking: a shared single id gets clobbered by
+  // concurrent taps, briefly re-enabling an in-flight pill.
+  let stripBusy = $state<Record<string, boolean>>({});
+
+  async function toggleStripRoute(r: RouteShape) {
+    if (!locId || !sessionId || stripBusy[r.id]) return;
+    const existing = stripTargetByRouteId.get(r.id);
+    stripBusy[r.id] = true;
+    try {
+      if (existing) {
+        await removeStripTarget(locId, sessionId, existing.id);
+      } else {
+        await addStripTarget(locId, sessionId, { wall_id: r.wall_id, route_id: r.id });
+      }
+      stripTargets = await listStripTargets(locId, sessionId);
+    } catch (err) {
+      mutateError = err instanceof ApiClientError ? err.message : 'Could not update strip list.';
+    } finally {
+      delete stripBusy[r.id];
     }
   }
 
@@ -556,9 +658,9 @@
         <section class="card help-card">
           <h2>How to build this session</h2>
           <ol class="steps">
-            <li><strong>Pick the walls you're setting</strong> (one or several at a time) and the setter on them — each wall becomes a section below.</li>
+            <li><strong>Pick the walls you're setting</strong> and the setters on them (one or several of each) — each wall becomes a section below.</li>
             <li><strong>Add the climbs</strong> under each wall: grade/circuit, hold color, and (optionally) a name + who set it.</li>
-            <li><strong>Schedule any strips</strong> — walls or routes coming down — and tick off the playbook checklist.</li>
+            <li><strong>Schedule any strips</strong> — tap routes in each section's "currently up" list (or use the strip-targets card for whole walls) — and tick off the playbook checklist.</li>
             <li><strong>Review &amp; publish</strong> to activate every draft climb (and run the strips) in one shot.</li>
           </ol>
         </section>
@@ -658,6 +760,38 @@
               <p class="muted small no-climbs">No climbs on this wall yet.</p>
             {/if}
 
+            <!-- Current routes on this wall — tap to add/remove from the
+                 strip list without leaving the section. -->
+            {#if canBuild && activeRoutesOnWall(sec.wall.id).length > 0}
+              {@const wholeWall = wholeWallStripWalls.has(sec.wall.id)}
+              <div class="section-strip">
+                <span class="pick-label">
+                  Currently up — tap to strip
+                  {#if wholeWall}<span class="muted"> · whole wall already on the strip list</span>{/if}
+                </span>
+                <div class="strip-pills">
+                  {#each activeRoutesOnWall(sec.wall.id) as r (r.id)}
+                    {@const targeted = wholeWall || stripTargetByRouteId.has(r.id)}
+                    <button type="button" class="strip-pill"
+                            class:targeted
+                            aria-pressed={targeted}
+                            disabled={wholeWall || stripBusy[r.id]}
+                            title={wholeWall
+                              ? 'Covered by the whole-wall strip target'
+                              : targeted
+                                ? 'Remove from strip list'
+                                : 'Add to strip list'}
+                            onclick={() => toggleStripRoute(r)}>
+                      <span class="strip-pill-color" style="background:{r.color || '#cbd5e1'}"></span>
+                      <span>{r.grade}</span>
+                      {#if r.name}<span class="muted">{r.name}</span>{/if}
+                      {#if targeted}<span class="strip-mark">✕ strip</span>{/if}
+                    </button>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+
             <!-- Add a climb to this wall -->
             {#if canBuild}
               <div class="add-climb">
@@ -709,15 +843,15 @@
           {:else}
             <form class="add-section" onsubmit={addWallSection}>
               <h3>Add wall sections</h3>
-              <label class="setter-pick">
-                <span>Setter *</span>
-                <select bind:value={sectionForm.setter_id}>
-                  <option value="">Pick a setter…</option>
-                  {#each settableSetters as m (m.user_id)}
-                    <option value={m.user_id}>{m.display_name}</option>
-                  {/each}
-                </select>
-              </label>
+              <span class="pick-label">Setters — pick one or several *</span>
+              <div class="wall-pick">
+                {#each settableSetters as m (m.user_id)}
+                  <label class="wall-check">
+                    <input type="checkbox" bind:group={sectionForm.setter_ids} value={m.user_id} />
+                    <span class="wall-check-name">{m.display_name}</span>
+                  </label>
+                {/each}
+              </div>
               <span class="pick-label">Walls — pick one or several</span>
               <div class="wall-pick">
                 {#each walls as w (w.id)}
@@ -729,14 +863,19 @@
                 {/each}
               </div>
               <p class="muted small hint">
-                Leave walls unchecked to assign this setter to the whole session.
+                Leave walls unchecked to assign the setters to the whole session.
                 Target grades &amp; notes apply to every picked wall.
               </p>
+              <span class="pick-label">Target grades — tap to pick</span>
+              <div class="chips target-chips">
+                {#each targetGradeOptions as g (g)}
+                  <button type="button" class="chip small-chip"
+                          class:on={sectionForm.target_grades.includes(g)}
+                          aria-pressed={sectionForm.target_grades.includes(g)}
+                          onclick={() => toggleTargetGrade(g)}>{g}</button>
+                {/each}
+              </div>
               <div class="row">
-                <label>
-                  <span>Target grades</span>
-                  <input bind:value={sectionForm.target_grades} placeholder="e.g. V2, V4, V6" />
-                </label>
                 <label>
                   <span>Notes</span>
                   <input bind:value={sectionForm.notes} placeholder="optional" />
@@ -1191,6 +1330,69 @@
     border-top: 1px dashed var(--rw-border);
     padding-top: 0.6rem;
   }
+  .section-strip {
+    border-top: 1px dashed var(--rw-border);
+    padding: 0.6rem 0;
+    margin-bottom: 0.6rem;
+  }
+  .strip-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .strip-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--rw-border-strong);
+    border-radius: 999px;
+    padding: 3px 10px;
+    background: var(--rw-surface);
+    color: var(--rw-text);
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .strip-pill.targeted {
+    border-color: #fca5a5;
+    background: #fef2f2;
+    color: #991b1b;
+  }
+  .strip-pill-color {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    border: 1px solid var(--rw-border-strong);
+    flex-shrink: 0;
+  }
+  .strip-mark {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .target-chips {
+    margin-bottom: 0.6rem;
+  }
+  .chip {
+    border: 1px solid var(--rw-border-strong);
+    border-radius: 6px;
+    padding: 0.3rem 0.6rem;
+    background: var(--rw-surface);
+    color: var(--rw-text);
+    font-size: 0.8rem;
+    font-weight: 600;
+    min-width: 2.3rem;
+  }
+  .chip.on {
+    border-color: var(--rw-accent);
+    background: var(--rw-accent);
+    color: var(--rw-accent-ink);
+  }
   .add-section,
   .strip-form {
     margin-top: 1rem;
@@ -1199,10 +1401,6 @@
   }
   .add-section-note {
     margin-top: 0.85rem;
-  }
-  .setter-pick {
-    max-width: 18rem;
-    margin-bottom: 0.6rem;
   }
   .pick-label {
     display: block;

@@ -69,6 +69,28 @@ func (wb *whereBuilder) addIn(col string, vals []string) {
 	wb.conds = append(wb.conds, fmt.Sprintf("%s IN (%s)", col, strings.Join(placeholders, ",")))
 }
 
+// likeEscaper neutralizes LIKE/ILIKE pattern metacharacters in user input
+// so they match literally: without it "_" matches any character, a lone
+// "%" matches everything, and a trailing "\" swallows the appended "%".
+// Backslash is Postgres's default ESCAPE character.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// addSearch adds a case-insensitive substring match across route name,
+// grade, circuit color, and the containing wall's name. ILIKE (not LIKE)
+// so "cave" finds "The Cave"; the wall match is an EXISTS subquery because
+// the base List query doesn't join walls.
+func (wb *whereBuilder) addSearch(q string) {
+	if q == "" {
+		return
+	}
+	p := fmt.Sprintf("$%d", wb.argN)
+	wb.conds = append(wb.conds, fmt.Sprintf(
+		"(r.name ILIKE '%%' || %s || '%%' OR r.grade ILIKE '%%' || %s || '%%' OR r.circuit_color ILIKE '%%' || %s || '%%' OR EXISTS (SELECT 1 FROM walls w WHERE w.id = r.wall_id AND w.name ILIKE '%%' || %s || '%%'))",
+		p, p, p, p))
+	wb.args = append(wb.args, likeEscaper.Replace(q))
+	wb.argN++
+}
+
 func (wb *whereBuilder) clause() string {
 	return strings.Join(wb.conds, " AND ")
 }
@@ -210,8 +232,9 @@ type RouteFilter struct {
 	GradeIn      []string // grade IN (...) filter for grade ranges
 	CircuitColor string   // filter by circuit_color (for circuit grade chips)
 	SetterID     string
-	DateFrom     string   // YYYY-MM-DD inclusive lower bound on date_set
-	DateTo       string   // YYYY-MM-DD inclusive upper bound on date_set
+	DateFrom     string // YYYY-MM-DD inclusive lower bound on date_set
+	DateTo       string // YYYY-MM-DD inclusive upper bound on date_set
+	Query        string // case-insensitive substring across name/grade/circuit/wall name
 	Limit        int
 	Offset       int
 }
@@ -228,6 +251,7 @@ func (f RouteFilter) buildWhere() *whereBuilder {
 	wb.addEq("r.setter_id", f.SetterID)
 	wb.addGte("r.date_set", f.DateFrom)
 	wb.addLte("r.date_set", f.DateTo)
+	wb.addSearch(f.Query)
 	return wb
 }
 

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -9,12 +10,12 @@ import (
 )
 
 type Config struct {
-	Port                string
-	Env                 string
-	DatabaseURL         string
-	JWTSecret           string
-	JWTExpiry           time.Duration
-	RefreshTokenExpiry  time.Duration
+	Port               string
+	Env                string
+	DatabaseURL        string
+	JWTSecret          string
+	JWTExpiry          time.Duration
+	RefreshTokenExpiry time.Duration
 	// EnforceJWTAudience gates the audience-claim check on the read path.
 	// New tokens always write the audience claim; once old tokens have drained
 	// (≥ JWTExpiry past rollout) this can be flipped to true to make the
@@ -30,12 +31,12 @@ type Config struct {
 	ExtraOrigins        []string // additional allowed CORS origins
 	SessionSecret       string
 	SessionMaxAge       time.Duration
-	DBMaxConns            int32
-	DBMinConns            int32
-	DBMaxConnLifetime     time.Duration
-	DBMaxConnIdleTime     time.Duration
-	DBHealthCheckPeriod   time.Duration
-	QueryTimeout          time.Duration
+	DBMaxConns          int32
+	DBMinConns          int32
+	DBMaxConnLifetime   time.Duration
+	DBMaxConnIdleTime   time.Duration
+	DBHealthCheckPeriod time.Duration
+	QueryTimeout        time.Duration
 
 	// SMTP (optional — if not configured, emails are logged to stdout in
 	// dev. In production, an unconfigured send is a hard error: see
@@ -52,43 +53,75 @@ type Config struct {
 	// requires SMTP to be configured so links can never be silently dropped.
 	// Env: MAGIC_LINK_ENABLED.
 	MagicLinkEnabled bool
+
+	// loadProblems collects env parse errors detected during Load (e.g. a
+	// typo'd duration like QUERY_TIMEOUT=5sec). Load logs them loudly and
+	// falls back to the built-in default; Validate escalates them to fatal
+	// outside dev so production fails fast instead of silently running with
+	// a value the operator didn't set.
+	loadProblems []string
 }
 
 func Load() *Config {
-	jwtExpiry, _ := time.ParseDuration(getEnv("JWT_EXPIRY", "15m"))
-	refreshExpiry, _ := time.ParseDuration(getEnv("REFRESH_TOKEN_EXPIRY", "720h"))
-	sessionMaxAge, _ := time.ParseDuration(getEnv("SESSION_MAX_AGE", "720h")) // 30 days
+	// duration parses a duration env var. Unset → fallback. Set but invalid
+	// → fallback plus a recorded problem, so a typo like QUERY_TIMEOUT=5sec
+	// can never silently become 0 (which callers would treat as "no timeout"
+	// or instant expiry). Validate escalates recorded problems to fatal
+	// outside dev; in dev the loud log + default is the whole story.
+	var problems []string
+	duration := func(key, fallback string) time.Duration {
+		raw := getEnv(key, fallback)
+		d, err := time.ParseDuration(raw)
+		if err == nil {
+			return d
+		}
+		def, derr := time.ParseDuration(fallback)
+		if derr != nil {
+			// Fallbacks are compile-time constants; a bad one is a bug here,
+			// not an operator error.
+			panic(fmt.Sprintf("config: built-in default for %s is not a valid duration: %q", key, fallback))
+		}
+		problems = append(problems, fmt.Sprintf(
+			"%s: invalid duration %q (%v); using default %s", key, raw, err, def))
+		slog.Error("invalid duration in environment, using default",
+			"var", key, "value", raw, "default", def.String())
+		return def
+	}
+
+	jwtExpiry := duration("JWT_EXPIRY", "15m")
+	refreshExpiry := duration("REFRESH_TOKEN_EXPIRY", "720h")
+	sessionMaxAge := duration("SESSION_MAX_AGE", "720h") // 30 days
 	dbMaxConns := getEnvInt("DB_MAX_CONNS", 5)
 	dbMinConns := getEnvInt("DB_MIN_CONNS", 1)
-	dbMaxConnLifetime, _ := time.ParseDuration(getEnv("DB_MAX_CONN_LIFETIME", "30m"))
-	dbMaxConnIdleTime, _ := time.ParseDuration(getEnv("DB_MAX_CONN_IDLE_TIME", "5m"))
-	dbHealthCheckPeriod, _ := time.ParseDuration(getEnv("DB_HEALTH_CHECK_PERIOD", "30s"))
-	queryTimeout, _ := time.ParseDuration(getEnv("QUERY_TIMEOUT", "5s"))
+	dbMaxConnLifetime := duration("DB_MAX_CONN_LIFETIME", "30m")
+	dbMaxConnIdleTime := duration("DB_MAX_CONN_IDLE_TIME", "5m")
+	dbHealthCheckPeriod := duration("DB_HEALTH_CHECK_PERIOD", "30s")
+	queryTimeout := duration("QUERY_TIMEOUT", "5s")
 
 	return &Config{
-		Port:               getEnv("PORT", "8080"),
-		Env:                getEnv("ENV", "development"),
-		DatabaseURL:        getEnv("DATABASE_URL", "postgres://routewerk:password@localhost:5432/routewerk?sslmode=disable"),
-		JWTSecret:          getEnv("JWT_SECRET", "change-me"),
-		JWTExpiry:          jwtExpiry,
-		RefreshTokenExpiry: refreshExpiry,
-		EnforceJWTAudience: getEnvBool("JWT_ENFORCE_AUDIENCE", false),
-		StorageEndpoint:    getEnv("STORAGE_ENDPOINT", ""),
-		StorageBucket:      getEnv("STORAGE_BUCKET", "routewerk-images"),
-		StorageAccessKey:   getEnv("STORAGE_ACCESS_KEY", ""),
-		StorageSecretKey:   getEnv("STORAGE_SECRET_KEY", ""),
-		FCMProjectID:       getEnv("FCM_PROJECT_ID", ""),
-		FCMCredentialsFile: getEnv("FCM_CREDENTIALS_FILE", ""),
-		FrontendURL:        getEnv("FRONTEND_URL", "http://localhost:3000"),
-		ExtraOrigins:       parseOrigins(getEnv("EXTRA_ORIGINS", "")),
-		SessionSecret:      getEnv("SESSION_SECRET", "change-me-session"),
-		SessionMaxAge:      sessionMaxAge,
+		Port:                getEnv("PORT", "8080"),
+		Env:                 getEnv("ENV", "development"),
+		DatabaseURL:         getEnv("DATABASE_URL", "postgres://routewerk:password@localhost:5432/routewerk?sslmode=disable"),
+		JWTSecret:           getEnv("JWT_SECRET", "change-me"),
+		JWTExpiry:           jwtExpiry,
+		RefreshTokenExpiry:  refreshExpiry,
+		EnforceJWTAudience:  getEnvBool("JWT_ENFORCE_AUDIENCE", false),
+		StorageEndpoint:     getEnv("STORAGE_ENDPOINT", ""),
+		StorageBucket:       getEnv("STORAGE_BUCKET", "routewerk-images"),
+		StorageAccessKey:    getEnv("STORAGE_ACCESS_KEY", ""),
+		StorageSecretKey:    getEnv("STORAGE_SECRET_KEY", ""),
+		FCMProjectID:        getEnv("FCM_PROJECT_ID", ""),
+		FCMCredentialsFile:  getEnv("FCM_CREDENTIALS_FILE", ""),
+		FrontendURL:         getEnv("FRONTEND_URL", "http://localhost:3000"),
+		ExtraOrigins:        parseOrigins(getEnv("EXTRA_ORIGINS", "")),
+		SessionSecret:       getEnv("SESSION_SECRET", "change-me-session"),
+		SessionMaxAge:       sessionMaxAge,
 		DBMaxConns:          int32(dbMaxConns),
 		DBMinConns:          int32(dbMinConns),
 		DBMaxConnLifetime:   dbMaxConnLifetime,
 		DBMaxConnIdleTime:   dbMaxConnIdleTime,
 		DBHealthCheckPeriod: dbHealthCheckPeriod,
-		QueryTimeout:       queryTimeout,
+		QueryTimeout:        queryTimeout,
 
 		SMTPHost:     getEnv("SMTP_HOST", ""),
 		SMTPPort:     getEnv("SMTP_PORT", "587"),
@@ -97,6 +130,8 @@ func Load() *Config {
 		SMTPFrom:     getEnv("SMTP_FROM", ""),
 
 		MagicLinkEnabled: getEnvBool("MAGIC_LINK_ENABLED", false),
+
+		loadProblems: problems,
 	}
 }
 
@@ -109,7 +144,10 @@ func (c *Config) IsDev() bool {
 // config is valid for the target environment.
 func (c *Config) Validate() []string {
 	if c.IsDev() {
-		return nil // dev defaults are fine for local work
+		// Dev defaults are fine for local work. Env parse errors recorded in
+		// Load (loadProblems) were already logged loudly there and fell back
+		// to defaults — no need to block local startup on them.
+		return nil
 	}
 
 	var problems []string
@@ -118,6 +156,11 @@ func (c *Config) Validate() []string {
 			problems = append(problems, msg)
 		}
 	}
+
+	// Escalate env parse errors from Load. In production a typo'd duration
+	// must fail startup with the variable named, not run with a fallback
+	// the operator didn't choose.
+	problems = append(problems, c.loadProblems...)
 
 	// Database
 	check(c.DatabaseURL != "" &&

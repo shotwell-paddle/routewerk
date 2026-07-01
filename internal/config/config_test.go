@@ -164,6 +164,111 @@ func TestValidate_ExcessiveJWTExpiryFails(t *testing.T) {
 	}
 }
 
+// ── Duration env parsing (Load) ─────────────────────────────
+
+// TestLoad_DurationParsing verifies that duration env vars parse correctly,
+// that unset vars silently use defaults, and that a typo'd value falls back
+// to the default (never 0) while recording a problem naming the variable.
+func TestLoad_DurationParsing(t *testing.T) {
+	tests := []struct {
+		name        string
+		envKey      string
+		envValue    string
+		get         func(*Config) time.Duration
+		want        time.Duration
+		wantProblem bool
+	}{
+		{
+			name:   "valid QUERY_TIMEOUT",
+			envKey: "QUERY_TIMEOUT", envValue: "10s",
+			get:  func(c *Config) time.Duration { return c.QueryTimeout },
+			want: 10 * time.Second,
+		},
+		{
+			name:   "unset QUERY_TIMEOUT uses default silently",
+			envKey: "QUERY_TIMEOUT", envValue: "",
+			get:  func(c *Config) time.Duration { return c.QueryTimeout },
+			want: 5 * time.Second,
+		},
+		{
+			name:   "typo'd QUERY_TIMEOUT falls back to default, not 0",
+			envKey: "QUERY_TIMEOUT", envValue: "5sec",
+			get:  func(c *Config) time.Duration { return c.QueryTimeout },
+			want: 5 * time.Second, wantProblem: true,
+		},
+		{
+			name:   "typo'd JWT_EXPIRY falls back to default, not 0",
+			envKey: "JWT_EXPIRY", envValue: "15minutes",
+			get:  func(c *Config) time.Duration { return c.JWTExpiry },
+			want: 15 * time.Minute, wantProblem: true,
+		},
+		{
+			name:   "typo'd SESSION_MAX_AGE falls back to default, not 0",
+			envKey: "SESSION_MAX_AGE", envValue: "30 days",
+			get:  func(c *Config) time.Duration { return c.SessionMaxAge },
+			want: 720 * time.Hour, wantProblem: true,
+		},
+		{
+			name:   "bare number is not a duration",
+			envKey: "DB_MAX_CONN_LIFETIME", envValue: "30",
+			get:  func(c *Config) time.Duration { return c.DBMaxConnLifetime },
+			want: 30 * time.Minute, wantProblem: true,
+		},
+		{
+			name:   "valid DB_HEALTH_CHECK_PERIOD",
+			envKey: "DB_HEALTH_CHECK_PERIOD", envValue: "1m30s",
+			get:  func(c *Config) time.Duration { return c.DBHealthCheckPeriod },
+			want: 90 * time.Second,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(tc.envKey, tc.envValue)
+
+			cfg := Load()
+			if got := tc.get(cfg); got != tc.want {
+				t.Errorf("%s=%q: got %s, want %s", tc.envKey, tc.envValue, got, tc.want)
+			}
+
+			found := false
+			for _, p := range cfg.loadProblems {
+				if strings.Contains(p, tc.envKey) {
+					found = true
+				}
+			}
+			if found != tc.wantProblem {
+				t.Errorf("%s=%q: problem recorded = %v, want %v (problems: %v)",
+					tc.envKey, tc.envValue, found, tc.wantProblem, cfg.loadProblems)
+			}
+		})
+	}
+}
+
+func TestValidate_LoadProblemsFailProduction(t *testing.T) {
+	c := validProdConfig()
+	c.QueryTimeout = 5 * time.Second
+	c.loadProblems = []string{`QUERY_TIMEOUT: invalid duration "5sec"; using default 5s`}
+	problems := c.Validate()
+	found := false
+	for _, p := range problems {
+		if strings.Contains(p, "QUERY_TIMEOUT") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected QUERY_TIMEOUT parse problem to fail production validation, got %v", problems)
+	}
+}
+
+func TestValidate_LoadProblemsIgnoredInDev(t *testing.T) {
+	c := &Config{Env: "development"}
+	c.loadProblems = []string{`QUERY_TIMEOUT: invalid duration "5sec"; using default 5s`}
+	if problems := c.Validate(); len(problems) > 0 {
+		t.Errorf("dev should not fail on load problems (they are logged + defaulted), got %v", problems)
+	}
+}
+
 func TestMask(t *testing.T) {
 	if got := mask("abcdefgh"); got != "abcd****" {
 		t.Errorf("mask(abcdefgh) = %q", got)

@@ -44,6 +44,60 @@ func TestCSRF_GETSetsTokenCookie(t *testing.T) {
 	}
 }
 
+// TestCSRF_FreshMintVisibleToSameRequest is the regression test for the
+// "login fails once, works on reload" bug: on the request that MINTS the
+// cookie (fresh browser, expired cookie, cross-site arrival), downstream
+// handlers must see the new token via TokenFromRequest so the rendered
+// form embeds a token that matches the cookie the browser stores. Before
+// the fix, TokenFromRequest returned "" on that first render and the
+// subsequent POST always failed CSRF.
+func TestCSRF_FreshMintVisibleToSameRequest(t *testing.T) {
+	csrf := NewCSRFProtection(true)
+	var renderedToken string
+	handler := csrf.Protect(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		renderedToken = TokenFromRequest(r)
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// First GET — no cookie on the request.
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if renderedToken == "" {
+		t.Fatal("TokenFromRequest returned empty on the minting request — the login form would embed an empty token")
+	}
+	var setCookie string
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == csrfCookieName {
+			setCookie = c.Value
+			if c.MaxAge <= 0 {
+				t.Error("CSRF cookie should have a positive MaxAge (session-scoped cookies die on browser restart)")
+			}
+			if c.SameSite == http.SameSiteStrictMode {
+				t.Error("CSRF cookie should be Lax — Strict drops it on cross-site arrivals to /login")
+			}
+		}
+	}
+	if setCookie == "" {
+		t.Fatal("no CSRF cookie set")
+	}
+	if renderedToken != setCookie {
+		t.Fatalf("rendered token %q != Set-Cookie value %q — form would fail its next submit", renderedToken, setCookie)
+	}
+
+	// The follow-up POST with that cookie + form token must pass.
+	form := url.Values{csrfFormField: {renderedToken}}
+	post := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	post.AddCookie(&http.Cookie{Name: csrfCookieName, Value: setCookie})
+	postRec := httptest.NewRecorder()
+	handler.ServeHTTP(postRec, post)
+	if postRec.Code != http.StatusOK {
+		t.Fatalf("POST with freshly-minted token should pass, got %d", postRec.Code)
+	}
+}
+
 func TestCSRF_GETPassesWithoutToken(t *testing.T) {
 	csrf := NewCSRFProtection(true)
 	handler := csrf.Protect(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -219,8 +273,10 @@ func TestRotateCSRFToken_WritesNewCookie(t *testing.T) {
 			if c.Secure {
 				t.Error("rotated CSRF cookie should not be Secure when called with secure=false")
 			}
-			if c.SameSite != http.SameSiteStrictMode {
-				t.Errorf("SameSite = %v, want Strict", c.SameSite)
+			// Lax, not Strict — Strict dropped the cookie on cross-site
+			// arrivals to /login (see the fresh-mint regression test).
+			if c.SameSite != http.SameSiteLaxMode {
+				t.Errorf("SameSite = %v, want Lax", c.SameSite)
 			}
 			if c.Path != "/" {
 				t.Errorf("Path = %q, want \"/\"", c.Path)

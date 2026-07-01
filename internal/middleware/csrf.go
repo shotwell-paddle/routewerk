@@ -52,6 +52,12 @@ func generateCSRFToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
+// csrfCookieMaxAge keeps the token across browser restarts. A session-
+// scoped cookie (no MaxAge) meant every restart dropped it, so the next
+// login attempt rendered against a token minted mid-request — see below.
+// The token still rotates at every privilege boundary (RotateCSRFToken).
+const csrfCookieMaxAge = 30 * 24 * 60 * 60 // 30 days, matches session
+
 // Protect returns middleware that enforces CSRF on state-changing methods.
 func (c *CSRFProtection) Protect(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -67,10 +73,22 @@ func (c *CSRFProtection) Protect(next http.Handler) http.Handler {
 				Name:     csrfCookieName,
 				Value:    token,
 				Path:     "/",
+				MaxAge:   csrfCookieMaxAge,
 				HttpOnly: false, // JS needs to read it for HTMX headers
 				Secure:   c.secure,
-				SameSite: http.SameSiteStrictMode,
+				// Lax, not Strict: double-submit doesn't rely on SameSite
+				// for its security, and Strict made the cookie invisible on
+				// cross-site arrivals (email/Slack link to /login) — the GET
+				// re-minted a token every time, invalidating other tabs.
+				SameSite: http.SameSiteLaxMode,
 			})
+			// Also inject the token into THIS request. Downstream handlers
+			// read the token via TokenFromRequest(r) to embed it in forms;
+			// without this, the first render after minting (fresh browser,
+			// expired cookie, cross-site arrival) embedded an EMPTY hidden
+			// field and the following POST always failed CSRF — the
+			// "login fails once, works on reload" bug.
+			r.AddCookie(&http.Cookie{Name: csrfCookieName, Value: token})
 			cookie = &http.Cookie{Name: csrfCookieName, Value: token}
 		}
 
@@ -135,9 +153,10 @@ func RotateCSRFToken(w http.ResponseWriter, secure bool) (string, error) {
 		Name:     csrfCookieName,
 		Value:    token,
 		Path:     "/",
+		MaxAge:   csrfCookieMaxAge,
 		HttpOnly: false, // JS reads this for HTMX headers, same as Protect()
 		Secure:   secure,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode, // matches Protect()
 	})
 	return token, nil
 }

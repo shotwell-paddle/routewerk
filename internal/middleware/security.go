@@ -475,15 +475,39 @@ func RequestTimeout(d time.Duration) func(http.Handler) http.Handler {
 // 413 (Request Entity Too Large) instead of letting a slow-streaming
 // caller pin a request goroutine while pushing the process toward OOM.
 //
-// Handlers that legitimately accept larger payloads (image upload endpoints
-// today) are free to re-wrap r.Body with a higher MaxBytesReader before
-// ParseMultipartForm — the later wrapper wins. See S3 in the 2026-04-22
-// perf audit.
+// NOTE: a handler can NOT raise this limit by re-wrapping r.Body with a
+// larger MaxBytesReader — the inner wrapper reads through the outer one,
+// so the smaller (outer) cap still applies. Endpoints that accept larger
+// payloads must be excluded at the middleware level: see
+// LimitBodyByContentType below.
 func LimitBody(maxBytes int64) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Body != nil {
 				r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// LimitBodyByContentType is LimitBody with a separate, higher cap for
+// multipart/form-data requests. The /api/v1 tree is JSON-only except the
+// photo upload endpoints (multipart); a single 1 MB cap silently rejected
+// phone photos (2-6 MB) at the middleware layer before the handler's own
+// 5 MB check and the resize pipeline ever ran — surfacing as "photo
+// upload / auto-scaling doesn't work". Handlers still enforce their own
+// per-endpoint file-size limits (e.g. jsonPhotoMaxUpload); multipartMax
+// is only the transport backstop, matching the web group's 10 MB.
+func LimitBodyByContentType(defaultMax, multipartMax int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Body != nil {
+				limit := defaultMax
+				if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+					limit = multipartMax
+				}
+				r.Body = http.MaxBytesReader(w, r.Body, limit)
 			}
 			next.ServeHTTP(w, r)
 		})

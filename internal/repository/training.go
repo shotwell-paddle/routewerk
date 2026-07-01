@@ -139,11 +139,21 @@ func (r *TrainingRepo) AddItem(ctx context.Context, item *model.TrainingPlanItem
 	).Scan(&item.ID, &item.CreatedAt)
 }
 
-func (r *TrainingRepo) UpdateItem(ctx context.Context, itemID string, completed bool, title, notes *string) error {
+// UpdateItem mutates a plan item scoped to the given location: the item's
+// plan must belong to locationID (tenant guard — the item id alone would
+// let any authenticated staff member mutate another org's plan items).
+// Returns rows affected so callers can 404 a cross-location id.
+func (r *TrainingRepo) UpdateItem(ctx context.Context, locationID, itemID string, completed bool, title, notes *string) (int64, error) {
+	const locationScope = ` AND plan_id IN (SELECT id FROM training_plans WHERE location_id = `
+
 	if completed {
-		query := `UPDATE training_plan_items SET completed = true, completed_at = NOW() WHERE id = $1`
-		_, err := r.db.Exec(ctx, query, itemID)
-		return err
+		query := `UPDATE training_plan_items SET completed = true, completed_at = NOW() WHERE id = $1` +
+			locationScope + `$2)`
+		tag, err := r.db.Exec(ctx, query, itemID, locationID)
+		if err != nil {
+			return 0, fmt.Errorf("update plan item: %w", err)
+		}
+		return tag.RowsAffected(), nil
 	}
 
 	query := `UPDATE training_plan_items SET completed = false, completed_at = NULL`
@@ -163,9 +173,15 @@ func (r *TrainingRepo) UpdateItem(ctx context.Context, itemID string, completed 
 
 	query += fmt.Sprintf(" WHERE id = $%d", argN)
 	args = append(args, itemID)
+	argN++
+	query += locationScope + fmt.Sprintf("$%d)", argN)
+	args = append(args, locationID)
 
-	_, err := r.db.Exec(ctx, query, args...)
-	return err
+	tag, err := r.db.Exec(ctx, query, args...)
+	if err != nil {
+		return 0, fmt.Errorf("update plan item: %w", err)
+	}
+	return tag.RowsAffected(), nil
 }
 
 func (r *TrainingRepo) GetItems(ctx context.Context, planID string) ([]model.TrainingPlanItem, error) {

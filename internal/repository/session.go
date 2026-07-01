@@ -152,12 +152,20 @@ func (r *SessionRepo) UpdateAssignmentWall(ctx context.Context, id string, wallI
 	return nil
 }
 
-func (r *SessionRepo) RemoveAssignment(ctx context.Context, id string) error {
-	_, err := r.db.Exec(ctx, "DELETE FROM setting_session_assignments WHERE id = $1", id)
+// RemoveAssignment deletes an assignment scoped to its session. The
+// session_id predicate is the tenant guard: callers verify the SESSION
+// belongs to the caller's location (resolveSession), and this ensures the
+// assignment belongs to that session — without it any authenticated
+// staff member could delete another org's assignment by UUID. Returns
+// rows affected so callers can 404 a cross-session (or bogus) id.
+func (r *SessionRepo) RemoveAssignment(ctx context.Context, sessionID, id string) (int64, error) {
+	tag, err := r.db.Exec(ctx,
+		"DELETE FROM setting_session_assignments WHERE id = $1 AND session_id = $2",
+		id, sessionID)
 	if err != nil {
-		return fmt.Errorf("remove assignment: %w", err)
+		return 0, fmt.Errorf("remove assignment: %w", err)
 	}
-	return nil
+	return tag.RowsAffected(), nil
 }
 
 // SessionListItem holds a session with aggregate data for the list view.
@@ -357,10 +365,17 @@ func (r *SessionRepo) AddStripTarget(ctx context.Context, t *model.SessionStripT
 	).Scan(&t.ID, &t.CreatedAt)
 }
 
-// RemoveStripTarget deletes a strip target by ID.
-func (r *SessionRepo) RemoveStripTarget(ctx context.Context, id string) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM session_strip_targets WHERE id = $1`, id)
-	return err
+// RemoveStripTarget deletes a strip target scoped to its session (tenant
+// guard — see RemoveAssignment). Returns rows affected so callers can 404
+// a cross-session id.
+func (r *SessionRepo) RemoveStripTarget(ctx context.Context, sessionID, id string) (int64, error) {
+	tag, err := r.db.Exec(ctx,
+		`DELETE FROM session_strip_targets WHERE id = $1 AND session_id = $2`,
+		id, sessionID)
+	if err != nil {
+		return 0, fmt.Errorf("remove strip target: %w", err)
+	}
+	return tag.RowsAffected(), nil
 }
 
 // ListStripTargets returns all strip targets for a session with wall/route details.
@@ -685,18 +700,19 @@ func (r *SessionRepo) ListChecklistItems(ctx context.Context, sessionID string) 
 // a UUID parameter, which caused the whole UPDATE to fail with
 // "invalid input syntax for type uuid: \"\"" and the handler swallowed
 // the error, so toggles silently never persisted.
-func (r *SessionRepo) ToggleChecklistItem(ctx context.Context, itemID, userID string) (int64, error) {
+func (r *SessionRepo) ToggleChecklistItem(ctx context.Context, sessionID, itemID, userID string) (int64, error) {
 	var userArg any
 	if userID != "" {
 		userArg = userID
 	}
+	// session_id predicate = tenant guard; see RemoveAssignment.
 	tag, err := r.db.Exec(ctx, `
 		UPDATE session_checklist_items
 		SET completed = NOT completed,
 			completed_by = CASE WHEN NOT completed THEN $2::uuid ELSE NULL END,
 			completed_at = CASE WHEN NOT completed THEN NOW() ELSE NULL END
-		WHERE id = $1`,
-		itemID, userArg,
+		WHERE id = $1 AND session_id = $3`,
+		itemID, userArg, sessionID,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("toggle checklist item: %w", err)

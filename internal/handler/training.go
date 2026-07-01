@@ -84,32 +84,36 @@ func (h *TrainingHandler) List(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusOK, plans)
 }
 
-func (h *TrainingHandler) Get(w http.ResponseWriter, r *http.Request) {
+// resolvePlan fetches the plan by URL ID and verifies it belongs to the
+// URL's locationID. Cross-tenant guard for every by-id plan handler —
+// mirrors SessionHandler.resolveSession. Without it any authenticated
+// staff member could read/edit another org's plan by UUID.
+func (h *TrainingHandler) resolvePlan(w http.ResponseWriter, r *http.Request) (*model.TrainingPlan, bool) {
+	locationID := chi.URLParam(r, "locationID")
 	planID := chi.URLParam(r, "planID")
-
 	plan, err := h.training.GetByID(r.Context(), planID)
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "internal error")
-		return
+		return nil, false
 	}
-	if plan == nil {
+	if plan == nil || plan.LocationID != locationID {
 		Error(w, http.StatusNotFound, "plan not found")
+		return nil, false
+	}
+	return plan, true
+}
+
+func (h *TrainingHandler) Get(w http.ResponseWriter, r *http.Request) {
+	plan, ok := h.resolvePlan(w, r)
+	if !ok {
 		return
 	}
-
 	JSON(w, http.StatusOK, plan)
 }
 
 func (h *TrainingHandler) Update(w http.ResponseWriter, r *http.Request) {
-	planID := chi.URLParam(r, "planID")
-
-	plan, err := h.training.GetByID(r.Context(), planID)
-	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if plan == nil {
-		Error(w, http.StatusNotFound, "plan not found")
+	plan, ok := h.resolvePlan(w, r)
+	if !ok {
 		return
 	}
 
@@ -138,12 +142,15 @@ func (h *TrainingHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plan, _ = h.training.GetByID(r.Context(), planID)
+	plan, _ = h.training.GetByID(r.Context(), plan.ID)
 	JSON(w, http.StatusOK, plan)
 }
 
 func (h *TrainingHandler) AddItem(w http.ResponseWriter, r *http.Request) {
-	planID := chi.URLParam(r, "planID")
+	plan, ok := h.resolvePlan(w, r)
+	if !ok {
+		return
+	}
 
 	var req addItemRequest
 	if err := Decode(r, &req); err != nil {
@@ -157,7 +164,7 @@ func (h *TrainingHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	item := &model.TrainingPlanItem{
-		PlanID:    planID,
+		PlanID:    plan.ID,
 		RouteID:   req.RouteID,
 		SortOrder: req.SortOrder,
 		Title:     req.Title,
@@ -173,6 +180,7 @@ func (h *TrainingHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TrainingHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
+	locationID := chi.URLParam(r, "locationID")
 	itemID := chi.URLParam(r, "itemID")
 
 	var req updateItemRequest
@@ -186,8 +194,15 @@ func (h *TrainingHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 		completed = *req.Completed
 	}
 
-	if err := h.training.UpdateItem(r.Context(), itemID, completed, req.Title, req.Notes); err != nil {
+	// Location-scoped in the repo: the item's plan must belong to this
+	// location, so a foreign item id is a 404, not a cross-tenant write.
+	n, err := h.training.UpdateItem(r.Context(), locationID, itemID, completed, req.Title, req.Notes)
+	if err != nil {
 		Error(w, http.StatusInternalServerError, "failed to update item")
+		return
+	}
+	if n == 0 {
+		Error(w, http.StatusNotFound, "plan item not found")
 		return
 	}
 

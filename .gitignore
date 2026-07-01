@@ -15,6 +15,9 @@
 /tmp/
 /dist/
 
+# Local database backups (make backup-now)
+/backups/
+
 # Environment
 .env
 .env.local

@@ -31,16 +31,34 @@ func isInternalRequest(r *http.Request) bool {
 		ip == "127.0.0.1" || ip == "::1"
 }
 
-func (h *HealthHandler) Check(w http.ResponseWriter, r *http.Request) {
-	status := "ok"
+// healthStatus computes the body "status" field and the HTTP status code
+// from the component checks.
+//
+// The HTTP status code reflects ONLY process liveness + database
+// reachability. fly.toml's [[http_service.checks]] treats any non-200 as
+// machine-unhealthy and pulls it from routing; with min_machines_running = 1
+// a transient storage (Tigris) blip would otherwise pull the only machine
+// and turn a degraded-but-working app into a full outage. Storage health is
+// still checked and reported in the JSON body for operators and monitoring,
+// but it never changes the status code.
+func healthStatus(dbOK, storageConfigured, storageOK bool) (string, int) {
+	if !dbOK {
+		return "degraded", http.StatusServiceUnavailable
+	}
+	if storageConfigured && !storageOK {
+		return "degraded", http.StatusOK
+	}
+	return "ok", http.StatusOK
+}
 
+func (h *HealthHandler) Check(w http.ResponseWriter, r *http.Request) {
 	result := map[string]interface{}{
-		"status":   status,
 		"database": "ok",
 	}
 
+	dbOK := true
 	if err := h.db.Ping(r.Context()); err != nil {
-		status = "degraded"
+		dbOK = false
 		result["database"] = "error"
 	}
 
@@ -59,22 +77,22 @@ func (h *HealthHandler) Check(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if h.storage != nil && h.storage.IsConfigured() {
+	// Storage is checked and reported, but never affects the HTTP status —
+	// see healthStatus for why.
+	storageConfigured := h.storage != nil && h.storage.IsConfigured()
+	storageOK := true
+	if storageConfigured {
 		result["storage"] = "ok"
 		if !h.storage.Healthy(r.Context()) {
-			status = "degraded"
-			result["storage"] = "error"
+			storageOK = false
+			result["storage"] = "degraded"
 		}
 	} else {
 		result["storage"] = "not_configured"
 	}
 
+	status, httpStatus := healthStatus(dbOK, storageConfigured, storageOK)
 	result["status"] = status
-
-	httpStatus := http.StatusOK
-	if status == "degraded" {
-		httpStatus = http.StatusServiceUnavailable
-	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(httpStatus)

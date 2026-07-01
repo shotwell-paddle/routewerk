@@ -69,7 +69,7 @@ func (r *RoutePhotoRepo) ListByRoute(ctx context.Context, routeID string) ([]Pho
 		}
 		photos = append(photos, p)
 	}
-	return photos, nil
+	return photos, rows.Err()
 }
 
 // GetByID returns a single photo by ID.

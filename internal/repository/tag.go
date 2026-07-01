@@ -53,7 +53,7 @@ func (r *TagRepo) ListByOrg(ctx context.Context, orgID string, category string) 
 		}
 		tags = append(tags, t)
 	}
-	return tags, nil
+	return tags, rows.Err()
 }
 
 func (r *TagRepo) Delete(ctx context.Context, id string) error {

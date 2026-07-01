@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
@@ -48,8 +47,7 @@ func (h *FollowHandler) Unfollow(w http.ResponseWriter, r *http.Request) {
 
 func (h *FollowHandler) Followers(w http.ResponseWriter, r *http.Request) {
 	targetID := chi.URLParam(r, "userID")
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, offset := clampPage(r, 50, 200)
 
 	users, err := h.follows.Followers(r.Context(), targetID, limit, offset)
 	if err != nil {
@@ -62,8 +60,7 @@ func (h *FollowHandler) Followers(w http.ResponseWriter, r *http.Request) {
 
 func (h *FollowHandler) Following(w http.ResponseWriter, r *http.Request) {
 	targetID := chi.URLParam(r, "userID")
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, offset := clampPage(r, 50, 200)
 
 	users, err := h.follows.Following(r.Context(), targetID, limit, offset)
 	if err != nil {
@@ -76,8 +73,7 @@ func (h *FollowHandler) Following(w http.ResponseWriter, r *http.Request) {
 
 func (h *FollowHandler) Feed(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, offset := clampPage(r, 50, 200)
 
 	items, err := h.follows.ActivityFeed(r.Context(), userID, limit, offset)
 	if err != nil {

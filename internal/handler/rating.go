@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/shotwell-paddle/routewerk/internal/middleware"
@@ -60,8 +59,7 @@ func (h *RatingHandler) RouteRatings(w http.ResponseWriter, r *http.Request) {
 	// same locationID closes the cross-tenant probe via a stolen routeID.
 	locationID := chi.URLParam(r, "locationID")
 	routeID := chi.URLParam(r, "routeID")
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, offset := clampPage(r, 50, 200)
 
 	ratings, err := h.ratings.ListByRoute(r.Context(), routeID, locationID, limit, offset)
 	if err != nil {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -181,8 +180,7 @@ func (h *RouteHandler) Distribution(w http.ResponseWriter, r *http.Request) {
 func (h *RouteHandler) List(w http.ResponseWriter, r *http.Request) {
 	locationID := chi.URLParam(r, "locationID")
 
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, offset := clampPage(r, 50, 500)
 
 	// Cap the free-text search: ILIKE '%...%' can't use an index, so an
 	// arbitrarily long pattern makes each row comparison disproportionately

@@ -83,7 +83,7 @@ func (r *TrainingRepo) GetByID(ctx context.Context, id string) (*model.TrainingP
 		}
 	}
 
-	return p, nil
+	return p, rows.Err()
 }
 
 func (r *TrainingRepo) ListByClimber(ctx context.Context, climberID string) ([]model.TrainingPlan, error) {

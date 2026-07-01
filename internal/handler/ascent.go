@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -71,8 +70,7 @@ func (h *AscentHandler) Log(w http.ResponseWriter, r *http.Request) {
 
 func (h *AscentHandler) MyAscents(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, offset := clampPage(r, 50, 200)
 
 	ascents, total, err := h.ascents.ListByUser(r.Context(), userID, limit, offset)
 	if err != nil {
@@ -121,8 +119,7 @@ func (h *AscentHandler) MyGradePyramid(w http.ResponseWriter, r *http.Request) {
 
 func (h *AscentHandler) RouteAscents(w http.ResponseWriter, r *http.Request) {
 	routeID := chi.URLParam(r, "routeID")
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, offset := clampPage(r, 50, 200)
 
 	ascents, err := h.ascents.ListByRoute(r.Context(), routeID, limit, offset)
 	if err != nil {

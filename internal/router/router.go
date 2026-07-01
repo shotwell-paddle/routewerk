@@ -39,7 +39,11 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 
 	// Global middleware (applied to ALL routes — API and web)
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
+	// TrustedClientIP replaces chi's RealIP: it only honors Fly-Client-IP
+	// (set by Fly's proxy, not forgeable by clients), never X-Forwarded-For
+	// or X-Real-IP. A forged XFF used to mint a fresh rate-limit bucket per
+	// request and could spoof an internal source address on /health.
+	r.Use(middleware.TrustedClientIP)
 	r.Use(metrics.Collect)
 	r.Use(middleware.HSTS(cfg.IsDev()))
 	r.Use(middleware.Logger)
@@ -218,6 +222,25 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	// Stricter rate limiter for login: 10 requests per minute per IP
 	loginLimiter := middleware.NewRateLimiter(10, 1*time.Minute)
 
+	// Per-user rate limit for the authenticated API: 300 requests per
+	// minute keyed on user id (client-IP fallback for unauthenticated
+	// edge cases). Generous enough that the SPA's parallel fan-outs
+	// (dashboard fires ~10 requests at once) never trip it, while capping
+	// how hard any single account can hammer expensive endpoints.
+	// Mounted inside the authenticated /api/v1 group, after the auth
+	// middleware, so the key function sees the user on the context.
+	apiUserLimiter := middleware.NewRateLimiter(300, 1*time.Minute)
+	apiUserLimit := apiUserLimiter.LimitByUser()
+
+	// Tighter per-user limit for server-rendered card artifacts (PNG /
+	// PDF / DXF): each request is a CPU-heavy image or PDF render on a
+	// shared-CPU VM. 30/min is plenty for a setter flipping through
+	// previews but stops one account from pegging the CPU. One shared
+	// limiter across the web (HTMX) and JSON API registrations so both
+	// surfaces draw from the same budget.
+	cardArtifactLimiter := middleware.NewRateLimiter(30, 1*time.Minute)
+	cardArtifactLimit := cardArtifactLimiter.LimitByUser()
+
 	// Per-user throttle for card-batch creation: 10 per hour. PDF rendering
 	// is CPU-heavy (8 cards × fontdraw + PDF encode) and a shared setter
 	// account behind one gym IP shouldn't collapse into a single bucket —
@@ -357,10 +380,14 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 
 			// Server-rendered route card artifacts. The SPA route detail
 			// embeds these as <img src> and provides download links.
-			r.Get("/routes/{routeID}/card/print.png", webHandler.RouteCardPrintPNG)
-			r.Get("/routes/{routeID}/card/print.pdf", webHandler.RouteCardPrintPDF)
-			r.Get("/routes/{routeID}/card/share.png", webHandler.RouteCardSharePNG)
-			r.Get("/routes/{routeID}/card/share.pdf", webHandler.RouteCardSharePDF)
+			// CPU-heavy renders — per-user throttled (cardArtifactLimiter).
+			r.Group(func(r chi.Router) {
+				r.Use(cardArtifactLimit)
+				r.Get("/routes/{routeID}/card/print.png", webHandler.RouteCardPrintPNG)
+				r.Get("/routes/{routeID}/card/print.pdf", webHandler.RouteCardPrintPDF)
+				r.Get("/routes/{routeID}/card/share.png", webHandler.RouteCardSharePNG)
+				r.Get("/routes/{routeID}/card/share.pdf", webHandler.RouteCardSharePDF)
+			})
 
 			// Manual mark-complete — recovery path. Auto-complete handles
 			// the normal case (service-layer trigger when criteria met).
@@ -368,9 +395,11 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 
 			// Setter card-batch artifacts (PDF / cutline DXF / preview PNG).
 			// The SPA card-batch detail page links to these as download
-			// targets / preview <img>.
+			// targets / preview <img>. CPU-heavy renders — per-user
+			// throttled (cardArtifactLimiter).
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireSetterSession)
+				r.Use(cardArtifactLimit)
 				r.Get("/card-batches/{batchID}/download.pdf", webHandler.CardBatchDownload)
 				r.Get("/card-batches/{batchID}/cutlines.dxf", webHandler.CardBatchCutlines)
 				r.Get("/card-batches/{batchID}/preview.png", webHandler.CardBatchPreview)
@@ -433,6 +462,8 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 		// work unchanged.
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.AuthenticateCookieOrJWT(sessionMgr, cfg.JWTSecret, cfg.EnforceJWTAudience))
+			// Per-user API throttle — after auth so the key sees the user.
+			r.Use(apiUserLimit)
 
 			// ── User's own data (no org context needed) ─────────────
 			r.Get("/me", authHandler.Me)
@@ -584,11 +615,15 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 						r.Get("/ascents", ascentHandler.RouteAscents)
 						r.Get("/ratings", ratingHandler.RouteRatings)
 
-						// Route info cards (any member)
-						r.Get("/card/print.png", cardHandler.PrintPNG)
-						r.Get("/card/print.pdf", cardHandler.PrintPDF)
-						r.Get("/card/share.png", cardHandler.DigitalPNG)
-						r.Get("/card/share.pdf", cardHandler.DigitalPDF)
+						// Route info cards (any member). CPU-heavy renders —
+						// per-user throttled (cardArtifactLimiter).
+						r.Group(func(r chi.Router) {
+							r.Use(cardArtifactLimit)
+							r.Get("/card/print.png", cardHandler.PrintPNG)
+							r.Get("/card/print.pdf", cardHandler.PrintPDF)
+							r.Get("/card/share.png", cardHandler.DigitalPNG)
+							r.Get("/card/share.pdf", cardHandler.DigitalPDF)
+						})
 
 						// Climber actions — any member can log ascents and rate
 						r.Post("/ascent", ascentHandler.Log)
@@ -638,7 +673,8 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 					r.Get("/", cardBatchHandler.List)
 					r.With(batchCreateLimitByUser).Post("/", cardBatchHandler.Create)
 					r.Get("/{batchID}", cardBatchHandler.Get)
-					r.Get("/{batchID}/pdf", cardBatchHandler.Download)
+					// CPU-heavy PDF render — per-user throttled.
+					r.With(cardArtifactLimit).Get("/{batchID}/pdf", cardBatchHandler.Download)
 					r.Patch("/{batchID}", cardBatchHandler.Update)
 					r.With(batchCreateLimitByUser).Post("/{batchID}/retry", cardBatchHandler.Retry)
 					r.Delete("/{batchID}", cardBatchHandler.Delete)

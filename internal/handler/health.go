@@ -2,8 +2,9 @@ package handler
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
-	"strings"
+	"net/netip"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shotwell-paddle/routewerk/internal/service"
@@ -18,17 +19,48 @@ func NewHealthHandler(db *pgxpool.Pool, storage *service.StorageService) *Health
 	return &HealthHandler{db: db, storage: storage}
 }
 
-// isInternalRequest returns true if the request comes from Fly.io's internal
-// network (private 172.x, fdaa:: ranges) or localhost. Pool stats and other
-// sensitive diagnostics are only returned for internal callers.
+// internalNetworks are the source networks allowed to see sensitive
+// diagnostics (pool stats) on /health: the RFC1918 private ranges plus
+// Fly's private 6PN network (fdaa::/16). Loopback is handled separately
+// via Addr.IsLoopback in isInternalRequest.
+var internalNetworks = []netip.Prefix{
+	netip.MustParsePrefix("10.0.0.0/8"),
+	netip.MustParsePrefix("172.16.0.0/12"),
+	netip.MustParsePrefix("192.168.0.0/16"),
+	netip.MustParsePrefix("fdaa::/16"),
+}
+
+// isInternalRequest returns true if the request comes from a private
+// network (RFC1918, Fly's 6PN fdaa::/16) or loopback. Pool stats and
+// other sensitive diagnostics are only returned for internal callers.
+//
+// The previous string-prefix check ("172.") matched ANY 172.x address —
+// 172.5.0.0 is publicly routable; only 172.16.0.0/12 is RFC1918. Proper
+// CIDR containment via net/netip closes that gap. RemoteAddr comes from
+// the TCP peer or the TrustedClientIP middleware (Fly-Client-IP), never
+// from a client-forgeable header.
 func isInternalRequest(r *http.Request) bool {
-	ip := r.RemoteAddr
-	if i := strings.LastIndex(ip, ":"); i != -1 {
-		ip = ip[:i]
+	host := r.RemoteAddr
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
 	}
-	return strings.HasPrefix(ip, "172.") ||
-		strings.HasPrefix(ip, "fdaa:") ||
-		ip == "127.0.0.1" || ip == "::1"
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	// Drop any IPv6 zone (Prefix.Contains rejects zoned addrs) and unmap
+	// IPv4-in-IPv6 (::ffff:10.0.0.1) so the IPv4 prefixes match either
+	// representation.
+	addr = addr.WithZone("").Unmap()
+	if addr.IsLoopback() {
+		return true
+	}
+	for _, network := range internalNetworks {
+		if network.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 // healthStatus computes the body "status" field and the HTTP status code

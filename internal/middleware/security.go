@@ -3,6 +3,7 @@ package middleware
 import (
 	"compress/gzip"
 	"context"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -370,24 +371,54 @@ func (rl *RateLimiter) evictOldest() {
 	}
 }
 
-// clientIP extracts the real client IP, preferring the value set by chi's
-// RealIP middleware (X-Real-IP / X-Forwarded-For) over r.RemoteAddr which
-// is often just the proxy IP when running behind Fly.io or similar.
+// clientIP extracts the client IP used as the rate-limit bucket key.
+// r.RemoteAddr is either "host:port" straight from the TCP peer, or a
+// bare IP after TrustedClientIP rewrote it from Fly-Client-IP.
+//
+// net.SplitHostPort handles the bracketed IPv6 form ("[::1]:443"); the
+// previous last-colon strip truncated bare IPv6 addresses ("2001:db8::1"
+// became "2001:db8"), collapsing distinct clients into shared buckets.
+// The result is canonicalized via net.ParseIP so equivalent spellings
+// ("2001:DB8::1", "2001:db8:0:0:0:0:0:1") key the same bucket.
 func clientIP(r *http.Request) string {
-	// chi's RealIP middleware sets X-Real-IP from X-Forwarded-For then
-	// overwrites r.RemoteAddr. However, RemoteAddr keeps the port suffix
-	// (e.g. "1.2.3.4:12345") so strip it for a clean map key.
-	ip := r.RemoteAddr
-	if i := strings.LastIndex(ip, ":"); i != -1 {
-		ip = ip[:i]
+	addr := strings.TrimSpace(r.RemoteAddr)
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		// No port — a bare IP, possibly still bracketed ("[::1]").
+		host = strings.TrimSuffix(strings.TrimPrefix(addr, "["), "]")
 	}
-	return ip
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.String()
+	}
+	return host
 }
 
 // Limit returns middleware that rejects requests over the rate limit with 429.
 // Keying is per client IP.
 func (rl *RateLimiter) Limit(next http.Handler) http.Handler {
 	return rl.LimitByKey(clientIP)(next)
+}
+
+// UserOrIPKey keys rate-limit buckets by the authenticated user id on the
+// request context (set by Authenticate, AuthenticateCookieOrJWT, and
+// SessionManager.RequireSession alike — cookie and JWT auth for the same
+// account share one bucket). When no user is present it falls back to the
+// client IP rather than returning "" — LimitByKey treats an empty key as
+// "skip", and a missing auth layer should degrade to per-IP limiting, not
+// unlimited throughput.
+func UserOrIPKey(r *http.Request) string {
+	if id := GetUserID(r.Context()); id != "" {
+		return "user:" + id
+	}
+	return "ip:" + clientIP(r)
+}
+
+// LimitByUser returns middleware that rate-limits per authenticated user,
+// with a per-IP fallback for unauthenticated requests. Distinct users
+// behind one gym IP get independent buckets. Mount it AFTER the auth
+// middleware so the key function can see the user on the context.
+func (rl *RateLimiter) LimitByUser() func(http.Handler) http.Handler {
+	return rl.LimitByKey(UserOrIPKey)
 }
 
 // LimitByKey returns middleware that rate-limits based on a caller-supplied

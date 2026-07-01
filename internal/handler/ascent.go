@@ -61,7 +61,7 @@ func (h *AscentHandler) Log(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.ascents.Create(r.Context(), ascent); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to log ascent")
+		InternalError(w, r, "failed to log ascent", err)
 		return
 	}
 
@@ -74,7 +74,7 @@ func (h *AscentHandler) MyAscents(w http.ResponseWriter, r *http.Request) {
 
 	ascents, total, err := h.ascents.ListByUser(r.Context(), userID, limit, offset)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -92,7 +92,7 @@ func (h *AscentHandler) MyStats(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := h.ascents.UserStats(r.Context(), userID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -108,7 +108,7 @@ func (h *AscentHandler) MyGradePyramid(w http.ResponseWriter, r *http.Request) {
 
 	pyramid, err := h.ascents.UserGradePyramid(r.Context(), userID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if pyramid == nil {
@@ -123,7 +123,7 @@ func (h *AscentHandler) RouteAscents(w http.ResponseWriter, r *http.Request) {
 
 	ascents, err := h.ascents.ListByRoute(r.Context(), routeID, limit, offset)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 

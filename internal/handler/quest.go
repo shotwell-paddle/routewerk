@@ -30,7 +30,7 @@ func (h *QuestHandler) ListAvailable(w http.ResponseWriter, r *http.Request) {
 	locationID := chi.URLParam(r, "locationID")
 	items, err := h.quests.ListAvailable(r.Context(), locationID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if items == nil {
@@ -46,7 +46,7 @@ func (h *QuestHandler) MyQuests(w http.ResponseWriter, r *http.Request) {
 
 	enrollments, err := h.quests.ListUserQuests(r.Context(), userID, status)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if enrollments == nil {
@@ -64,7 +64,7 @@ func (h *QuestHandler) Get(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusNotFound, "quest not found")
 			return
 		}
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusOK, q)
@@ -101,7 +101,7 @@ func (h *QuestHandler) Start(w http.ResponseWriter, r *http.Request) {
 			JSON(w, http.StatusOK, map[string]interface{}{"already_enrolled": true})
 			return
 		default:
-			Error(w, http.StatusInternalServerError, "internal error")
+			InternalError(w, r, "internal error", err)
 		}
 		return
 	}
@@ -144,7 +144,7 @@ func (h *QuestHandler) LogProgress(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, service.ErrNotOwner):
 			Error(w, http.StatusForbidden, "you do not own this enrollment")
 		default:
-			Error(w, http.StatusInternalServerError, "internal error")
+			InternalError(w, r, "internal error", err)
 		}
 		return
 	}
@@ -164,7 +164,7 @@ func (h *QuestHandler) Abandon(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, service.ErrNotOwner):
 			Error(w, http.StatusForbidden, "you do not own this enrollment")
 		default:
-			Error(w, http.StatusInternalServerError, "internal error")
+			InternalError(w, r, "internal error", err)
 		}
 		return
 	}

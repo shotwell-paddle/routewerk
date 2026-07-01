@@ -53,13 +53,13 @@ func (h *BadgeShowcaseHandler) Get(w http.ResponseWriter, r *http.Request) {
 	all, err := h.badges.ListByLocation(r.Context(), locationID)
 	if err != nil {
 		slog.Error("badge showcase: list all failed", "location_id", locationID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	earned, err := h.badges.ListUserBadgesForLocation(r.Context(), userID, locationID)
 	if err != nil {
 		slog.Error("badge showcase: list earned failed", "location_id", locationID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 

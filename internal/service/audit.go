@@ -159,4 +159,8 @@ const (
 	AuditAccountLocked     = "auth.account_locked"
 	AuditCardBatchCreate   = "card_batch.create"
 	AuditCardBatchDelete   = "card_batch.delete"
+	AuditSettingsUpdate    = "settings.update"
+	AuditSessionDelete     = "session.delete"
+	AuditSessionPublish    = "session.publish"
+	AuditViewAs            = "auth.view_as"
 )

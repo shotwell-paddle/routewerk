@@ -110,7 +110,7 @@ func (h *SessionHandler) AddRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.routes.Create(r.Context(), route); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to add route")
+		InternalError(w, r, "failed to add route", err)
 		return
 	}
 
@@ -132,7 +132,7 @@ func (h *SessionHandler) EditRoute(w http.ResponseWriter, r *http.Request) {
 	// — it doesn't select session_id, so its SessionID is always nil.)
 	route, err := h.sessions.GetSessionDraftRoute(r.Context(), session.ID, routeID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if route == nil {
@@ -167,7 +167,7 @@ func (h *SessionHandler) EditRoute(w http.ResponseWriter, r *http.Request) {
 	route.Description = next.Description
 
 	if err := h.routes.Update(r.Context(), route); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to update route")
+		InternalError(w, r, "failed to update route", err)
 		return
 	}
 
@@ -186,7 +186,7 @@ func (h *SessionHandler) DeleteRoute(w http.ResponseWriter, r *http.Request) {
 
 	n, err := h.sessions.DeleteSessionRoute(r.Context(), session.ID, routeID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "failed to delete route")
+		InternalError(w, r, "failed to delete route", err)
 		return
 	}
 	if n == 0 {

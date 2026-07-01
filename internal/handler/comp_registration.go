@@ -36,7 +36,7 @@ func (h *CompHandler) ListRegistrations(w http.ResponseWriter, r *http.Request) 
 	regs, err := h.regRepo.ListByCompetition(r.Context(), compID, "")
 	if err != nil {
 		slog.Error("list registrations", "competition_id", compID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	out := make([]api.CompetitionRegistration, 0, len(regs))
@@ -44,7 +44,7 @@ func (h *CompHandler) ListRegistrations(w http.ResponseWriter, r *http.Request) 
 		reg, err := registrationToAPI(&regs[i])
 		if err != nil {
 			slog.Error("registration serialization", "id", regs[i].ID, "error", err)
-			Error(w, http.StatusInternalServerError, "internal error")
+			InternalError(w, r, "internal error", err)
 			return
 		}
 		out = append(out, reg)
@@ -93,7 +93,7 @@ func (h *CompHandler) CreateRegistration(w http.ResponseWriter, r *http.Request)
 	user, err := h.userRepo.GetByID(r.Context(), targetUserID)
 	if err != nil {
 		slog.Error("user lookup for registration", "user_id", targetUserID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if user == nil {
@@ -121,14 +121,14 @@ func (h *CompHandler) CreateRegistration(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		slog.Error("create registration", "competition_id", compID, "user_id", targetUserID, "error", err)
-		Error(w, http.StatusInternalServerError, "could not create registration")
+		InternalError(w, r, "could not create registration", err)
 		return
 	}
 
 	out, err := registrationToAPI(reg)
 	if err != nil {
 		slog.Error("registration serialization", "id", reg.ID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	JSON(w, http.StatusCreated, out)
@@ -155,7 +155,7 @@ func (h *CompHandler) ListRegistrationAttempts(w http.ResponseWriter, r *http.Re
 	}
 	if err != nil {
 		slog.Error("get registration", "id", regID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	callerID := middleware.GetUserID(r.Context())
@@ -176,7 +176,7 @@ func (h *CompHandler) ListRegistrationAttempts(w http.ResponseWriter, r *http.Re
 	attempts, err := h.attemptRepo.ListByRegistration(r.Context(), regID)
 	if err != nil {
 		slog.Error("list attempts by registration", "id", regID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	out := make([]api.AttemptState, 0, len(attempts))
@@ -200,7 +200,7 @@ func (h *CompHandler) WithdrawRegistration(w http.ResponseWriter, r *http.Reques
 	}
 	if err != nil {
 		slog.Error("get registration", "id", regID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -227,7 +227,7 @@ func (h *CompHandler) WithdrawRegistration(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		slog.Error("withdraw registration", "id", regID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -58,7 +58,7 @@ func (h *RouteDifficultyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	tally, err := h.votes.RouteCounts(r.Context(), routeID)
 	if err != nil {
 		slog.Error("difficulty counts failed", "route_id", routeID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -133,7 +133,7 @@ func (h *RouteDifficultyHandler) Vote(w http.ResponseWriter, r *http.Request) {
 		Vote:    req.Vote,
 	}); err != nil {
 		slog.Error("difficulty vote save failed", "route_id", routeID, "error", err)
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 

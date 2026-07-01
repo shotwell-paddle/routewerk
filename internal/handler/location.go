@@ -6,14 +6,24 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/shotwell-paddle/routewerk/internal/model"
 	"github.com/shotwell-paddle/routewerk/internal/repository"
+	"github.com/shotwell-paddle/routewerk/internal/service"
 )
 
 type LocationHandler struct {
 	locations *repository.LocationRepo
+	audit     *service.AuditService
 }
 
-func NewLocationHandler(locations *repository.LocationRepo) *LocationHandler {
-	return &LocationHandler{locations: locations}
+func NewLocationHandler(locations *repository.LocationRepo, audit *service.AuditService) *LocationHandler {
+	return &LocationHandler{locations: locations, audit: audit}
+}
+
+// record is a nil-safe audit shim — tests construct the handler without
+// an audit service.
+func (h *LocationHandler) record(r *http.Request, action, locationID, orgID string, meta map[string]interface{}) {
+	if h.audit != nil {
+		h.audit.Record(r, action, "location", locationID, orgID, meta)
+	}
 }
 
 type createLocationRequest struct {
@@ -64,9 +74,13 @@ func (h *LocationHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.locations.Create(r.Context(), loc); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to create location")
+		InternalError(w, r, "failed to create location", err)
 		return
 	}
+
+	h.record(r, service.AuditLocationCreate, loc.ID, orgID, map[string]interface{}{
+		"name": loc.Name,
+	})
 
 	JSON(w, http.StatusCreated, loc)
 }
@@ -76,7 +90,7 @@ func (h *LocationHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	locations, err := h.locations.ListByOrg(r.Context(), orgID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -92,7 +106,7 @@ func (h *LocationHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	loc, err := h.locations.GetByID(r.Context(), locationID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if loc == nil {
@@ -108,7 +122,7 @@ func (h *LocationHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	loc, err := h.locations.GetByID(r.Context(), locationID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	if loc == nil {
@@ -149,9 +163,11 @@ func (h *LocationHandler) Update(w http.ResponseWriter, r *http.Request) {
 	loc.AllowSharedSetters = req.AllowSharedSetters
 
 	if err := h.locations.Update(r.Context(), loc); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to update location")
+		InternalError(w, r, "failed to update location", err)
 		return
 	}
+
+	h.record(r, service.AuditLocationUpdate, loc.ID, loc.OrgID, nil)
 
 	JSON(w, http.StatusOK, loc)
 }
@@ -173,8 +189,11 @@ func (h *LocationHandler) SetProgressions(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := h.locations.SetProgressionsEnabled(r.Context(), locationID, req.Enabled); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to toggle progressions")
+		InternalError(w, r, "failed to toggle progressions", err)
 		return
 	}
+	h.record(r, service.AuditLocationUpdate, locationID, "", map[string]interface{}{
+		"progressions_enabled": req.Enabled,
+	})
 	w.WriteHeader(http.StatusNoContent)
 }

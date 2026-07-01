@@ -124,11 +124,11 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	// Handlers
 	storageSvc := service.NewStorageService(cfg)
 	healthHandler := handler.NewHealthHandler(db, storageSvc)
-	authHandler := handler.NewAuthHandler(authService, !cfg.IsDev())
+	authHandler := handler.NewAuthHandler(authService, !cfg.IsDev(), auditService)
 	magicAuthHandler := handler.NewMagicAuthHandler(magicLinkSvc)
 	magicVerifyHandler := webhandler.NewMagicVerifyHandler(magicLinkSvc, webSessionRepo, userRepo, sessionMgr, cfg)
 	orgHandler := handler.NewOrgHandler(orgRepo, auditService)
-	locationHandler := handler.NewLocationHandler(locationRepo)
+	locationHandler := handler.NewLocationHandler(locationRepo, auditService)
 	wallHandler := handler.NewWallHandler(wallRepo, auditService)
 	// settingsRepo is constructed below in the web-frontend section, but
 	// the route handler needs it too — for hex → hold-color-name lookup
@@ -142,7 +142,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	// for the web handler bundle.
 	ascentHandler := handler.NewAscentHandler(ascentRepo)
 	ratingHandler := handler.NewRatingHandler(ratingRepo)
-	sessionHandler := handler.NewSessionHandler(sessionRepo, routeRepo)
+	sessionHandler := handler.NewSessionHandler(sessionRepo, routeRepo, auditService)
 	laborHandler := handler.NewLaborHandler(laborRepo)
 	tagHandler := handler.NewTagHandler(tagRepo, auditService)
 	followHandler := handler.NewFollowHandler(followRepo)
@@ -180,7 +180,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	notifRepo := repository.NewNotificationRepo(db)
 	notifHandler := handler.NewNotificationHandler(notifRepo)
 	dashboardHandler := handler.NewDashboardHandler(analyticsRepo)
-	settingsHandler := handler.NewSettingsHandler(settingsRepo)
+	settingsHandler := handler.NewSettingsHandler(settingsRepo, auditService)
 	progressionsAdminHandler := handler.NewProgressionsAdminHandler(questRepo, badgeRepo, authz)
 	// JSON variant of the HTMX route-photo upload pipeline (multipart upload,
 	// image processing, S3 upload, route_photos row insert). Cap concurrent

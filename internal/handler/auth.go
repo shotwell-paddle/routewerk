@@ -18,10 +18,11 @@ var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-
 type AuthHandler struct {
 	auth   *service.AuthService
 	secure bool // Sets the Secure flag on outbound cookies (false in dev).
+	audit  *service.AuditService
 }
 
-func NewAuthHandler(authService *service.AuthService, secure bool) *AuthHandler {
-	return &AuthHandler{auth: authService, secure: secure}
+func NewAuthHandler(authService *service.AuthService, secure bool, audit *service.AuditService) *AuthHandler {
+	return &AuthHandler{auth: authService, secure: secure, audit: audit}
 }
 
 type registerRequest struct {
@@ -87,7 +88,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusConflict, "email already registered")
 			return
 		}
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -118,7 +119,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusUnauthorized, "invalid email or password")
 			return
 		}
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -149,7 +150,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusUnauthorized, "invalid refresh token")
 			return
 		}
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -165,7 +166,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusNotFound, "user not found")
 			return
 		}
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -242,7 +243,7 @@ func (h *AuthHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusNotFound, "user not found")
 			return
 		}
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -283,7 +284,7 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusNotFound, "user not found")
 			return
 		}
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 
@@ -330,7 +331,7 @@ func (h *AuthHandler) SetViewAs(w http.ResponseWriter, r *http.Request) {
 	// bar but get 403s from this endpoint.
 	user, memberships, err := h.auth.GetProfile(r.Context(), userID)
 	if err != nil {
-		Error(w, http.StatusInternalServerError, "internal error")
+		InternalError(w, r, "internal error", err)
 		return
 	}
 	realRank := 0
@@ -363,6 +364,11 @@ func (h *AuthHandler) SetViewAs(w http.ResponseWriter, r *http.Request) {
 			Secure:   h.secure,
 			SameSite: http.SameSiteLaxMode,
 		})
+		if h.audit != nil {
+			h.audit.Record(r, service.AuditViewAs, "user", userID, "", map[string]interface{}{
+				"action": "clear",
+			})
+		}
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -388,5 +394,13 @@ func (h *AuthHandler) SetViewAs(w http.ResponseWriter, r *http.Request) {
 		Secure:   h.secure,
 		SameSite: http.SameSiteLaxMode,
 	})
+	// Impersonation (even downgrade-only) is a privileged action worth a
+	// trail — audit gap flagged in the 2026-07 best-practices audit.
+	if h.audit != nil {
+		h.audit.Record(r, service.AuditViewAs, "user", userID, "", map[string]interface{}{
+			"target_role": target,
+			"real_role":   realRole,
+		})
+	}
 	w.WriteHeader(http.StatusNoContent)
 }

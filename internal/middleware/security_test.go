@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"compress/gzip"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -78,8 +79,8 @@ func TestSecureHeaders_API(t *testing.T) {
 
 	expected := map[string]string{
 		"X-Content-Type-Options": "nosniff",
-		"X-Frame-Options":       "DENY",
-		"X-XSS-Protection":      "0",
+		"X-Frame-Options":        "DENY",
+		"X-XSS-Protection":       "0",
 		"Cache-Control":          "no-store",
 	}
 
@@ -135,10 +136,10 @@ func TestSecureHeadersWeb(t *testing.T) {
 // because CSP source expressions only match scheme+host+port.
 func TestSecureHeadersWeb_StorageEndpointInImgSrc(t *testing.T) {
 	cases := []struct {
-		name      string
-		endpoint  string
-		wantAll   []string // fragments that must all appear in the CSP
-		notWant   string   // fragment that must NOT appear (e.g. path noise)
+		name     string
+		endpoint string
+		wantAll  []string // fragments that must all appear in the CSP
+		notWant  string   // fragment that must NOT appear (e.g. path noise)
 	}{
 		{
 			name:     "tigris https endpoint emits both apex and wildcard subdomain",
@@ -402,5 +403,105 @@ func TestRateLimiter_LimitByKey_PerUserIsolated(t *testing.T) {
 		if rec := send(""); rec.Code != http.StatusOK {
 			t.Fatalf("empty-key request %d: got %d, want 200 (unthrottled)", i+1, rec.Code)
 		}
+	}
+}
+
+// TestClientIP verifies the rate-limit bucket key derivation. The old
+// last-colon strip truncated bare IPv6 addresses ("2001:db8::1" became
+// "2001:db8"), collapsing distinct IPv6 clients into shared buckets.
+func TestClientIP(t *testing.T) {
+	tests := []struct {
+		name       string
+		remoteAddr string
+		want       string
+	}{
+		{name: "IPv4 with port", remoteAddr: "1.2.3.4:12345", want: "1.2.3.4"},
+		{name: "IPv4 without port", remoteAddr: "1.2.3.4", want: "1.2.3.4"},
+		{name: "IPv6 bracketed with port", remoteAddr: "[2001:db8::1]:443", want: "2001:db8::1"},
+		{name: "IPv6 bare without port", remoteAddr: "2001:db8::1", want: "2001:db8::1"},
+		{name: "IPv6 bracketed without port", remoteAddr: "[2001:db8::1]", want: "2001:db8::1"},
+		{name: "IPv6 canonicalized (case)", remoteAddr: "2001:DB8::1", want: "2001:db8::1"},
+		{name: "IPv6 canonicalized (expanded)", remoteAddr: "[2001:db8:0:0:0:0:0:1]:8080", want: "2001:db8::1"},
+		{name: "IPv6 loopback bare", remoteAddr: "::1", want: "::1"},
+		{name: "IPv6 loopback with port", remoteAddr: "[::1]:59234", want: "::1"},
+		{name: "distinct IPv6 clients stay distinct", remoteAddr: "2001:db8::2", want: "2001:db8::2"},
+		{name: "whitespace trimmed", remoteAddr: " 1.2.3.4:80 ", want: "1.2.3.4"},
+		{name: "garbage passes through as-is", remoteAddr: "garbage", want: "garbage"},
+		{name: "empty stays empty", remoteAddr: "", want: ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r.RemoteAddr = tc.remoteAddr
+			if got := clientIP(r); got != tc.want {
+				t.Errorf("clientIP(%q) = %q, want %q", tc.remoteAddr, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRateLimiter_LimitByUser_UserKeyWithIPFallback covers the keying mode
+// used by the authenticated-API and card-artifact limiters: authenticated
+// requests bucket per user id (independent across users sharing an IP),
+// and requests with no user on the context fall back to a per-IP bucket
+// instead of bypassing the limiter.
+func TestRateLimiter_LimitByUser_UserKeyWithIPFallback(t *testing.T) {
+	rl := &RateLimiter{
+		clients: make(map[string]*clientWindow),
+		limit:   1,
+		window:  60_000_000_000, // 1 minute as nanoseconds
+	}
+
+	handler := rl.LimitByUser()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	send := func(userID, remoteAddr string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+		req.RemoteAddr = remoteAddr
+		if userID != "" {
+			req = req.WithContext(context.WithValue(req.Context(), UserIDKey, userID))
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// Two users behind the same gym IP get independent buckets.
+	if rec := send("user-a", "10.0.0.1:1111"); rec.Code != http.StatusOK {
+		t.Fatalf("user-a first request: got %d, want 200", rec.Code)
+	}
+	if rec := send("user-b", "10.0.0.1:1111"); rec.Code != http.StatusOK {
+		t.Fatalf("user-b first request: got %d, want 200 (independent bucket)", rec.Code)
+	}
+	if rec := send("user-a", "10.0.0.1:1111"); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("user-a second request: got %d, want 429", rec.Code)
+	}
+
+	// The user key sticks across source IPs — same account from a new
+	// address stays in its (already exhausted) bucket.
+	if rec := send("user-a", "203.0.113.9:2222"); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("user-a from new IP: got %d, want 429 (user-keyed, not IP-keyed)", rec.Code)
+	}
+
+	// No user on the context → per-IP fallback bucket, NOT a bypass.
+	if rec := send("", "198.51.100.7:3333"); rec.Code != http.StatusOK {
+		t.Fatalf("anonymous first request: got %d, want 200", rec.Code)
+	}
+	if rec := send("", "198.51.100.7:4444"); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("anonymous second request from same IP: got %d, want 429 (IP fallback)", rec.Code)
+	}
+
+	// A different anonymous IP gets its own fallback bucket.
+	if rec := send("", "198.51.100.8:5555"); rec.Code != http.StatusOK {
+		t.Fatalf("anonymous request from different IP: got %d, want 200", rec.Code)
+	}
+
+	// The IP-fallback bucket for an address must not collide with a user
+	// bucket, and an authenticated user on that same exhausted IP is
+	// unaffected by the anonymous traffic.
+	if rec := send("user-c", "198.51.100.7:6666"); rec.Code != http.StatusOK {
+		t.Fatalf("user-c on exhausted anonymous IP: got %d, want 200 (user bucket separate)", rec.Code)
 	}
 }

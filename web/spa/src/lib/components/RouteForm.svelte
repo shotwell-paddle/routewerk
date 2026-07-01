@@ -81,6 +81,9 @@
     date_set: isoDate(seed?.date_set ?? new Date().toISOString()),
     projected_strip_date: isoDate(seed?.projected_strip_date ?? null),
     circuit_color: seed?.circuit_color ?? '',
+    // Kids rope route: sets the circuit_color='kids' marker the dashboard
+    // buckets on. Boulders get their kids marker from the kids circuit.
+    kids: (seed?.circuit_color ?? '').toLowerCase() === 'kids',
   });
 
   let localError = $state<string | null>(null);
@@ -218,10 +221,13 @@
     // configured set; that pick doubles as both `grade` and `circuit_color`
     // so card layout, leaderboards, and downstream filtering behave the
     // same as the HTMX form (see internal/handler/web/setter_routes.go).
-    const circuitColor =
-      form.grading_system === 'circuit'
-        ? form.grade || null
-        : form.circuit_color || null;
+    let circuitColor: string | null = null;
+    if (form.grading_system === 'circuit') {
+      circuitColor = form.grade || null;
+    } else if (form.route_type === 'route' && form.kids) {
+      // Kids rope route — the dashboard buckets on this marker.
+      circuitColor = 'kids';
+    }
 
     return {
       wall_id: form.wall_id,
@@ -277,6 +283,18 @@
         <button type="button" class="seg-btn" class:on={form.grading_system === 'circuit'}
                 aria-pressed={form.grading_system === 'circuit'}
                 onclick={() => selectStyle('circuit')}>Circuit</button>
+      </div>
+    </div>
+  {/if}
+
+  {#if form.route_type === 'route'}
+    <div class="field">
+      <span class="field-label">Category</span>
+      <div class="seg" role="group" aria-label="Route category">
+        <button type="button" class="seg-btn" class:on={!form.kids}
+                aria-pressed={!form.kids} onclick={() => (form.kids = false)}>Standard</button>
+        <button type="button" class="seg-btn" class:on={form.kids}
+                aria-pressed={form.kids} onclick={() => (form.kids = true)}>Kids</button>
       </div>
     </div>
   {/if}

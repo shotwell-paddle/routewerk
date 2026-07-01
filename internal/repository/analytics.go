@@ -31,12 +31,17 @@ func (r *AnalyticsRepo) LocationDashboardStats(ctx context.Context, locationID s
 			COUNT(*) FILTER (WHERE status = 'active' AND projected_strip_date IS NOT NULL AND projected_strip_date <= CURRENT_DATE) as due_for_strip,
 			COALESCE(AVG(avg_rating) FILTER (WHERE status = 'active' AND rating_count > 0), 0) as avg_rating,
 			COUNT(*) FILTER (WHERE status = 'active' AND date_set >= CURRENT_DATE - 7) as set_this_week,
-			COUNT(*) FILTER (WHERE status = 'active' AND date_set >= CURRENT_DATE - 14 AND date_set < CURRENT_DATE - 7) as set_last_week
+			COUNT(*) FILTER (WHERE status = 'active' AND date_set >= CURRENT_DATE - 14 AND date_set < CURRENT_DATE - 7) as set_last_week,
+			COUNT(*) FILTER (WHERE status = 'active' AND route_type = 'boulder' AND (circuit_color IS NULL OR lower(circuit_color) <> 'kids')) as boulders,
+			COUNT(*) FILTER (WHERE status = 'active' AND route_type = 'boulder' AND lower(circuit_color) = 'kids') as kids_boulders,
+			COUNT(*) FILTER (WHERE status = 'active' AND route_type = 'route' AND (circuit_color IS NULL OR lower(circuit_color) <> 'kids')) as routes,
+			COUNT(*) FILTER (WHERE status = 'active' AND route_type = 'route' AND lower(circuit_color) = 'kids') as kids_routes
 		FROM routes
 		WHERE location_id = $1 AND deleted_at IS NULL`
 
 	if err := r.db.QueryRow(ctx, routeQuery, locationID).Scan(
 		&d.ActiveRoutes, &d.DueForStrip, &d.AvgRating, &d.SetThisWeek, &d.SetLastWeek,
+		&d.Boulders, &d.KidsBoulders, &d.Routes, &d.KidsRoutes,
 	); err != nil {
 		return nil, fmt.Errorf("dashboard route stats: %w", err)
 	}
@@ -315,6 +320,14 @@ type LocationDashboard struct {
 	DueForStrip   int     `json:"due_for_strip"`
 	SetThisWeek   int     `json:"set_this_week"`
 	SetLastWeek   int     `json:"set_last_week"`
+	// Active-route breakdown by type. "Kids" is the convention-based
+	// marker circuit_color='kids' (case-insensitive): boulders get it from
+	// the kids circuit; rope routes from the form's Kids toggle. Boulders /
+	// Routes are the non-kids counts.
+	Boulders     int `json:"boulders"`
+	KidsBoulders int `json:"kids_boulders"`
+	Routes       int `json:"routes"`
+	KidsRoutes   int `json:"kids_routes"`
 }
 
 type GradeCount struct {
@@ -362,20 +375,20 @@ type SetterStats struct {
 }
 
 type ActivityEntry struct {
-	UserName          string    `json:"user_name"`
-	AscentType        string    `json:"ascent_type"`
-	Time              time.Time `json:"time"`
-	RouteColor        string    `json:"route_color"`
-	RouteGrade        string    `json:"route_grade"`
-	RouteGradingSystem string   `json:"route_grading_system"`
-	RouteCircuitColor *string   `json:"route_circuit_color,omitempty"`
-	RouteName         *string   `json:"route_name,omitempty"`
+	UserName           string    `json:"user_name"`
+	AscentType         string    `json:"ascent_type"`
+	Time               time.Time `json:"time"`
+	RouteColor         string    `json:"route_color"`
+	RouteGrade         string    `json:"route_grade"`
+	RouteGradingSystem string    `json:"route_grading_system"`
+	RouteCircuitColor  *string   `json:"route_circuit_color,omitempty"`
+	RouteName          *string   `json:"route_name,omitempty"`
 }
 
 type LocationOverview struct {
-	LocationID       string `json:"location_id"`
-	LocationName     string `json:"location_name"`
-	ActiveRoutes     int    `json:"active_routes"`
-	ActiveClimbers30d int   `json:"active_climbers_30d"`
-	OverdueStrips    int    `json:"overdue_strips"`
+	LocationID        string `json:"location_id"`
+	LocationName      string `json:"location_name"`
+	ActiveRoutes      int    `json:"active_routes"`
+	ActiveClimbers30d int    `json:"active_climbers_30d"`
+	OverdueStrips     int    `json:"overdue_strips"`
 }

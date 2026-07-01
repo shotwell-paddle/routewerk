@@ -89,6 +89,9 @@
     color: initial?.color ?? '',
     name: initial?.name ?? '',
     setter_id: initial?.setter_id ?? defaultSetterId ?? '',
+    // Kids rope route: sets the circuit_color='kids' marker the dashboard
+    // buckets on. Boulders get their kids marker from the kids circuit.
+    kids: (initial?.circuit_color ?? '').toLowerCase() === 'kids',
   });
 
   let localError = $state<string | null>(null);
@@ -178,7 +181,7 @@
       color: form.color,
       // For circuits the picked color name doubles as grade + circuit_color
       // (matches RouteForm + the HTMX setter form).
-      circuit_color: isCircuit ? form.grade : null,
+      circuit_color: isCircuit ? form.grade : isRopeWall && form.kids ? 'kids' : null,
       name: form.name.trim() || null,
       setter_id: form.setter_id || null,
     };
@@ -206,6 +209,18 @@
         <button type="button" class="seg-btn" class:on={form.grading_system === 'circuit'}
                 aria-pressed={form.grading_system === 'circuit'}
                 onclick={() => selectStyle('circuit')}>Circuit</button>
+      </div>
+    </div>
+  {/if}
+
+  {#if isRopeWall}
+    <div class="field">
+      <span>Category</span>
+      <div class="seg" role="group" aria-label="Route category">
+        <button type="button" class="seg-btn" class:on={!form.kids}
+                aria-pressed={!form.kids} onclick={() => (form.kids = false)}>Standard</button>
+        <button type="button" class="seg-btn" class:on={form.kids}
+                aria-pressed={form.kids} onclick={() => (form.kids = true)}>Kids</button>
       </div>
     </div>
   {/if}

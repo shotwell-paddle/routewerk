@@ -322,6 +322,25 @@
         </div>
       </section>
 
+      <section class="stat-grid type-grid">
+        <div class="stat-card">
+          <div class="stat-value">{summary.stats.boulders}</div>
+          <div class="stat-label">Boulders</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{summary.stats.kids_boulders}</div>
+          <div class="stat-label">Kids boulders</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{summary.stats.routes}</div>
+          <div class="stat-label">Routes</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{summary.stats.kids_routes}</div>
+          <div class="stat-label">Kids routes</div>
+        </div>
+      </section>
+
       <section class="card">
         <h2>Recent activity</h2>
         {#if summary.recent_activity.length === 0}

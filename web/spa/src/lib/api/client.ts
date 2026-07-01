@@ -1828,6 +1828,12 @@ export interface DashboardStatsShape {
   due_for_strip: number;
   set_this_week: number;
   set_last_week: number;
+  // Active-route breakdown by type. "Kids" = the circuit_color='kids'
+  // marker (boulders via the kids circuit, rope routes via the Kids toggle).
+  boulders: number;
+  kids_boulders: number;
+  routes: number;
+  kids_routes: number;
 }
 
 export interface DashboardActivityShape {

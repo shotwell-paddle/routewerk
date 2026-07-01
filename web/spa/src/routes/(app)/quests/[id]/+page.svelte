@@ -11,6 +11,7 @@
     type ClimberQuestShape,
   } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
+  import Notice from '$lib/components/Notice.svelte';
 
   let quest = $state<QuestShape | null>(null);
   let enrollment = $state<ClimberQuestShape | null>(null);
@@ -28,12 +29,18 @@
 
   async function refresh() {
     if (!questId) return;
+    const id = questId;
     const [q, mine] = await Promise.all([
-      getQuest(questId),
+      getQuest(id),
       listMyQuests(),
     ]);
+    // The user may have navigated to a different quest while this was in
+    // flight — a slow response must not overwrite the new page's data.
+    // (The loading effect's cancelled flag guards its own error/loading
+    // writes; this guards the data writes for every refresh() caller.)
+    if (page.params.id !== id) return;
     quest = q;
-    enrollment = mine.find((cq) => cq.quest_id === questId) ?? null;
+    enrollment = mine.find((cq) => cq.quest_id === id) ?? null;
   }
 
   $effect(() => {
@@ -122,7 +129,7 @@
   {#if loading}
     <p class="muted">Loading…</p>
   {:else if error}
-    <p class="error">{error}</p>
+    <Notice kind="error">{error}</Notice>
   {:else if quest}
     <header class="page-header">
       <div>
@@ -159,7 +166,7 @@
         <p class="muted">
           Start this quest to track your progress and earn the badge.
         </p>
-        {#if mutateError}<p class="error">{mutateError}</p>{/if}
+        {#if mutateError}<Notice kind="error">{mutateError}</Notice>{/if}
         <button class="primary" disabled={mutating || !locId} onclick={start}>
           {mutating ? 'Starting…' : 'Start quest'}
         </button>
@@ -202,7 +209,7 @@
               rows="3"
               placeholder="What did you do?"></textarea>
           </div>
-          {#if mutateError}<p class="error">{mutateError}</p>{/if}
+          {#if mutateError}<Notice kind="error">{mutateError}</Notice>{/if}
           <button class="primary" type="submit" disabled={logSaving}>
             {logSaving ? 'Logging…' : 'Log entry'}
           </button>
@@ -414,14 +421,5 @@
   }
   .muted {
     color: var(--rw-text-muted);
-  }
-  .error {
-    background: #fef2f2;
-    border: 1px solid #fecaca;
-    color: #991b1b;
-    padding: 0.55rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    margin: 0.5rem 0;
   }
 </style>

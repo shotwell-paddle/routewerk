@@ -1,8 +1,14 @@
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   plugins: [sveltekit()],
+  test: {
+    // Pure-logic suites only (API client, stores) — no DOM needed. The
+    // sveltekit plugin above compiles runes in .svelte.ts imports.
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
+  },
   server: {
     port: 5173,
     strictPort: true,

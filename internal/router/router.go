@@ -391,14 +391,15 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 	})
 
 	// API v1 — JSON API with restrictive CSP and query timeout.
-	// 1 MB body cap: the API only accepts JSON payloads and never needs
-	// multipart. Any future upload endpoint should mount under /web or
-	// override this limit in its own handler. See S3 in the 2026-04-22
-	// perf audit.
+	// Body caps: 1 MB for JSON, 10 MB for multipart (the photo upload
+	// endpoints — the SPA uploads route photos through /api/v1, and the
+	// flat 1 MB cap was rejecting phone photos before the handler's own
+	// 5 MB check + resize pipeline ever ran). Handlers enforce their own
+	// tighter per-endpoint file limits.
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(middleware.SecureHeaders)
 		r.Use(middleware.RequestTimeout(cfg.QueryTimeout))
-		r.Use(middleware.LimitBody(1 << 20)) // 1 MB
+		r.Use(middleware.LimitBodyByContentType(1<<20, 10<<20)) // 1 MB JSON / 10 MB multipart
 		// Public — rate-limited auth endpoints
 		r.Group(func(r chi.Router) {
 			r.Use(authLimiter.Limit)

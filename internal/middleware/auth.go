@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -77,8 +78,8 @@ func AuthenticateCookieOrJWT(sm *SessionManager, jwtSecret string, enforceAudien
 			// 1) Cookie path — only if a non-empty session cookie is present.
 			if cookie, err := r.Cookie(SessionCookieName); err == nil && cookie.Value != "" {
 				tokenHash := HashSessionToken(cookie.Value)
-				ac, err := sm.sessions.GetAuthContextByTokenHash(r.Context(), tokenHash)
-				if err == nil && ac != nil {
+				ac, lookupErr := sm.sessions.GetAuthContextByTokenHash(r.Context(), tokenHash)
+				if lookupErr == nil && ac != nil {
 					ctx := r.Context()
 					ctx = context.WithValue(ctx, WebSessionKey, ac.Session)
 					ctx = context.WithValue(ctx, WebUserKey, ac.User)
@@ -87,10 +88,24 @@ func AuthenticateCookieOrJWT(sm *SessionManager, jwtSecret string, enforceAudien
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
-				// Cookie present but invalid / expired / soft-deleted user.
-				// Fall through to the bearer path — a mobile caller may
-				// also be sending a JWT in the same request (unlikely but
-				// not actively wrong).
+				if lookupErr != nil {
+					// The lookup FAILED (DB timeout, pool exhaustion, conn
+					// error) — we cannot know whether the session is valid,
+					// so this must NOT surface as 401. A 401 here reads as
+					// "logged out" to the SPA and bounces a validly-signed-in
+					// user to /login (the recurring "authentication needed"
+					// bug: the SPA's transient-failure retry can't help when
+					// the server converts the transient failure into a 401
+					// first). 503 instead — the SPA retries with backoff and
+					// keeps the session. Mirrors RequireSession's handling.
+					slog.Error("api session lookup failed", "error", lookupErr)
+					http.Error(w, `{"error":"service temporarily unavailable"}`, http.StatusServiceUnavailable)
+					return
+				}
+				// ac == nil: cookie present but genuinely invalid / expired /
+				// revoked / soft-deleted user. Fall through to the bearer
+				// path — a mobile caller may also be sending a JWT in the
+				// same request (unlikely but not actively wrong).
 			}
 
 			// 2) Bearer-token path — same as Authenticate above.

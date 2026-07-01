@@ -1,11 +1,74 @@
 # Postgres backup & restore runbook
 
-Nightly logical backups of the production database (`routewerk-db`) to a
-dedicated Tigris bucket, with 35-day retention. This is the durable safety
-net on top of Fly's ~5-day volume snapshots (`fly volumes snapshots list`),
-which remain as a secondary recovery path.
+Two modes, one active at a time:
 
-## What runs when
+- **Local mode (CURRENT — single-gym scale)**: nightly pull-based
+  `pg_dump` onto the climbing-analytics machine via
+  `scripts/backup-local.sh`. Free; prod credentials never touch GitHub;
+  the copy is off-site relative to Fly.
+- **Cloud mode (when scaling to multiple gyms)**: the GitHub Actions
+  workflow below pushing to a dedicated Tigris bucket. Its nightly cron
+  is commented out until adopted — see "One-time setup".
+
+Both sit on top of Fly's ~5-day volume snapshots
+(`fly volumes snapshots list`), which remain as a secondary recovery
+path. Restores are identical in either mode: a `-Fc` dump restored with
+`pg_restore`.
+
+## Local mode (current)
+
+**Setup on the backup machine (once):**
+
+1. Install tools: `flyctl` (then `fly auth login`) and a v16 Postgres
+   client (`brew install postgresql@16`, or the apt equivalent).
+2. Copy `scripts/backup-local.sh` somewhere stable (or clone the repo).
+3. Create the config (mode 600):
+   ```
+   mkdir -p ~/.routewerk && touch ~/.routewerk/backup.env && chmod 600 ~/.routewerk/backup.env
+   # contents — the prod DATABASE_URL with host/port swapped to the proxy:
+   # BACKUP_DATABASE_URL=postgres://routewerk:<password>@localhost:15432/routewerk?sslmode=disable
+   ```
+   Get the password once via `fly ssh console -a routewerk -C 'printenv DATABASE_URL'`.
+4. Run it once by hand and confirm a dump lands in `~/routewerk-backups/`.
+
+**Scheduling — macOS (launchd), survives sleep better than cron:**
+
+```
+# ~/Library/LaunchAgents/com.routewerk.backup.plist
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.routewerk.backup</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/bash</string><string>/PATH/TO/backup-local.sh</string></array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>30</integer></dict>
+  <key>StandardErrorPath</key><string>/tmp/routewerk-backup.err</string>
+</dict></plist>
+```
+Load with `launchctl load ~/Library/LaunchAgents/com.routewerk.backup.plist`.
+If the machine is asleep at the scheduled time, launchd fires the job on
+wake; if it's powered off, that night is skipped — hence the freshness
+check below.
+
+**Scheduling — Linux (cron):**
+
+```
+30 3 * * * /bin/bash /PATH/TO/backup-local.sh >> ~/routewerk-backups/cron.log 2>&1
+```
+
+**Freshness check** (the local failure mode is *silent* — machine off,
+proxy broken, expired token). Run this weekly by hand, or wire a second
+scheduled job; it exits non-zero if the newest dump is older than 2 days:
+
+```
+scripts/backup-local.sh --verify-latest
+```
+
+Every run also appends to `~/routewerk-backups/backup.log` — glance at
+it when in doubt.
+
+## Cloud mode: what runs when
 
 - **Workflow**: `.github/workflows/backup-db.yml`
 - **Schedule**: nightly at 09:00 UTC (~04:00 US Central), plus manual

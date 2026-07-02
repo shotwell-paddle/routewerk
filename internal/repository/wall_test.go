@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -89,12 +90,16 @@ func TestWallRepo_ListWithCounts(t *testing.T) {
 	w := &model.Wall{LocationID: locID, Name: "Counted Wall", WallType: "boulder", SortOrder: 1}
 	wallRepo.Create(ctx, w)
 
-	// Add a route to the wall
-	pool.QueryRow(ctx,
+	// Add a route to the wall. Exec, not QueryRow: a QueryRow whose Scan is
+	// never called leaks the pooled connection and deadlocks the schema-drop
+	// cleanup against the pending row's locks.
+	if _, err := pool.Exec(ctx,
 		`INSERT INTO routes (location_id, wall_id, route_type, status, grading_system, grade, color, date_set)
-		 VALUES ($1, $2, 'boulder', 'active', 'v_scale', 'V4', '#FF0000', CURRENT_DATE) RETURNING id`,
+		 VALUES ($1, $2, 'boulder', 'active', 'v_scale', 'V4', '#FF0000', CURRENT_DATE)`,
 		locID, w.ID,
-	)
+	); err != nil {
+		t.Fatalf("seed route: %v", err)
+	}
 
 	walls, err := wallRepo.ListWithCounts(ctx, locID)
 	if err != nil {
@@ -120,7 +125,7 @@ func TestWallRepo_SoftDelete(t *testing.T) {
 	w := &model.Wall{LocationID: locID, Name: "Doomed Wall", WallType: "boulder", SortOrder: 1}
 	repo.Create(ctx, w)
 
-	if err := repo.Delete(ctx, w.ID); err != nil {
+	if _, err := repo.Delete(ctx, w.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 
@@ -130,6 +135,64 @@ func TestWallRepo_SoftDelete(t *testing.T) {
 	}
 	if got != nil {
 		t.Error("Soft-deleted wall should not be returned by GetByID")
+	}
+
+	// Deleting again is a no-op, matching the pre-transaction behavior.
+	if _, err := repo.Delete(ctx, w.ID); err != nil {
+		t.Fatalf("Delete of already-deleted wall: %v", err)
+	}
+}
+
+func TestWallRepo_Delete_BlockedByActiveRoutes(t *testing.T) {
+	pool := testDB(t)
+	repo := NewWallRepo(pool)
+	ctx := context.Background()
+	_, locID := seedOrgAndLocationForWall(t, pool, ctx)
+
+	w := &model.Wall{LocationID: locID, Name: "Busy Wall", WallType: "boulder", SortOrder: 1}
+	if err := repo.Create(ctx, w); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	var routeID string
+	pool.QueryRow(ctx,
+		`INSERT INTO routes (location_id, wall_id, route_type, status, grading_system, grade, color, date_set)
+		 VALUES ($1, $2, 'boulder', 'active', 'v_scale', 'V2', '#00FF00', CURRENT_DATE) RETURNING id`,
+		locID, w.ID,
+	).Scan(&routeID)
+
+	activeRoutes, err := repo.Delete(ctx, w.ID)
+	if !errors.Is(err, ErrWallHasActiveRoutes) {
+		t.Fatalf("Delete with active route: err = %v, want ErrWallHasActiveRoutes", err)
+	}
+	if activeRoutes != 1 {
+		t.Errorf("activeRoutes = %d, want 1", activeRoutes)
+	}
+
+	// The wall must survive a rejected delete.
+	got, err := repo.GetByID(ctx, w.ID)
+	if err != nil {
+		t.Fatalf("GetByID after rejected delete: %v", err)
+	}
+	if got == nil {
+		t.Fatal("wall should not be deleted while it has active routes")
+	}
+
+	// Archiving the route unblocks deletion.
+	if _, err := pool.Exec(ctx,
+		`UPDATE routes SET status = 'archived' WHERE id = $1`, routeID,
+	); err != nil {
+		t.Fatalf("archive route: %v", err)
+	}
+	if _, err := repo.Delete(ctx, w.ID); err != nil {
+		t.Fatalf("Delete after archiving route: %v", err)
+	}
+	got, err = repo.GetByID(ctx, w.ID)
+	if err != nil {
+		t.Fatalf("GetByID after delete: %v", err)
+	}
+	if got != nil {
+		t.Error("wall should be soft-deleted once its routes are archived")
 	}
 }
 

@@ -1,6 +1,7 @@
 package webhandler
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -369,7 +370,12 @@ func (h *Handler) WallDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.wallRepo.Delete(ctx, wallID); err != nil {
+	activeRoutes, err := h.wallRepo.Delete(ctx, wallID)
+	if errors.Is(err, repository.ErrWallHasActiveRoutes) {
+		http.Error(w, fmt.Sprintf("wall has %d active routes — strip or archive them first", activeRoutes), http.StatusConflict)
+		return
+	}
+	if err != nil {
 		slog.Error("wall delete failed", "wall_id", wallID, "error", err)
 		http.Error(w, "failed to delete wall", http.StatusInternalServerError)
 		return

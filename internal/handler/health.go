@@ -132,7 +132,10 @@ func (h *HealthHandler) Check(w http.ResponseWriter, r *http.Request) {
 		if ts, ok := h.backup.LastSuccess(); ok {
 			result["last_backup"] = ts.Format("2006-01-02T15:04:05Z")
 		} else {
-			result["last_backup"] = "none_this_process"
+			// Seeded from the bucket at scheduler start, so this means "no
+			// backup exists at all" (or the seed hasn't run/failed) — not
+			// merely "none since the last deploy".
+			result["last_backup"] = "none"
 		}
 	}
 

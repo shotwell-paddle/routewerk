@@ -49,6 +49,12 @@ func main() {
 		//   fly ssh console -a routewerk -C "/app/admin backup"
 		runBackup(ctx, cfg)
 		return
+	case "backup-list":
+		// Ground truth for "did the nightly run?" — lists the stored
+		// dumps straight from the bucket, newest first. Run on the server
+		// (or via the fly-backup-check.yml workflow without local flyctl).
+		runBackupList(ctx, cfg)
+		return
 	}
 
 	db, err := database.Connect(cfg.DatabaseURL, cfg.IsDev())
@@ -95,6 +101,7 @@ Database:
   backup           Take a database backup now (pg_dump → object storage).
                    Same pipeline the API runs nightly; run on the server:
                    fly ssh console -a routewerk -C "/app/admin backup"
+  backup-list      List stored backups (newest first) from object storage.
 
 Organizations:
   create-org   --name <name> --slug <slug> --owner-email <email>
@@ -673,4 +680,24 @@ func runBackup(ctx context.Context, cfg *config.Config) {
 		log.Fatalf("backup failed: %v", err)
 	}
 	fmt.Printf("backup complete: %s (%d bytes)\n", key, size)
+}
+
+// runBackupList prints the stored dumps, newest first — ground truth for
+// whether the nightly actually ran, independent of process restarts.
+func runBackupList(ctx context.Context, cfg *config.Config) {
+	svc := service.NewBackupService(cfg)
+	if svc == nil {
+		log.Fatal("backup-list: object storage not configured (STORAGE_ENDPOINT/STORAGE_ACCESS_KEY)")
+	}
+	objs, err := svc.List(ctx)
+	if err != nil {
+		log.Fatalf("backup-list failed: %v", err)
+	}
+	if len(objs) == 0 {
+		fmt.Println("no backups found")
+		return
+	}
+	for _, o := range objs {
+		fmt.Printf("%s\t%d bytes\tuploaded %s\n", o.Key, o.Size, o.LastModified.Format("2006-01-02T15:04:05Z"))
+	}
 }

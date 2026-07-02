@@ -52,6 +52,7 @@ web/
 - **Imports**: Group stdlib, then third-party, then internal packages. No blank lines between internal imports.
 - **Error handling**: Web handlers render error pages via `h.renderError()`. API handlers return JSON via `handler.Error()`.
 - **Context helpers**: Use `middleware.GetWebUser(ctx)`, `middleware.GetWebRole(ctx)`, etc. Context keys are unexported; cross-package test access via `middleware.SetWebUser()` etc.
+- **OpenAPI spec is documentation, not a contract** (decision 2026-07). `api/openapi.yaml` covers only the competitions module and stays that way — do not extend it for other endpoints, and do not trust it as current. The SPA's hand-written types in `web/spa/src/lib/api/client.ts` are the de facto API contract; when changing an endpoint, update those types (and the vitest contract suite) in the same PR. Revisit spec-first + codegen only when a second API consumer (native app, gym #2 integration) appears.
 
 ## Database migrations
 

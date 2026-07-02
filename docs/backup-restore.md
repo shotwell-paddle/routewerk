@@ -1,26 +1,53 @@
 # Postgres backup & restore runbook
 
-Two modes, one active at a time:
+Three modes, one active:
 
-- **Local mode (CURRENT — single-gym scale)**: nightly pull-based
-  `pg_dump` onto the climbing-analytics machine via
-  `scripts/backup-local.sh`. Free; prod credentials never touch GitHub;
-  the copy is off-site relative to Fly.
-- **Cloud mode (when scaling to multiple gyms)**: the GitHub Actions
-  workflow below pushing to a dedicated Tigris bucket. Its nightly cron
-  is commented out until adopted — see "One-time setup".
+- **Server mode (CURRENT — zero setup)**: the API takes its own nightly
+  backup at 09:00 UTC: `pg_dump` against `DATABASE_URL` inside the app
+  machine, uploaded PRIVATE to the Tigris storage the app already has
+  credentials for (`STORAGE_*` secrets), under `backups/`. 35-day
+  retention. See `internal/service/backup.go`. Nothing to set up.
+- **Local mode (manual/extra copies)**: pull a dump onto any machine via
+  `scripts/backup-local.sh` — kept as a manual tool and for an extra
+  off-Tigris copy before risky work.
+- **Cloud GHA mode (parked)**: the GitHub Actions workflow pushing to a
+  dedicated bucket with its own credentials; re-enable when the app
+  scales and credential separation matters.
 
-Both sit on top of Fly's ~5-day volume snapshots
-(`fly volumes snapshots list`), which remain as a secondary recovery
-path. Restores are identical in either mode: a `-Fc` dump restored with
-`pg_restore`.
+All sit on top of Fly's ~5-day volume snapshots
+(`fly volumes snapshots list`). Restores are identical in every mode:
+a `-Fc` dump restored with `pg_restore`.
 
-## Local mode (current)
+## Server mode (current)
+
+- **Config** (env, all optional): `BACKUP_ENABLED` (default true; no-ops
+  when storage isn't configured), `BACKUP_BUCKET` (default: the photo
+  bucket), `BACKUP_PREFIX` (default `backups/`), `BACKUP_HOUR_UTC`
+  (default 9), `BACKUP_RETENTION_DAYS` (default 35),
+  `BACKUP_RUN_ON_BOOT` (staging sets true so every deploy smoke-tests
+  the pipeline end to end).
+- **Observability**: `/health` includes `last_backup` (RFC3339 of the
+  last success this process lifetime, or `none_this_process`). The
+  nightly run also logs `database backup complete` / `database backup
+  failed`. Check after any deploy day: a machine restarted at 09:05 UTC
+  simply runs again the next night — the key is date-stamped, so a
+  same-day re-run overwrites harmlessly.
+- **Manual run** (same pipeline):
+  `fly ssh console -a routewerk -C "/app/admin backup"`
+- **List backups**: with the storage credentials (same as photos):
+  `AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_REGION=auto aws s3 ls s3://<bucket>/backups/ --endpoint-url https://fly.storage.tigris.dev`
+- **Trade-off (accepted)**: backups share the app's storage credential,
+  so this does not protect against that credential being compromised —
+  the GHA mode with a separate credential does. Threat model covered
+  here: bad migrations, fat-fingered deletes, Fly volume loss.
+
+## Local mode (manual)
 
 **Setup on the backup machine (once):**
 
-1. Install tools: `flyctl` (then `fly auth login`) and a v16 Postgres
-   client (`brew install postgresql@16`, or the apt equivalent).
+1. Install tools: `flyctl` (then `fly auth login`) and a v17+ Postgres
+   client (`brew install postgresql@17`, or the apt equivalent) — the
+   client major must be >= the server major, and the Fly Postgres runs 17.
 2. Copy `scripts/backup-local.sh` somewhere stable (or clone the repo).
 3. Create the config (mode 600):
    ```
@@ -116,7 +143,7 @@ AWS_ACCESS_KEY_ID=<backup key> AWS_SECRET_ACCESS_KEY=<backup secret> AWS_REGION=
 
 A custom-format dump is self-describing; listing its table of contents
 proves the archive is complete and readable (a truncated upload fails
-here). Requires `pg_restore` 16 (`brew install postgresql@16` locally).
+here). Requires `pg_restore` 17+ (`brew install postgresql@17` locally).
 
 ```
 pg_restore --list routewerk-2026-07-01.dump | head -40

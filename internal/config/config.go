@@ -20,11 +20,21 @@ type Config struct {
 	// New tokens always write the audience claim; once old tokens have drained
 	// (≥ JWTExpiry past rollout) this can be flipped to true to make the
 	// stricter rule binding. Env: JWT_ENFORCE_AUDIENCE.
-	EnforceJWTAudience  bool
-	StorageEndpoint     string
-	StorageBucket       string
-	StorageAccessKey    string
-	StorageSecretKey    string
+	EnforceJWTAudience bool
+	StorageEndpoint    string
+	StorageBucket      string
+	StorageAccessKey   string
+	StorageSecretKey   string
+	// Server-side database backups (see service/backup.go). Reuses the
+	// STORAGE_* credentials; BackupBucket defaults to StorageBucket with
+	// dumps under BackupPrefix. BackupRunOnBoot fires one backup at
+	// startup — set on staging so every deploy smoke-tests the pipeline.
+	BackupEnabled       bool
+	BackupBucket        string
+	BackupPrefix        string
+	BackupHourUTC       int
+	BackupRetentionDays int
+	BackupRunOnBoot     bool
 	FCMProjectID        string
 	FCMCredentialsFile  string
 	FrontendURL         string
@@ -110,6 +120,12 @@ func Load() *Config {
 		StorageBucket:       getEnv("STORAGE_BUCKET", "routewerk-images"),
 		StorageAccessKey:    getEnv("STORAGE_ACCESS_KEY", ""),
 		StorageSecretKey:    getEnv("STORAGE_SECRET_KEY", ""),
+		BackupEnabled:       getEnvBool("BACKUP_ENABLED", true),
+		BackupBucket:        getEnv("BACKUP_BUCKET", ""),
+		BackupPrefix:        getEnv("BACKUP_PREFIX", "backups/"),
+		BackupHourUTC:       getEnvInt("BACKUP_HOUR_UTC", 9),
+		BackupRetentionDays: getEnvInt("BACKUP_RETENTION_DAYS", 35),
+		BackupRunOnBoot:     getEnvBool("BACKUP_RUN_ON_BOOT", false),
 		FCMProjectID:        getEnv("FCM_PROJECT_ID", ""),
 		FCMCredentialsFile:  getEnv("FCM_CREDENTIALS_FILE", ""),
 		FrontendURL:         getEnv("FRONTEND_URL", "http://localhost:3000"),

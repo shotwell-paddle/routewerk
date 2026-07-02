@@ -29,6 +29,9 @@ type Deps struct {
 	EventBus event.Bus
 	NotifSvc *service.NotificationService
 	QuestSvc *service.QuestService
+	// BackupSvc is nil when backups are disabled/unconfigured; /health
+	// includes the last-success timestamp when present.
+	BackupSvc *service.BackupService
 }
 
 func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
@@ -127,7 +130,7 @@ func New(cfg *config.Config, db *pgxpool.Pool, deps *Deps) *chi.Mux {
 
 	// Handlers
 	storageSvc := service.NewStorageService(cfg)
-	healthHandler := handler.NewHealthHandler(db, storageSvc)
+	healthHandler := handler.NewHealthHandler(db, storageSvc, deps.BackupSvc)
 	authHandler := handler.NewAuthHandler(authService, !cfg.IsDev(), auditService)
 	magicAuthHandler := handler.NewMagicAuthHandler(magicLinkSvc)
 	magicVerifyHandler := webhandler.NewMagicVerifyHandler(magicLinkSvc, webSessionRepo, userRepo, sessionMgr, cfg)

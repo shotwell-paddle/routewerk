@@ -13,10 +13,12 @@ import (
 type HealthHandler struct {
 	db      *pgxpool.Pool
 	storage *service.StorageService
+	// backup is nil when server-side backups are disabled/unconfigured.
+	backup *service.BackupService
 }
 
-func NewHealthHandler(db *pgxpool.Pool, storage *service.StorageService) *HealthHandler {
-	return &HealthHandler{db: db, storage: storage}
+func NewHealthHandler(db *pgxpool.Pool, storage *service.StorageService, backup *service.BackupService) *HealthHandler {
+	return &HealthHandler{db: db, storage: storage, backup: backup}
 }
 
 // internalNetworks are the source networks allowed to see sensitive
@@ -121,6 +123,17 @@ func (h *HealthHandler) Check(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		result["storage"] = "not_configured"
+	}
+
+	// Backup freshness is informational only (never affects status code):
+	// a silently failing nightly backup was the main weakness of every
+	// prior backup mode, so surface when the last one succeeded.
+	if h.backup != nil {
+		if ts, ok := h.backup.LastSuccess(); ok {
+			result["last_backup"] = ts.Format("2006-01-02T15:04:05Z")
+		} else {
+			result["last_backup"] = "none_this_process"
+		}
 	}
 
 	status, httpStatus := healthStatus(dbOK, storageConfigured, storageOK)

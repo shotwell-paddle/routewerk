@@ -1,3 +1,5 @@
+//go:build integration
+
 package repository
 
 import (
@@ -116,8 +118,11 @@ func TestRouteRepo_GetByID_WithTags(t *testing.T) {
 		f.OrgID, "style", "Crimpy", "#FFD700",
 	).Scan(&tagID)
 
-	// Exec, not QueryRow: a QueryRow whose Scan is never called leaks the
-	// pooled connection and deadlocks the schema-drop cleanup.
+	// Exec, not QueryRow: a QueryRow whose Scan is never called pins its
+	// pooled connection forever — the next query grabs a fresh connection
+	// without this test's session-level search_path (empty public schema,
+	// 42P01), and the cleanup's pool.Close() then blocks on the
+	// never-released connection until the go-test timeout.
 	if _, err := pool.Exec(ctx,
 		`INSERT INTO route_tags (route_id, tag_id) VALUES ($1, $2)`,
 		rt.ID, tagID,
@@ -327,6 +332,22 @@ func TestRouteRepo_UpdateStatus_ArchiveStampsDateStripped(t *testing.T) {
 	}
 	if !got.DateStripped.Before(firstStripped) {
 		t.Errorf("DateStripped = %v, want the backdated value preserved (before %v)", *got.DateStripped, firstStripped)
+	}
+
+	// The bulk strip paths share the same invariant: archive → un-archive →
+	// bulk re-strip must also keep the original (backdated) strip date.
+	if err := repo.UpdateStatus(ctx, rt.ID, "active"); err != nil {
+		t.Fatalf("UpdateStatus(active, pre-bulk): %v", err)
+	}
+	if _, err := repo.BulkArchive(ctx, []string{rt.ID}); err != nil {
+		t.Fatalf("BulkArchive(re-strip): %v", err)
+	}
+	got, _ = repo.GetByID(ctx, rt.ID)
+	if got.Status != "archived" {
+		t.Errorf("Status after bulk re-strip = %q, want archived", got.Status)
+	}
+	if got.DateStripped == nil || !got.DateStripped.Before(firstStripped) {
+		t.Errorf("DateStripped after bulk re-strip = %v, want the backdated value preserved", got.DateStripped)
 	}
 }
 

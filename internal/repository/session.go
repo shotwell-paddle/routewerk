@@ -653,8 +653,9 @@ var ErrSessionAlreadyComplete = errors.New("session already complete")
 // Ordering note: whole-wall strips only touch status='active' rows, and
 // this session's drafts are still 'draft' at that point, so fresh routes
 // can never be caught by their own session's strip. Archive semantics
-// mirror RouteRepo.BulkArchive (date_stripped = CURRENT_DATE, skip
-// already-archived).
+// mirror RouteRepo.BulkArchive: date_stripped = COALESCE(date_stripped,
+// CURRENT_DATE) — the first strip date is historical and never
+// overwritten — and already-archived rows are skipped.
 func (r *SessionRepo) PublishSession(ctx context.Context, sessionID string) (stripped, published int, err error) {
 	err = database.RunInTx(ctx, r.db, func(tx pgx.Tx) error {
 		var status string
@@ -670,7 +671,7 @@ func (r *SessionRepo) PublishSession(ctx context.Context, sessionID string) (str
 
 		// Whole-wall strip targets.
 		tag, err := tx.Exec(ctx, `
-			UPDATE routes SET status = 'archived', date_stripped = CURRENT_DATE, updated_at = NOW()
+			UPDATE routes SET status = 'archived', date_stripped = COALESCE(date_stripped, CURRENT_DATE), updated_at = NOW()
 			WHERE status = 'active' AND deleted_at IS NULL
 			  AND wall_id IN (
 			    SELECT wall_id FROM session_strip_targets
@@ -683,7 +684,7 @@ func (r *SessionRepo) PublishSession(ctx context.Context, sessionID string) (str
 
 		// Individual route strip targets.
 		tag, err = tx.Exec(ctx, `
-			UPDATE routes SET status = 'archived', date_stripped = CURRENT_DATE, updated_at = NOW()
+			UPDATE routes SET status = 'archived', date_stripped = COALESCE(date_stripped, CURRENT_DATE), updated_at = NOW()
 			WHERE status != 'archived' AND deleted_at IS NULL
 			  AND id IN (
 			    SELECT route_id FROM session_strip_targets

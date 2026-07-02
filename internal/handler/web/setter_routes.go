@@ -2,6 +2,7 @@ package webhandler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -257,7 +258,11 @@ func (h *Handler) RouteCreate(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.routeRepo.CreateWithTags(ctx, rt, tagIDs); err != nil {
 		slog.Error("route create failed", "error", err)
-		h.renderRouteForm(w, r, locationID, nil, fv, "Failed to create route. Please try again.")
+		msg := "Failed to create route. Please try again."
+		if errors.Is(err, repository.ErrWallNotAtLocation) {
+			msg = "That wall no longer exists at this location — refresh and pick another wall."
+		}
+		h.renderRouteForm(w, r, locationID, nil, fv, msg)
 		return
 	}
 

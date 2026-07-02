@@ -2,9 +2,11 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shotwell-paddle/routewerk/internal/database"
 	"github.com/shotwell-paddle/routewerk/internal/model"
@@ -104,6 +106,34 @@ func NewRouteRepo(db *pgxpool.Pool) *RouteRepo {
 	return &RouteRepo{db: db}
 }
 
+// ErrWallNotAtLocation is returned by Create, CreateWithTags, and Update
+// when the target wall doesn't exist at the route's location or has been
+// soft-deleted. The FK only guarantees the walls row exists; without this
+// guard a route could land on a deleted wall (the orphan state
+// WallRepo.Delete exists to prevent) or on another location's wall.
+var ErrWallNotAtLocation = errors.New("wall not found at location")
+
+// lockLiveWall asserts the wall exists at the location and is not
+// soft-deleted, taking FOR KEY SHARE so the check can't race
+// WallRepo.Delete's FOR UPDATE: whichever transaction locks the wall row
+// first wins, and the loser sees the winner's committed state — a create
+// that loses sees deleted_at and fails; a delete that loses counts the
+// just-committed route and refuses.
+func lockLiveWall(ctx context.Context, tx pgx.Tx, wallID, locationID string) error {
+	var one int
+	err := tx.QueryRow(ctx,
+		`SELECT 1 FROM walls WHERE id = $1 AND location_id = $2 AND deleted_at IS NULL FOR KEY SHARE`,
+		wallID, locationID,
+	).Scan(&one)
+	if err == pgx.ErrNoRows {
+		return ErrWallNotAtLocation
+	}
+	if err != nil {
+		return fmt.Errorf("check wall liveness: %w", err)
+	}
+	return nil
+}
+
 func (r *RouteRepo) Create(ctx context.Context, rt *model.Route) error {
 	query := `
 		INSERT INTO routes (location_id, wall_id, setter_id, route_type, status,
@@ -112,12 +142,17 @@ func (r *RouteRepo) Create(ctx context.Context, rt *model.Route) error {
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 		RETURNING id, avg_rating, rating_count, ascent_count, attempt_count, created_at, updated_at`
 
-	return r.db.QueryRow(ctx, query,
-		rt.LocationID, rt.WallID, rt.SetterID, rt.RouteType, rt.Status,
-		rt.GradingSystem, rt.Grade, rt.GradeLow, rt.GradeHigh, rt.CircuitColor,
-		rt.Name, rt.Color, rt.Description, rt.PhotoURL, rt.DateSet, rt.ProjectedStripDate,
-		rt.SessionID,
-	).Scan(&rt.ID, &rt.AvgRating, &rt.RatingCount, &rt.AscentCount, &rt.AttemptCount, &rt.CreatedAt, &rt.UpdatedAt)
+	return database.RunInTx(ctx, r.db, func(tx pgx.Tx) error {
+		if err := lockLiveWall(ctx, tx, rt.WallID, rt.LocationID); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, query,
+			rt.LocationID, rt.WallID, rt.SetterID, rt.RouteType, rt.Status,
+			rt.GradingSystem, rt.Grade, rt.GradeLow, rt.GradeHigh, rt.CircuitColor,
+			rt.Name, rt.Color, rt.Description, rt.PhotoURL, rt.DateSet, rt.ProjectedStripDate,
+			rt.SessionID,
+		).Scan(&rt.ID, &rt.AvgRating, &rt.RatingCount, &rt.AscentCount, &rt.AttemptCount, &rt.CreatedAt, &rt.UpdatedAt)
+	})
 }
 
 // CreateWithTags inserts a route and its tags in a single transaction.
@@ -128,6 +163,10 @@ func (r *RouteRepo) CreateWithTags(ctx context.Context, rt *model.Route, tagIDs 
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
+
+	if err := lockLiveWall(ctx, tx, rt.WallID, rt.LocationID); err != nil {
+		return err
+	}
 
 	query := `
 		INSERT INTO routes (location_id, wall_id, setter_id, route_type, status,
@@ -433,6 +472,14 @@ func (r *RouteRepo) ListActiveByLocation(ctx context.Context, locationID string)
 	return routes, rows.Err()
 }
 
+// Update writes every mutable route field. Moving the route to a different
+// wall requires that wall to be live at the route's location
+// (ErrWallNotAtLocation otherwise). Keeping the current wall_id is always
+// allowed, so routes whose wall was deleted before the delete/create guards
+// existed stay editable (photo updates, regrades, etc.). Unlike Create this
+// doesn't lock the target wall, so a wall move racing a wall delete is a
+// theoretical (millisecond) gap — accepted, since moves are rare and the
+// create path is the one that mints routes.
 func (r *RouteRepo) Update(ctx context.Context, rt *model.Route) error {
 	query := `
 		UPDATE routes
@@ -441,21 +488,37 @@ func (r *RouteRepo) Update(ctx context.Context, rt *model.Route) error {
 			name = $11, color = $12, description = $13, photo_url = $14,
 			date_set = $15, projected_strip_date = $16, date_stripped = $17
 		WHERE id = $1 AND deleted_at IS NULL
+			AND (wall_id = $2 OR EXISTS (
+				SELECT 1 FROM walls w
+				WHERE w.id = $2 AND w.location_id = routes.location_id AND w.deleted_at IS NULL))
 		RETURNING updated_at`
 
-	return r.db.QueryRow(ctx, query,
+	err := r.db.QueryRow(ctx, query,
 		rt.ID, rt.WallID, rt.SetterID, rt.RouteType, rt.Status,
 		rt.GradingSystem, rt.Grade, rt.GradeLow, rt.GradeHigh, rt.CircuitColor,
 		rt.Name, rt.Color, rt.Description, rt.PhotoURL,
 		rt.DateSet, rt.ProjectedStripDate, rt.DateStripped,
 	).Scan(&rt.UpdatedAt)
+	if err == pgx.ErrNoRows {
+		// Distinguish a rejected wall move from a missing route; the latter
+		// keeps returning the raw no-rows error callers already handle.
+		var exists bool
+		if checkErr := r.db.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM routes WHERE id = $1 AND deleted_at IS NULL)`,
+			rt.ID,
+		).Scan(&exists); checkErr == nil && exists {
+			return ErrWallNotAtLocation
+		}
+	}
+	return err
 }
 
 // UpdateStatus transitions a route's status. Archiving stamps date_stripped
-// (matching the whole-wall strip paths, which already do) so strip and labor
-// analytics count single-route archives too. An existing date_stripped is
-// never overwritten, and un-archiving leaves it in place — it's a historical
-// record of when the route first came off the wall.
+// (matching the bulk strip paths — BulkArchive, BulkArchiveByWall, and the
+// session-publish strips) so strip and labor analytics count single-route
+// archives too. Every archive path uses COALESCE: an existing date_stripped
+// is never overwritten, and un-archiving leaves it in place — it's a
+// historical record of when the route first came off the wall.
 func (r *RouteRepo) UpdateStatus(ctx context.Context, id, status string) error {
 	query := `
 		UPDATE routes
@@ -472,7 +535,7 @@ func (r *RouteRepo) UpdateStatus(ctx context.Context, id, status string) error {
 func (r *RouteRepo) BulkArchive(ctx context.Context, ids []string) (int, error) {
 	query := `
 		UPDATE routes
-		SET status = 'archived', date_stripped = CURRENT_DATE
+		SET status = 'archived', date_stripped = COALESCE(date_stripped, CURRENT_DATE)
 		WHERE id = ANY($1) AND status != 'archived' AND deleted_at IS NULL`
 
 	tag, err := r.db.Exec(ctx, query, ids)
@@ -485,7 +548,7 @@ func (r *RouteRepo) BulkArchive(ctx context.Context, ids []string) (int, error) 
 func (r *RouteRepo) BulkArchiveByWall(ctx context.Context, wallID string) (int, error) {
 	query := `
 		UPDATE routes
-		SET status = 'archived', date_stripped = CURRENT_DATE
+		SET status = 'archived', date_stripped = COALESCE(date_stripped, CURRENT_DATE)
 		WHERE wall_id = $1 AND status = 'active' AND deleted_at IS NULL`
 
 	tag, err := r.db.Exec(ctx, query, wallID)

@@ -306,7 +306,10 @@
     const yds = settings?.grading.yds_range?.length
       ? settings.grading.yds_range
       : DEFAULT_YDS_GRADES;
-    return [...(showBoulder ? boulder : []), ...(showYds ? yds : [])];
+    // Dedupe: circuit names are free-form (a gym can name one "V4", or save
+    // "Blue" twice) and the chips are a name-keyed {#each} — duplicate keys
+    // throw, and the submit expansion would double-count repeated labels.
+    return [...new Set([...(showBoulder ? boulder : []), ...(showYds ? yds : [])])];
   });
 
   function bumpTarget(g: string, delta: number) {
@@ -316,6 +319,36 @@
     else targets[g] = next;
     sectionForm.targets = targets;
   }
+
+  // The picked setters/walls may already have assignments; submitting
+  // replaces their targets & notes (upsert), so surface that and, for a
+  // single match on a pristine form, pre-fill so it's an in-place edit.
+  const matchedExisting = $derived.by(() => {
+    const asg = session?.assignments ?? [];
+    if (sectionForm.setter_ids.length === 0) return [];
+    if (sectionForm.wall_ids.length === 0) {
+      return asg.filter((a) => !a.wall_id && sectionForm.setter_ids.includes(a.setter_id));
+    }
+    return asg.filter(
+      (a) =>
+        a.wall_id &&
+        sectionForm.wall_ids.includes(a.wall_id) &&
+        sectionForm.setter_ids.includes(a.setter_id),
+    );
+  });
+  let seededFromId = $state<string | null>(null);
+  $effect(() => {
+    const m = matchedExisting;
+    const pristine = Object.keys(sectionForm.targets).length === 0 && !sectionForm.notes.trim();
+    if (m.length === 1 && m[0].id !== seededFromId && pristine) {
+      seededFromId = m[0].id;
+      const counts: Record<string, number> = {};
+      for (const g of m[0].target_grades ?? []) counts[g] = (counts[g] ?? 0) + 1;
+      sectionForm.targets = counts;
+      sectionForm.notes = m[0].notes ?? '';
+    }
+    if (m.length === 0) seededFromId = null;
+  });
 
   // "Blue, Blue, V4" → "Blue ×2, V4" for the assignment chips.
   function summarizeTargets(gs: string[]): string {
@@ -887,7 +920,6 @@
                   <span class="target-chip" class:on={n > 0}>
                     <button type="button" class="chip small-chip target-add"
                             class:on={n > 0}
-                            aria-pressed={n > 0}
                             aria-label={n > 0 ? `${g}: ${n} targeted, tap to add another` : `Target ${g}`}
                             onclick={() => bumpTarget(g, 1)}>
                       {g}{#if n > 1}<span class="target-count">×{n}</span>{/if}
@@ -895,7 +927,15 @@
                     {#if n > 0}
                       <button type="button" class="target-minus"
                               aria-label={`Remove one ${g} target`}
-                              onclick={() => bumpTarget(g, -1)}>−</button>
+                              onclick={(e) => {
+                                // Removing the last one unmounts this button;
+                                // park focus on the sibling chip first so
+                                // keyboard users aren't dumped to <body>.
+                                if (n === 1) {
+                                  (e.currentTarget.previousElementSibling as HTMLElement)?.focus();
+                                }
+                                bumpTarget(g, -1);
+                              }}>−</button>
                     {/if}
                   </span>
                 {/each}
@@ -906,9 +946,16 @@
                   <input bind:value={sectionForm.notes} placeholder="optional" />
                 </label>
               </div>
+              {#if matchedExisting.length > 0}
+                <p class="muted small hint">
+                  {matchedExisting.length === 1
+                    ? 'This setter/wall pick is already assigned — saving replaces its targets and notes with what’s shown here.'
+                    : `${matchedExisting.length} of the picked setter/wall pairs are already assigned — saving replaces their targets and notes.`}
+                </p>
+              {/if}
               {#if sectionError}<Notice kind="error">{sectionError}</Notice>{/if}
               <button class="primary" type="submit" disabled={sectionSaving}>
-                {sectionSaving ? 'Adding…' : 'Add to session'}
+                {sectionSaving ? 'Adding…' : matchedExisting.length > 0 ? 'Save section' : 'Add to session'}
               </button>
             </form>
           {/if}

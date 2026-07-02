@@ -15,7 +15,7 @@ Route setting management platform for climbing gyms.
 ### Prerequisites
 
 - Go 1.22+
-- PostgreSQL 16+
+- PostgreSQL 17+
 - Make
 
 ### Setup

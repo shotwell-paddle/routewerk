@@ -34,7 +34,7 @@ func (r *WebSessionRepo) Create(ctx context.Context, s *model.WebSession) error 
 func (r *WebSessionRepo) GetByTokenHash(ctx context.Context, tokenHash string) (*model.WebSession, error) {
 	s := &model.WebSession{}
 	err := r.db.QueryRow(ctx, `
-		SELECT id, user_id, location_id, token_hash, ip_address::text, user_agent,
+		SELECT id, user_id, location_id, token_hash, host(ip_address), user_agent,
 		       created_at, expires_at, last_seen_at
 		FROM web_sessions
 		WHERE token_hash = $1 AND expires_at > NOW() AND revoked_at IS NULL`,
@@ -78,7 +78,7 @@ type AuthContext struct {
 func (r *WebSessionRepo) GetAuthContextByTokenHash(ctx context.Context, tokenHash string) (*AuthContext, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT
-			s.id, s.user_id, s.location_id, s.token_hash, s.ip_address::text, s.user_agent,
+			s.id, s.user_id, s.location_id, s.token_hash, host(s.ip_address), s.user_agent,
 			s.created_at, s.expires_at, s.last_seen_at,
 			u.email, u.password_hash, u.display_name, u.avatar_url, u.bio, u.is_app_admin,
 			u.created_at, u.updated_at,
@@ -99,15 +99,15 @@ func (r *WebSessionRepo) GetAuthContextByTokenHash(ctx context.Context, tokenHas
 	var auth *AuthContext
 	for rows.Next() {
 		var (
-			s             model.WebSession
-			u             model.User
-			mID           *string
-			mOrgID        *string
-			mLocationID   *string
-			mRole         *string
-			mSpecialties  []string
-			mCreatedAt    *time.Time
-			mUpdatedAt    *time.Time
+			s            model.WebSession
+			u            model.User
+			mID          *string
+			mOrgID       *string
+			mLocationID  *string
+			mRole        *string
+			mSpecialties []string
+			mCreatedAt   *time.Time
+			mUpdatedAt   *time.Time
 		)
 
 		if err := rows.Scan(
@@ -229,7 +229,7 @@ func (r *WebSessionRepo) UpdateLocation(ctx context.Context, sessionID, location
 // ListForUser returns all active sessions for a user, newest first.
 func (r *WebSessionRepo) ListForUser(ctx context.Context, userID string) ([]model.WebSession, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, user_id, location_id, ip_address::text, user_agent,
+		SELECT id, user_id, location_id, host(ip_address), user_agent,
 		       created_at, expires_at, last_seen_at
 		FROM web_sessions
 		WHERE user_id = $1 AND expires_at > NOW() AND revoked_at IS NULL

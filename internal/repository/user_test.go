@@ -1,3 +1,5 @@
+//go:build integration
+
 package repository
 
 import (
@@ -53,7 +55,9 @@ func TestUserRepo_GetByID_NotFound(t *testing.T) {
 	repo := NewUserRepo(pool)
 	ctx := context.Background()
 
-	got, err := repo.GetByID(ctx, "nonexistent-id")
+	// Valid-but-absent UUID: a non-UUID string doesn't test "not found",
+	// it tests Postgres's 22P02 invalid-input error.
+	got, err := repo.GetByID(ctx, "00000000-0000-0000-0000-000000000000")
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}

@@ -118,7 +118,8 @@ Both share the same repositories, services, and database. The web handler (`hand
 
 ## Testing notes
 
-- `go test ./...` locally runs unit tests only (pure functions, `httptest` handlers, middleware with context injection). CI additionally runs `go test -tags=integration` against a real Postgres 17 service (`TEST_DATABASE_URL`), covering the repository integration tests.
+- `go test ./...` locally runs unit tests only (pure functions, `httptest` handlers, middleware with context injection). The DB-backed repository tests carry a `//go:build integration` tag and also require `ROUTEWERK_TEST_DATABASE_URL`, so the plain run never touches a database. CI's integration step runs `go test -tags=integration` with that var pointed at a real Postgres 17 service, which actually executes them (each test migrates a fresh isolated schema).
+- To run the integration suite locally: create a scratch database and run `ROUTEWERK_TEST_DATABASE_URL='postgres://...' go test -tags=integration ./internal/repository/...`. Never point it at a database you care about.
 - Most of the repository layer is still untested SQL by design; put new logic in pure, table-testable helpers where possible.
 - The SPA has a vitest suite (`cd web/spa && npm run test`) covering the API client contract, the auth store retry logic, and role resolution; CI runs it as the `spa-test` job.
 - `internal/middleware/testing_helpers.go` exports context setters for cross-package test use.

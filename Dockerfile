@@ -31,12 +31,15 @@ RUN CGO_ENABLED=0 GOOS=linux go build -tags=spa_embed -o /api ./cmd/api
 RUN CGO_ENABLED=0 GOOS=linux go build -o /admin ./cmd/admin
 
 # ── Runtime stage ──────────────────────────────────────────
-FROM alpine:3.19
+# alpine:3.21 (up from 3.19) for postgresql17-client — the staging Fly
+# Postgres runs 17.7 and pg_dump refuses servers NEWER than itself.
+# pg_dump 17 also dumps older servers, so it covers a PG 16 prod too.
+FROM alpine:3.21
 
-# postgresql16-client provides pg_dump/pg_restore for the in-app nightly
-# backup (service/backup.go). Client major version pinned to the server's
-# (Postgres 16) — bump together.
-RUN apk add --no-cache ca-certificates tzdata postgresql16-client \
+# postgresql17-client provides pg_dump/pg_restore for the in-app nightly
+# backup (service/backup.go). Client major must be >= the server major;
+# bump the client when the Fly Postgres is upgraded.
+RUN apk add --no-cache ca-certificates tzdata postgresql17-client \
     && addgroup -S routewerk && adduser -S routewerk -G routewerk
 
 WORKDIR /app

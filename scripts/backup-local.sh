@@ -9,7 +9,8 @@
 #
 # Requirements on the backup machine:
 #   - flyctl, authenticated (`fly auth login`) or FLY_API_TOKEN in env
-#   - postgresql client v16 (`brew install postgresql@16` / apt equivalent)
+#   - postgresql client v17+ (`brew install postgresql@17` / apt equivalent)
+#     (client major must be >= the server major; staging runs PG 17)
 #   - config file (chmod 600) at ~/.routewerk/backup.env containing:
 #       BACKUP_DATABASE_URL=postgres://routewerk:<password>@localhost:15432/routewerk?sslmode=disable
 #     (the prod DATABASE_URL with host/port swapped to the local proxy)

@@ -45,8 +45,9 @@ a `-Fc` dump restored with `pg_restore`.
 
 **Setup on the backup machine (once):**
 
-1. Install tools: `flyctl` (then `fly auth login`) and a v16 Postgres
-   client (`brew install postgresql@16`, or the apt equivalent).
+1. Install tools: `flyctl` (then `fly auth login`) and a v17+ Postgres
+   client (`brew install postgresql@17`, or the apt equivalent) — the
+   client major must be >= the server major, and the Fly Postgres runs 17.
 2. Copy `scripts/backup-local.sh` somewhere stable (or clone the repo).
 3. Create the config (mode 600):
    ```
@@ -142,7 +143,7 @@ AWS_ACCESS_KEY_ID=<backup key> AWS_SECRET_ACCESS_KEY=<backup secret> AWS_REGION=
 
 A custom-format dump is self-describing; listing its table of contents
 proves the archive is complete and readable (a truncated upload fails
-here). Requires `pg_restore` 16 (`brew install postgresql@16` locally).
+here). Requires `pg_restore` 17+ (`brew install postgresql@17` locally).
 
 ```
 pg_restore --list routewerk-2026-07-01.dump | head -40

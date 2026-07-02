@@ -1,3 +1,5 @@
+//go:build integration
+
 package repository
 
 import (
@@ -91,8 +93,11 @@ func TestWallRepo_ListWithCounts(t *testing.T) {
 	wallRepo.Create(ctx, w)
 
 	// Add a route to the wall. Exec, not QueryRow: a QueryRow whose Scan is
-	// never called leaks the pooled connection and deadlocks the schema-drop
-	// cleanup against the pending row's locks.
+	// never called pins its pooled connection forever — the next query grabs
+	// a fresh connection that lacks this test's session-level search_path
+	// (so it hits the empty public schema, 42P01), and the cleanup's
+	// pool.Close() then blocks on the never-released connection until the
+	// go-test timeout kills the binary.
 	if _, err := pool.Exec(ctx,
 		`INSERT INTO routes (location_id, wall_id, route_type, status, grading_system, grade, color, date_set)
 		 VALUES ($1, $2, 'boulder', 'active', 'v_scale', 'V4', '#FF0000', CURRENT_DATE)`,

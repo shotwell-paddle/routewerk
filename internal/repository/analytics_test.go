@@ -1,3 +1,5 @@
+//go:build integration
+
 package repository
 
 import (
@@ -61,7 +63,10 @@ func TestAnalyticsRepo_OrgOverview(t *testing.T) {
 	active1 := newRoute("active", true, false)
 	active2 := newRoute("active", true, false)
 	archived := newRoute("archived", false, false)
-	newRoute("active", true, true) // soft-deleted: excluded everywhere
+	// Soft-deleted: excluded from active_routes and overdue_strips, but its
+	// ascents still count toward active_climbers_30d (the pre-rewrite query
+	// joined ascents through ALL routes at the location, deleted included).
+	deleted := newRoute("active", true, true)
 
 	newUser := func(email string) string {
 		t.Helper()
@@ -77,6 +82,7 @@ func TestAnalyticsRepo_OrgOverview(t *testing.T) {
 	climber1 := newUser("c1@overview-test.com")
 	climber2 := newUser("c2@overview-test.com")
 	climber3 := newUser("c3@overview-test.com")
+	climber4 := newUser("c4@overview-test.com")
 
 	logAscent := func(userID, routeID, ascentType, age string) {
 		t.Helper()
@@ -98,6 +104,10 @@ func TestAnalyticsRepo_OrgOverview(t *testing.T) {
 	logAscent(climber2, archived, "send", "4 days")
 	// climber3: outside the 30-day window — must not count.
 	logAscent(climber3, active1, "send", "40 days")
+	// climber4: recent ascent on the soft-deleted route — still an active
+	// climber, mirroring the old query's unfiltered routes join. A "cleanup"
+	// that adds deleted_at IS NULL to the climbers subquery must fail here.
+	logAscent(climber4, deleted, "send", "5 days")
 
 	overview, err := repo.OrgOverview(ctx, orgID)
 	if err != nil {
@@ -115,7 +125,7 @@ func TestAnalyticsRepo_OrgOverview(t *testing.T) {
 		wantClimbers      int
 		wantOverdueStrips int
 	}{
-		{"busy location", overview[0], "Alpha Gym", 2, 2, 2},
+		{"busy location", overview[0], "Alpha Gym", 2, 3, 2},
 		{"empty location", overview[1], "Beta Gym", 0, 0, 0},
 	}
 	for _, tt := range tests {

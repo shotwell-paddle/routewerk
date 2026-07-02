@@ -347,6 +347,11 @@ func (h *Handler) wallArchiveAction(w http.ResponseWriter, r *http.Request, arch
 // WallDelete handles POST /walls/{wallID}/delete. Restricted to head setters
 // and above because this is destructive (soft-deletes the wall and hides it
 // from every role permanently until a DB operator restores it).
+//
+// orphaned: no route reaches this handler since the SPA took over the wall
+// pages (router.go, docs/spa-rebuild-cleanup.md) — the live wall delete is
+// the API handler, whose 409 the SPA surfaces on-page. Kept compiling with
+// the same 409 mapping until the cleanup PR removes it.
 func (h *Handler) WallDelete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

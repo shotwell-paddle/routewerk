@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -141,6 +142,10 @@ func (h *RouteHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.routes.CreateWithTags(r.Context(), rt, req.TagIDs); err != nil {
+		if errors.Is(err, repository.ErrWallNotAtLocation) {
+			Error(w, http.StatusUnprocessableEntity, "wall not found at this location — it may have been deleted")
+			return
+		}
 		InternalError(w, r, "failed to create route", err)
 		return
 	}
@@ -288,6 +293,10 @@ func (h *RouteHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.routes.Update(r.Context(), rt); err != nil {
+		if errors.Is(err, repository.ErrWallNotAtLocation) {
+			Error(w, http.StatusUnprocessableEntity, "wall not found at this location — it may have been deleted")
+			return
+		}
 		InternalError(w, r, "failed to update route", err)
 		return
 	}

@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/shotwell-paddle/routewerk/internal/model"
+	"github.com/shotwell-paddle/routewerk/internal/repository"
 )
 
 // Session draft-route management. These endpoints let the session builder
@@ -110,6 +112,10 @@ func (h *SessionHandler) AddRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.routes.Create(r.Context(), route); err != nil {
+		if errors.Is(err, repository.ErrWallNotAtLocation) {
+			Error(w, http.StatusUnprocessableEntity, "wall not found at this location — it may have been deleted")
+			return
+		}
 		InternalError(w, r, "failed to add route", err)
 		return
 	}
@@ -167,6 +173,10 @@ func (h *SessionHandler) EditRoute(w http.ResponseWriter, r *http.Request) {
 	route.Description = next.Description
 
 	if err := h.routes.Update(r.Context(), route); err != nil {
+		if errors.Is(err, repository.ErrWallNotAtLocation) {
+			Error(w, http.StatusUnprocessableEntity, "wall not found at this location — it may have been deleted")
+			return
+		}
 		InternalError(w, r, "failed to update route", err)
 		return
 	}

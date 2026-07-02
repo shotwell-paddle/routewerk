@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -175,7 +177,12 @@ func (h *WallHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.walls.Delete(r.Context(), wallID); err != nil {
+	activeRoutes, err := h.walls.Delete(r.Context(), wallID)
+	if errors.Is(err, repository.ErrWallHasActiveRoutes) {
+		Error(w, http.StatusConflict, fmt.Sprintf("wall has %d active routes — strip or archive them first", activeRoutes))
+		return
+	}
+	if err != nil {
 		InternalError(w, r, "failed to delete wall", err)
 		return
 	}

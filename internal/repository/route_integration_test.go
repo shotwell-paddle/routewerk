@@ -1,3 +1,5 @@
+//go:build integration
+
 package repository
 
 import (
@@ -116,10 +118,17 @@ func TestRouteRepo_GetByID_WithTags(t *testing.T) {
 		f.OrgID, "style", "Crimpy", "#FFD700",
 	).Scan(&tagID)
 
-	pool.QueryRow(ctx,
-		`INSERT INTO route_tags (route_id, tag_id) VALUES ($1, $2) RETURNING route_id`,
+	// Exec, not QueryRow: a QueryRow whose Scan is never called pins its
+	// pooled connection forever — the next query grabs a fresh connection
+	// without this test's session-level search_path (empty public schema,
+	// 42P01), and the cleanup's pool.Close() then blocks on the
+	// never-released connection until the go-test timeout.
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO route_tags (route_id, tag_id) VALUES ($1, $2)`,
 		rt.ID, tagID,
-	)
+	); err != nil {
+		t.Fatalf("seed route tag: %v", err)
+	}
 
 	got, err := repo.GetByID(ctx, rt.ID)
 	if err != nil {
@@ -266,6 +275,80 @@ func TestRouteRepo_BulkArchiveByWall(t *testing.T) {
 		t.Errorf("Side wall active = %d, want 1", total)
 	}
 	_ = routes
+}
+
+func TestRouteRepo_UpdateStatus_ArchiveStampsDateStripped(t *testing.T) {
+	pool := testDB(t)
+	repo := NewRouteRepo(pool)
+	ctx := context.Background()
+	f := seedRouteFixture(t, pool, ctx)
+	today := time.Now().Truncate(24 * time.Hour)
+
+	rt := &model.Route{
+		LocationID: f.LocationID, WallID: f.WallID, RouteType: "boulder",
+		Status: "active", GradingSystem: "v_scale", Grade: "V4", Color: "#000", DateSet: today,
+	}
+	if err := repo.Create(ctx, rt); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Archiving a route stamps date_stripped, same as the bulk strip paths.
+	if err := repo.UpdateStatus(ctx, rt.ID, "archived"); err != nil {
+		t.Fatalf("UpdateStatus(archived): %v", err)
+	}
+	got, _ := repo.GetByID(ctx, rt.ID)
+	if got.Status != "archived" {
+		t.Errorf("Status = %q, want archived", got.Status)
+	}
+	if got.DateStripped == nil {
+		t.Fatal("DateStripped should be set after single-route archive")
+	}
+	firstStripped := *got.DateStripped
+
+	// Un-archiving keeps date_stripped — it's a historical record.
+	if err := repo.UpdateStatus(ctx, rt.ID, "active"); err != nil {
+		t.Fatalf("UpdateStatus(active): %v", err)
+	}
+	got, _ = repo.GetByID(ctx, rt.ID)
+	if got.Status != "active" {
+		t.Errorf("Status = %q, want active", got.Status)
+	}
+	if got.DateStripped == nil {
+		t.Fatal("DateStripped should survive un-archive")
+	}
+
+	// Re-archiving must not overwrite the original strip date.
+	if _, err := pool.Exec(ctx,
+		`UPDATE routes SET date_stripped = CURRENT_DATE - 30 WHERE id = $1`, rt.ID,
+	); err != nil {
+		t.Fatalf("backdate date_stripped: %v", err)
+	}
+	if err := repo.UpdateStatus(ctx, rt.ID, "archived"); err != nil {
+		t.Fatalf("UpdateStatus(re-archive): %v", err)
+	}
+	got, _ = repo.GetByID(ctx, rt.ID)
+	if got.DateStripped == nil {
+		t.Fatal("DateStripped should still be set after re-archive")
+	}
+	if !got.DateStripped.Before(firstStripped) {
+		t.Errorf("DateStripped = %v, want the backdated value preserved (before %v)", *got.DateStripped, firstStripped)
+	}
+
+	// The bulk strip paths share the same invariant: archive → un-archive →
+	// bulk re-strip must also keep the original (backdated) strip date.
+	if err := repo.UpdateStatus(ctx, rt.ID, "active"); err != nil {
+		t.Fatalf("UpdateStatus(active, pre-bulk): %v", err)
+	}
+	if _, err := repo.BulkArchive(ctx, []string{rt.ID}); err != nil {
+		t.Fatalf("BulkArchive(re-strip): %v", err)
+	}
+	got, _ = repo.GetByID(ctx, rt.ID)
+	if got.Status != "archived" {
+		t.Errorf("Status after bulk re-strip = %q, want archived", got.Status)
+	}
+	if got.DateStripped == nil || !got.DateStripped.Before(firstStripped) {
+		t.Errorf("DateStripped after bulk re-strip = %v, want the backdated value preserved", got.DateStripped)
+	}
 }
 
 func TestRouteRepo_SetTags(t *testing.T) {

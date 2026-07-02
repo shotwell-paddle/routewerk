@@ -24,7 +24,11 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      TEST_DATABASE_URL: postgres://routewerk:password@localhost:5432/routewerk_test?sslmode=disable
+      # Read by internal/repository/testhelper_test.go — the DB-backed
+      # repository tests skip when this is unset (they carry the
+      # `integration` build tag, so only the -tags=integration step
+      # compiles them at all).
+      ROUTEWERK_TEST_DATABASE_URL: postgres://routewerk:password@localhost:5432/routewerk_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
 

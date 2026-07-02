@@ -1,3 +1,5 @@
+//go:build integration
+
 package repository
 
 import (
@@ -30,7 +32,9 @@ func TestOrgRepo_CreateAndGetByID(t *testing.T) {
 	repo := NewOrgRepo(pool)
 	ctx := context.Background()
 
-	o := &model.Organization{Name: "LEF Climbing", Slug: "lef-climbing"}
+	// Not "lef-climbing": migration 000005 seeds that org into every fresh
+	// schema, and slugs are unique.
+	o := &model.Organization{Name: "Org CRUD Test Gym", Slug: "org-crud-test"}
 	if err := repo.Create(ctx, o); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -48,11 +52,11 @@ func TestOrgRepo_CreateAndGetByID(t *testing.T) {
 	if got == nil {
 		t.Fatal("GetByID returned nil")
 	}
-	if got.Name != "LEF Climbing" {
-		t.Errorf("Name = %q, want %q", got.Name, "LEF Climbing")
+	if got.Name != "Org CRUD Test Gym" {
+		t.Errorf("Name = %q, want %q", got.Name, "Org CRUD Test Gym")
 	}
-	if got.Slug != "lef-climbing" {
-		t.Errorf("Slug = %q, want %q", got.Slug, "lef-climbing")
+	if got.Slug != "org-crud-test" {
+		t.Errorf("Slug = %q, want %q", got.Slug, "org-crud-test")
 	}
 }
 
@@ -103,23 +107,22 @@ func TestOrgRepo_Count(t *testing.T) {
 	repo := NewOrgRepo(pool)
 	ctx := context.Background()
 
-	count, err := repo.Count(ctx)
+	// Baseline-relative: migration 000005 seeds an org into every fresh
+	// schema, so an absolute count would drift with the seed data.
+	baseline, err := repo.Count(ctx)
 	if err != nil {
 		t.Fatalf("Count: %v", err)
-	}
-	if count != 0 {
-		t.Errorf("Count = %d, want 0 in fresh schema", count)
 	}
 
 	repo.Create(ctx, &model.Organization{Name: "Gym A", Slug: "gym-a"})
 	repo.Create(ctx, &model.Organization{Name: "Gym B", Slug: "gym-b"})
 
-	count, err = repo.Count(ctx)
+	count, err := repo.Count(ctx)
 	if err != nil {
 		t.Fatalf("Count after inserts: %v", err)
 	}
-	if count != 2 {
-		t.Errorf("Count = %d, want 2", count)
+	if count != baseline+2 {
+		t.Errorf("Count = %d, want %d (baseline %d + 2)", count, baseline+2, baseline)
 	}
 }
 

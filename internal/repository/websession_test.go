@@ -1,3 +1,5 @@
+//go:build integration
+
 package repository
 
 import (
@@ -68,8 +70,12 @@ func TestWebSessionRepo_CreateAndGetByTokenHash(t *testing.T) {
 	if got.UserID != userID {
 		t.Errorf("UserID = %q, want %q", got.UserID, userID)
 	}
-	if got.IPAddress == nil || *got.IPAddress != "192.168.1.1" {
-		t.Errorf("IPAddress = %v, want %q", got.IPAddress, "192.168.1.1")
+	if got.IPAddress == nil {
+		t.Error("IPAddress = nil, want \"192.168.1.1\"")
+	} else if *got.IPAddress != "192.168.1.1" {
+		// Dereference in the message — %v on the pointer prints an address.
+		// The repo reads host(ip_address), so no "/32" netmask suffix.
+		t.Errorf("IPAddress = %q, want %q", *got.IPAddress, "192.168.1.1")
 	}
 }
 

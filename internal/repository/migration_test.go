@@ -1,3 +1,5 @@
+//go:build integration
+
 package repository
 
 import (
@@ -52,8 +54,8 @@ func TestMigrations_UpDown(t *testing.T) {
 	}
 
 	type migrationPair struct {
-		version string
-		upFile  string
+		version  string
+		upFile   string
 		downFile string
 	}
 

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -222,11 +223,51 @@ func (r *WallRepo) Unarchive(ctx context.Context, id string) error {
 	return nil
 }
 
-func (r *WallRepo) Delete(ctx context.Context, id string) error {
-	query := `UPDATE walls SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL`
-	_, err := r.db.Exec(ctx, query, id)
-	if err != nil {
-		return fmt.Errorf("soft delete wall: %w", err)
-	}
-	return nil
+// ErrWallHasActiveRoutes is returned by Delete when the wall still has
+// non-archived routes. Soft-deleting the wall would orphan them — they'd
+// stay live in every route list while pointing at a wall no query can see.
+var ErrWallHasActiveRoutes = errors.New("wall has active routes")
+
+// Delete soft-deletes a wall. The active-route check and the delete run in
+// a single transaction with the wall row locked, so two concurrent deletes
+// can't both pass the check. When the wall still has non-archived routes,
+// it returns ErrWallHasActiveRoutes plus the count of blocking routes so
+// handlers can tell the user how many to strip or archive first. Deleting
+// a missing or already-deleted wall is a no-op, matching the previous
+// behavior (handlers 404 missing walls before calling).
+func (r *WallRepo) Delete(ctx context.Context, id string) (int, error) {
+	var activeRoutes int
+	err := database.RunInTx(ctx, r.db, func(tx pgx.Tx) error {
+		var wallID string
+		err := tx.QueryRow(ctx,
+			`SELECT id FROM walls WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
+			id,
+		).Scan(&wallID)
+		if err == pgx.ErrNoRows {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("lock wall: %w", err)
+		}
+
+		if err := tx.QueryRow(ctx,
+			`SELECT COUNT(*) FROM routes
+			 WHERE wall_id = $1 AND status != 'archived' AND deleted_at IS NULL`,
+			id,
+		).Scan(&activeRoutes); err != nil {
+			return fmt.Errorf("count active routes: %w", err)
+		}
+		if activeRoutes > 0 {
+			return ErrWallHasActiveRoutes
+		}
+
+		if _, err := tx.Exec(ctx,
+			`UPDATE walls SET deleted_at = NOW() WHERE id = $1`,
+			id,
+		); err != nil {
+			return fmt.Errorf("soft delete wall: %w", err)
+		}
+		return nil
+	})
+	return activeRoutes, err
 }

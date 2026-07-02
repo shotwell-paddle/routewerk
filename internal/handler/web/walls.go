@@ -1,6 +1,7 @@
 package webhandler
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -346,6 +347,11 @@ func (h *Handler) wallArchiveAction(w http.ResponseWriter, r *http.Request, arch
 // WallDelete handles POST /walls/{wallID}/delete. Restricted to head setters
 // and above because this is destructive (soft-deletes the wall and hides it
 // from every role permanently until a DB operator restores it).
+//
+// orphaned: no route reaches this handler since the SPA took over the wall
+// pages (router.go, docs/spa-rebuild-cleanup.md) — the live wall delete is
+// the API handler, whose 409 the SPA surfaces on-page. Kept compiling with
+// the same 409 mapping until the cleanup PR removes it.
 func (h *Handler) WallDelete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -369,7 +375,12 @@ func (h *Handler) WallDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.wallRepo.Delete(ctx, wallID); err != nil {
+	activeRoutes, err := h.wallRepo.Delete(ctx, wallID)
+	if errors.Is(err, repository.ErrWallHasActiveRoutes) {
+		http.Error(w, fmt.Sprintf("wall has %d active routes — strip or archive them first", activeRoutes), http.StatusConflict)
+		return
+	}
+	if err != nil {
 		slog.Error("wall delete failed", "wall_id", wallID, "error", err)
 		http.Error(w, "failed to delete wall", http.StatusInternalServerError)
 		return

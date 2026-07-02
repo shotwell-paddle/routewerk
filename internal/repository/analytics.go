@@ -289,18 +289,35 @@ func (r *AnalyticsRepo) OrgOverview(ctx context.Context, orgID string) ([]Locati
 	ctx, cancel := database.QueryTimeout(ctx, database.TimeoutLong)
 	defer cancel()
 
+	// Pre-aggregate each dimension BEFORE joining, mirroring the
+	// SetterProductivity rewrite above: the old triple LEFT JOIN produced a
+	// (routes×ascents)×overdue-routes row explosion per location. The
+	// COUNT(DISTINCT ...) aggregates kept the numbers correct, but only by
+	// deduplicating an intermediate cross product that grows multiplicatively
+	// with ascent and route volume.
 	query := `
 		SELECT l.id, l.name,
-			COUNT(DISTINCT r.id) FILTER (WHERE r.status = 'active' AND r.deleted_at IS NULL) as active_routes,
-			COUNT(DISTINCT a.user_id) FILTER (WHERE a.climbed_at >= NOW() - interval '30 days') as active_climbers_30d,
-			COUNT(DISTINCT r2.id) as overdue_strips
+			COALESCE(rs.active_routes, 0) as active_routes,
+			COALESCE(ac.active_climbers_30d, 0) as active_climbers_30d,
+			COALESCE(rs.overdue_strips, 0) as overdue_strips
 		FROM locations l
-		LEFT JOIN routes r ON r.location_id = l.id
-		LEFT JOIN ascents a ON a.route_id = r.id
-		LEFT JOIN routes r2 ON r2.location_id = l.id AND r2.status = 'active'
-			AND r2.projected_strip_date <= CURRENT_DATE AND r2.deleted_at IS NULL
+		LEFT JOIN (
+			SELECT location_id,
+				COUNT(*) FILTER (WHERE status = 'active' AND deleted_at IS NULL) as active_routes,
+				COUNT(*) FILTER (WHERE status = 'active' AND projected_strip_date <= CURRENT_DATE AND deleted_at IS NULL) as overdue_strips
+			FROM routes
+			WHERE location_id IN (SELECT id FROM locations WHERE org_id = $1 AND deleted_at IS NULL)
+			GROUP BY location_id
+		) rs ON rs.location_id = l.id
+		LEFT JOIN (
+			SELECT r.location_id, COUNT(DISTINCT a.user_id) as active_climbers_30d
+			FROM ascents a
+			JOIN routes r ON r.id = a.route_id
+			WHERE a.climbed_at >= NOW() - interval '30 days'
+				AND r.location_id IN (SELECT id FROM locations WHERE org_id = $1 AND deleted_at IS NULL)
+			GROUP BY r.location_id
+		) ac ON ac.location_id = l.id
 		WHERE l.org_id = $1 AND l.deleted_at IS NULL
-		GROUP BY l.id, l.name
 		ORDER BY l.name
 		LIMIT 100`
 

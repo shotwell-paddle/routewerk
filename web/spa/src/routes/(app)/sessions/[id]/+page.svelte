@@ -37,7 +37,7 @@
   } from '$lib/api/client';
   import { effectiveLocationId } from '$lib/stores/location.svelte';
   import { roleRankAt } from '$lib/stores/auth.svelte';
-  import { DEFAULT_V_GRADES, DEFAULT_YDS_GRADES } from '$lib/grades';
+  import { DEFAULT_CIRCUIT_COLORS, DEFAULT_V_GRADES, DEFAULT_YDS_GRADES } from '$lib/grades';
   import SessionForm from '$lib/components/SessionForm.svelte';
   import SessionClimbForm from '$lib/components/SessionClimbForm.svelte';
   import Notice from '$lib/components/Notice.svelte';
@@ -276,34 +276,52 @@
   let sectionForm = $state({
     wall_ids: [] as string[],
     setter_ids: [] as string[],
-    target_grades: [] as string[],
+    // Target counts per label ("Blue" → 3, "5.10" → 2). Persisted as
+    // repeated entries in the assignment's target_grades TEXT[] — no
+    // schema change, and old single-entry rows read back as count 1.
+    targets: {} as Record<string, number>,
     notes: '',
   });
   let sectionSaving = $state(false);
   let sectionError = $state<string | null>(null);
 
-  // Target-grade chips follow the picked walls' types: boulder walls
-  // offer V grades, rope walls YDS. Nothing picked (= whole-session
-  // assignment) offers both.
+  // Target chips follow the picked walls' types: rope walls offer YDS;
+  // boulder walls follow the gym's boulder_method — circuit colors when
+  // 'circuit', V grades when 'v_scale', both lists when 'both'. Nothing
+  // picked (= whole-session assignment) offers every applicable list.
   const targetGradeOptions = $derived.by((): string[] => {
     const picked = sectionForm.wall_ids
       .map((id) => wallsById.get(id))
       .filter((w): w is WallShape => !!w);
-    const showV = picked.length === 0 || picked.some((w) => w.wall_type === 'boulder');
+    const showBoulder = picked.length === 0 || picked.some((w) => w.wall_type === 'boulder');
     const showYds = picked.length === 0 || picked.some((w) => w.wall_type === 'route');
+    const method = settings?.grading.boulder_method ?? 'v_scale';
+    const circuits = (
+      settings?.circuits.colors?.length ? settings.circuits.colors : DEFAULT_CIRCUIT_COLORS
+    ).map((c) => c.name);
     const v = settings?.grading.v_scale_range?.length
       ? settings.grading.v_scale_range
       : DEFAULT_V_GRADES;
+    const boulder = method === 'circuit' ? circuits : method === 'both' ? [...circuits, ...v] : v;
     const yds = settings?.grading.yds_range?.length
       ? settings.grading.yds_range
       : DEFAULT_YDS_GRADES;
-    return [...(showV ? v : []), ...(showYds ? yds : [])];
+    return [...(showBoulder ? boulder : []), ...(showYds ? yds : [])];
   });
 
-  function toggleTargetGrade(g: string) {
-    sectionForm.target_grades = sectionForm.target_grades.includes(g)
-      ? sectionForm.target_grades.filter((x) => x !== g)
-      : [...sectionForm.target_grades, g];
+  function bumpTarget(g: string, delta: number) {
+    const next = Math.max(0, (sectionForm.targets[g] ?? 0) + delta);
+    const targets = { ...sectionForm.targets };
+    if (next === 0) delete targets[g];
+    else targets[g] = next;
+    sectionForm.targets = targets;
+  }
+
+  // "Blue, Blue, V4" → "Blue ×2, V4" for the assignment chips.
+  function summarizeTargets(gs: string[]): string {
+    const counts = new Map<string, number>();
+    for (const g of gs) counts.set(g, (counts.get(g) ?? 0) + 1);
+    return [...counts].map(([g, n]) => (n > 1 ? `${g} ×${n}` : g)).join(', ');
   }
 
   async function addWallSection(e: Event) {
@@ -317,10 +335,11 @@
     sectionError = null;
     try {
       const notes = sectionForm.notes.trim() || null;
-      // Keep only grades still offered (a wall-type change can strand a
-      // pick from the other scale's chip set).
-      const targetGrades = sectionForm.target_grades.filter((g) =>
-        targetGradeOptions.includes(g),
+      // Expand counts into repeated entries, iterating the option list so
+      // ordering is stable and picks stranded by a wall-type change (the
+      // other scale's chip set) drop out.
+      const targetGrades = targetGradeOptions.flatMap((g) =>
+        Array<string>(sectionForm.targets[g] ?? 0).fill(g),
       );
       // No walls picked → one whole-session (wall-less) assignment per
       // setter. Walls picked → one assignment per (wall, setter) pair. The
@@ -352,7 +371,7 @@
           ),
         ),
       );
-      sectionForm = { wall_ids: [], setter_ids: [], target_grades: [], notes: '' };
+      sectionForm = { wall_ids: [], setter_ids: [], targets: {}, notes: '' };
       await refresh();
     } catch (err) {
       sectionError = err instanceof ApiClientError ? err.message : 'Could not add to session.';
@@ -712,7 +731,7 @@
                   <li class="setter-chip">
                     <span class="setter">{setterName(a.setter_id)}</span>
                     {#if a.target_grades && a.target_grades.length > 0}
-                      <span class="muted">· {a.target_grades.join(', ')}</span>
+                      <span class="muted">· {summarizeTargets(a.target_grades)}</span>
                     {/if}
                     {#if a.notes}<span class="muted">· {a.notes}</span>{/if}
                     {#if canManage}
@@ -861,13 +880,24 @@
                 Leave walls unchecked to assign the setters to the whole session.
                 Target grades &amp; notes apply to every picked wall.
               </p>
-              <span class="pick-label">Target grades — tap to pick</span>
+              <span class="pick-label">Targets — tap to add one, − to remove</span>
               <div class="chips target-chips">
                 {#each targetGradeOptions as g (g)}
-                  <button type="button" class="chip small-chip"
-                          class:on={sectionForm.target_grades.includes(g)}
-                          aria-pressed={sectionForm.target_grades.includes(g)}
-                          onclick={() => toggleTargetGrade(g)}>{g}</button>
+                  {@const n = sectionForm.targets[g] ?? 0}
+                  <span class="target-chip" class:on={n > 0}>
+                    <button type="button" class="chip small-chip target-add"
+                            class:on={n > 0}
+                            aria-pressed={n > 0}
+                            aria-label={n > 0 ? `${g}: ${n} targeted, tap to add another` : `Target ${g}`}
+                            onclick={() => bumpTarget(g, 1)}>
+                      {g}{#if n > 1}<span class="target-count">×{n}</span>{/if}
+                    </button>
+                    {#if n > 0}
+                      <button type="button" class="target-minus"
+                              aria-label={`Remove one ${g} target`}
+                              onclick={() => bumpTarget(g, -1)}>−</button>
+                    {/if}
+                  </span>
                 {/each}
               </div>
               <div class="row">
@@ -901,7 +931,7 @@
                     <span class="setter">{setterName(a.setter_id)}</span>
                     {#if a.wall_id}<span class="muted small">· wall archived</span>{/if}
                     {#if a.target_grades && a.target_grades.length > 0}
-                      <span class="muted small">· {a.target_grades.join(', ')}</span>
+                      <span class="muted small">· {summarizeTargets(a.target_grades)}</span>
                     {/if}
                   </span>
                   {#if canManage}
@@ -1389,6 +1419,30 @@
     border-color: var(--rw-accent);
     background: var(--rw-accent);
     color: var(--rw-accent-ink);
+  }
+  .target-chip {
+    display: inline-flex;
+    align-items: stretch;
+  }
+  .target-chip.on .target-add {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .target-count {
+    margin-left: 0.3rem;
+    font-size: 0.7rem;
+    opacity: 0.85;
+  }
+  .target-minus {
+    border: 1px solid var(--rw-accent);
+    border-left: none;
+    border-radius: 0 6px 6px 0;
+    padding: 0.3rem 0.5rem;
+    background: var(--rw-surface);
+    color: var(--rw-text);
+    font-size: 0.8rem;
+    font-weight: 700;
+    line-height: 1;
   }
   .add-section,
   .strip-form {

@@ -251,6 +251,9 @@ func (r *AnalyticsRepo) RecentActivity(ctx context.Context, locationID string, l
 		limit = 10
 	}
 
+	// created_at tie-break: ties on climbed_at (backfilled/date-only ticks)
+	// otherwise come back in heap order — oldest-inserted first, which made
+	// the dashboard's "Recent activity" read oldest-at-top.
 	query := `
 		SELECT u.display_name, a.ascent_type, a.climbed_at,
 			r.color, r.grade, r.grading_system, r.circuit_color, r.name
@@ -258,7 +261,7 @@ func (r *AnalyticsRepo) RecentActivity(ctx context.Context, locationID string, l
 		JOIN routes r ON r.id = a.route_id
 		JOIN users u ON u.id = a.user_id
 		WHERE r.location_id = $1
-		ORDER BY a.climbed_at DESC
+		ORDER BY a.climbed_at DESC, a.created_at DESC
 		LIMIT $2`
 
 	rows, err := r.db.Query(ctx, query, locationID, limit)

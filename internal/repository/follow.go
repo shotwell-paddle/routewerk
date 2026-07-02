@@ -89,7 +89,7 @@ func (r *FollowRepo) ActivityFeed(ctx context.Context, userID string, limit, off
 		JOIN users u ON u.id = a.user_id
 		JOIN routes r ON r.id = a.route_id
 		WHERE f.follower_id = $1
-		ORDER BY a.climbed_at DESC
+		ORDER BY a.climbed_at DESC, a.created_at DESC
 		LIMIT $2 OFFSET $3`
 
 	rows, err := r.db.Query(ctx, query, userID, limit, offset)

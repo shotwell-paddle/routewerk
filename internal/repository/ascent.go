@@ -120,11 +120,14 @@ func (r *AscentRepo) ListByUserFiltered(ctx context.Context, userID string, f Ti
 
 	whereClause := strings.Join(where, " AND ")
 
-	// Determine sort order
-	orderBy := "a.climbed_at DESC"
+	// Determine sort order. created_at is the tie-break: climbed_at can
+	// collide (backfilled ticks share a date), and without a deterministic
+	// secondary key Postgres returns ties in heap order — effectively
+	// oldest-inserted first, which reads as "oldest at the top".
+	orderBy := "a.climbed_at DESC, a.created_at DESC"
 	if f.Sort == "grade" {
 		// Sort by grade descending, then by date. V-scale sorts lexically after V prefix.
-		orderBy = "r.grade DESC, a.climbed_at DESC"
+		orderBy = "r.grade DESC, a.climbed_at DESC, a.created_at DESC"
 	}
 
 	// Rows-only query. The previous COUNT(*) OVER () window appended a

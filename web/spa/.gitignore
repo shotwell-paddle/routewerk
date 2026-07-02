@@ -9,3 +9,7 @@ node_modules/
 # Plain `go build ./...` doesn't need it (the embed is gated behind the
 # spa_embed build tag — see web/spa/embed.go vs embed_stub.go).
 build/
+
+# Playwright artifacts (e2e smoke test — see e2e/README.md)
+playwright-report/
+test-results/

@@ -4,6 +4,9 @@
 !/api/
 /admin
 !/admin/
+# `go build ./...` drops a binary for the e2e seeder (web/spa/e2e/seed)
+# in the repo root, same as /api and /admin above.
+/seed
 /routewerk
 *.exe
 *.exe~

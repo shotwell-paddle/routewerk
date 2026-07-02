@@ -8,9 +8,9 @@
 // Prereqs (see e2e/README.md for the full local recipe):
 //   1. Server built with -tags=spa_embed and running against a SCRATCH
 //      database (migrations auto-run on startup).
-//   2. Seed fixture applied: `go run ./web/spa/e2e/seed` (from repo root).
-//      It creates the user below with a setter membership, one location,
-//      and one boulder wall named "E2E Wall".
+//   2. Seed fixture applied: `E2E_DATABASE_URL=... go run ./web/spa/e2e/seed`
+//      (from repo root). It creates the user below with a setter membership,
+//      one location (with default settings), and one boulder wall "E2E Wall".
 //   3. E2E_BASE_URL pointing at the server (default http://localhost:8080).
 //
 // The route name is unique per run so the test is re-runnable against the
@@ -52,7 +52,13 @@ test('login → dashboard → create route → route appears', async ({ page }) 
   await page.getByLabel('Wall *').selectOption({ label: 'E2E Wall' });
   // Defaults: type=boulder, grading system=v_scale → V-grade chips.
   await page.getByRole('button', { name: 'V3', exact: true }).click();
-  // Hold color swatches carry the gym palette name as their accessible name.
+  // Hold-color swatches only render when the settings GET succeeded — the
+  // SPA silently swallows a failed fetch and falls back to a bare color
+  // input. Assert the swatch group itself first so a palette/settings
+  // problem fails readably instead of as a missing-"Blue" timeout.
+  await expect(page.locator('button.sw').first()).toBeVisible();
+  // Swatches carry the palette color name as their accessible name; the
+  // seeder writes DefaultLocationSettings explicitly, which includes "Blue".
   await page.getByRole('button', { name: 'Blue', exact: true }).click();
   await page.getByLabel('Name', { exact: true }).fill(ROUTE_NAME);
   await page.getByRole('button', { name: 'Create route' }).click();

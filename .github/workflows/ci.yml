@@ -91,8 +91,15 @@ jobs:
   # tests can't reach — cookies, CSRF, the SPA auth gate, setter-gated API
   # writes. One spec, Chromium only. See web/spa/e2e/README.md.
   #
-  # NOT in the required-checks list yet — add it once it proves stable.
+  # PR-only for now: deploy-prod.yml gates on the WHOLE CI workflow's
+  # conclusion (workflow_run + `conclusion == 'success'`), so a flake in
+  # this job on push-to-main would silently skip the prod deploy. Until
+  # the smoke proves stable, it runs only on pull_request events (a
+  # skipped job still counts as success for the workflow conclusion).
+  # Promotion path: remove this `if` and add e2e-smoke to the required
+  # status checks.
   e2e-smoke:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -118,6 +125,10 @@ jobs:
       JWT_SECRET: e2e-ci-only-jwt-secret-0123456789abcdef
       SESSION_SECRET: e2e-ci-only-session-secret-0123456789abcdef
       BACKUP_ENABLED: "false"
+      # The seeder deliberately reads E2E_DATABASE_URL (never the generic
+      # DATABASE_URL) and requires an "e2e" database name — see
+      # web/spa/e2e/seed/main.go.
+      E2E_DATABASE_URL: postgres://routewerk:password@localhost:5432/routewerk_e2e?sslmode=disable
       E2E_BASE_URL: http://localhost:8080
     steps:
       - uses: actions/checkout@v4
@@ -141,8 +152,26 @@ jobs:
       - name: Build server (spa_embed)
         run: CGO_ENABLED=0 go build -tags=spa_embed -o bin/api ./cmd/api
 
+      # Cache the Chromium download (~120 MB) keyed on the @playwright/test
+      # version. On a hit only the system deps need installing.
+      - name: Get Playwright version
+        id: pw-version
+        run: echo "version=$(cd web/spa && node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
+
       - name: Install Playwright Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
         run: cd web/spa && npx playwright install --with-deps chromium
+
+      - name: Install Playwright system deps (cache hit)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: cd web/spa && npx playwright install-deps chromium
 
       - name: Start server and wait for /health
         run: |

@@ -6,17 +6,25 @@ form (cookie session + CSRF double-submit), SPA dashboard render, route
 creation through the SPA form, and the new route showing up in the list.
 
 It runs in CI as the `e2e-smoke` job (`.github/workflows/ci.yml`) against
-a scratch Postgres service. It is **not** part of `npm run test` — vitest
-only includes `src/**/*.test.ts`, and Playwright only looks at `e2e/`.
+a scratch Postgres service — **pull requests only** for now, because
+`deploy-prod.yml` gates on the whole CI workflow's conclusion and a flake
+on push-to-main would silently skip the prod deploy. It is **not** part
+of `npm run test` — vitest only includes `src/**/*.test.ts`, and
+Playwright only looks at `e2e/`.
 
 ## Running locally
 
 Use a scratch database — the seeder writes rows and the test creates
-routes. Do not point it at your dev DB.
+routes. Do not point it at your dev DB. The seeder reads
+`E2E_DATABASE_URL` (deliberately not `DATABASE_URL`, which dev shells
+export for `make run`) and refuses to run unless the database name
+contains `e2e`.
 
 ```sh
-# 0. one-time: create a scratch DB (adjust for your local Postgres)
-psql -U postgres -c 'CREATE DATABASE routewerk_e2e'
+# 0. one-time: create a scratch DB owned by the app role (OWNER matters:
+#    on PG15+ a postgres-owned DB denies CREATE in schema public to
+#    other roles, so migrations would fail)
+psql -U postgres -c 'CREATE DATABASE routewerk_e2e OWNER routewerk'
 
 # 1. build the SPA + server (from the repo root)
 cd web/spa && npm ci && npm run build && cd ../..
@@ -28,7 +36,7 @@ ENV=development PORT=8080 FRONTEND_URL=http://localhost:8080 \
 BACKUP_ENABLED=false ./bin/api &
 
 # 3. seed the fixture user/org/location/wall (idempotent)
-DATABASE_URL='postgres://routewerk:password@localhost:5432/routewerk_e2e?sslmode=disable' \
+E2E_DATABASE_URL='postgres://routewerk:password@localhost:5432/routewerk_e2e?sslmode=disable' \
 go run ./web/spa/e2e/seed
 
 # 4. run the smoke test
@@ -39,15 +47,23 @@ npm run test:e2e                  # E2E_BASE_URL overrides the default :8080
 
 ## Fixture
 
-`seed/main.go` creates (idempotently — no-op if the user exists):
+`seed/main.go` creates (in order — org → location → settings → wall →
+user → membership):
 
-- user `e2e-setter@routewerk.test` / `e2e-smoke-password`
-- org "E2E Climbing" → location "E2E Gym"
-- a location-scoped **setter** membership (can create routes)
+- org "E2E Climbing" → location "E2E Gym" with explicit
+  `DefaultLocationSettings` (the smoke test clicks the "Blue" hold-color
+  swatch, so the fixture owns its palette)
 - one boulder wall "E2E Wall"
+- user `e2e-setter@routewerk.test` / `e2e-smoke-password`
+- a location-scoped **setter** membership (can create routes)
 
 It reuses the production repositories and `auth.HashPassword`, so the
 seeded credentials exercise the same bcrypt path the login form checks.
+
+Idempotent: re-runs no-op when the fixture is complete. If a prior run
+died midway (user exists but membership/wall are missing) it fails loudly
+— drop and recreate the scratch DB (`DROP DATABASE routewerk_e2e`) and
+re-run.
 
 ## Debugging
 

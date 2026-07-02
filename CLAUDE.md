@@ -98,10 +98,14 @@ under `backups/`, 35-day retention. Zero external setup — it reuses the
 `STORAGE_*` credentials. See `internal/service/backup.go` and
 `docs/backup-restore.md` (restore drills, env knobs, trade-offs).
 
-- **Freshness check**: `/health` includes `last_backup` (RFC3339, or
-  `none_this_process` right after a restart — prod only backs up on the
-  nightly schedule). Staging sets `BACKUP_RUN_ON_BOOT=true`, so every
+- **Freshness check**: `/health` includes `last_backup` (RFC3339; seeded
+  from the bucket at startup, so it survives deploys — `none` means no
+  backup exists at all). Staging sets `BACKUP_RUN_ON_BOOT=true`, so every
   staging deploy smoke-tests the pipeline end to end.
+- **List stored backups** (ground truth, no local flyctl needed):
+  `gh workflow run fly-backup-check.yml --repo shotwell-paddle/routewerk
+  -f app=routewerk`, or on the server: `fly ssh console -a routewerk -C
+  "/app/admin backup-list"`.
 - **Manual run**: `fly ssh console -a routewerk -C "/app/admin backup"`.
 - `scripts/backup-local.sh` is a manual extra-copy tool;
   `.github/workflows/backup-db.yml` is a parked cloud mode for multi-gym.

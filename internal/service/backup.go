@@ -73,7 +73,8 @@ func NewBackupService(cfg *config.Config) *BackupService {
 }
 
 // LastSuccess reports when the most recent backup succeeded (ok=false if
-// none has this process lifetime). Surfaced on /health.
+// none exists). Seeded from the bucket at scheduler start so the signal
+// survives restarts; live runs then keep it current. Surfaced on /health.
 func (b *BackupService) LastSuccess() (time.Time, bool) {
 	ts := b.lastSuccess.Load()
 	if ts == 0 {
@@ -88,19 +89,29 @@ func backupKey(prefix string, t time.Time) string {
 	return prefix + "routewerk-" + t.UTC().Format("2006-01-02") + ".dump"
 }
 
+// parseBackupDate extracts the YYYY-MM-DD date from a key written by
+// backupKey. ok=false for anything that doesn't match the naming scheme —
+// we never touch objects we didn't write.
+func parseBackupDate(key, prefix string) (string, bool) {
+	name := strings.TrimPrefix(key, prefix)
+	if !strings.HasPrefix(name, "routewerk-") || !strings.HasSuffix(name, ".dump") {
+		return "", false
+	}
+	date := strings.TrimSuffix(strings.TrimPrefix(name, "routewerk-"), ".dump")
+	if _, err := time.Parse("2006-01-02", date); err != nil {
+		return "", false
+	}
+	return date, true
+}
+
 // keysToPrune returns the object keys whose embedded date is older than
-// retentionDays before now. Keys that don't match the naming scheme are
-// left alone (never delete what we didn't write).
+// retentionDays before now.
 func keysToPrune(keys []string, prefix string, now time.Time, retentionDays int) []string {
 	cutoff := now.UTC().AddDate(0, 0, -retentionDays).Format("2006-01-02")
 	var prune []string
 	for _, k := range keys {
-		name := strings.TrimPrefix(k, prefix)
-		if !strings.HasPrefix(name, "routewerk-") || !strings.HasSuffix(name, ".dump") {
-			continue
-		}
-		date := strings.TrimSuffix(strings.TrimPrefix(name, "routewerk-"), ".dump")
-		if _, err := time.Parse("2006-01-02", date); err != nil {
+		date, ok := parseBackupDate(k, prefix)
+		if !ok {
 			continue
 		}
 		if date < cutoff {
@@ -118,6 +129,61 @@ func nextRunAt(now time.Time, hourUTC int) time.Time {
 		next = next.AddDate(0, 0, 1)
 	}
 	return next
+}
+
+// BackupObject describes one stored dump.
+type BackupObject struct {
+	Key          string
+	Size         int64
+	LastModified time.Time
+}
+
+// List returns the stored dumps under the backup prefix, newest first
+// (the key embeds the date, so reverse-lexicographic order is
+// chronological). Non-backup objects under the prefix are ignored.
+func (b *BackupService) List(ctx context.Context) ([]BackupObject, error) {
+	out, err := b.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+		Bucket: aws.String(b.bucket),
+		Prefix: aws.String(b.prefix),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list backups: %w", err)
+	}
+	var objs []BackupObject
+	for _, obj := range out.Contents {
+		if obj.Key == nil {
+			continue
+		}
+		if _, ok := parseBackupDate(*obj.Key, b.prefix); !ok {
+			continue
+		}
+		o := BackupObject{Key: *obj.Key}
+		if obj.Size != nil {
+			o.Size = *obj.Size
+		}
+		if obj.LastModified != nil {
+			o.LastModified = obj.LastModified.UTC()
+		}
+		objs = append(objs, o)
+	}
+	sort.Slice(objs, func(i, j int) bool { return objs[i].Key > objs[j].Key })
+	return objs, nil
+}
+
+// seedLastSuccess raises lastSuccess to t if t is newer — used to restore
+// the freshness signal from the bucket after a restart, without ever
+// rolling back a success recorded by a live run.
+func (b *BackupService) seedLastSuccess(t time.Time) {
+	ts := t.Unix()
+	for {
+		cur := b.lastSuccess.Load()
+		if cur >= ts {
+			return
+		}
+		if b.lastSuccess.CompareAndSwap(cur, ts) {
+			return
+		}
+	}
 }
 
 // RunOnce takes one backup: pg_dump -Fc → verify archive → upload
@@ -215,6 +281,16 @@ func (b *BackupService) StartScheduler(ctx context.Context, runOnBoot bool) {
 	}
 
 	go func() {
+		// Seed the freshness signal from the bucket: /health's last_backup
+		// should answer "when did any backup last succeed", not "has this
+		// process backed up yet" — otherwise every deploy resets it to
+		// none until the next nightly. Best-effort; a failed list just
+		// leaves the signal unseeded.
+		if objs, err := b.List(ctx); err != nil {
+			slog.Warn("backup: seeding last-success from bucket failed", "error", err)
+		} else if len(objs) > 0 {
+			b.seedLastSuccess(objs[0].LastModified)
+		}
 		if runOnBoot {
 			run()
 		}

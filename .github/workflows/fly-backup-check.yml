@@ -1,0 +1,25 @@
+name: Fly Backup Check
+
+# Ops utility: list the stored database backups (newest first) straight
+# from the bucket, via /app/admin backup-list on the running machine.
+# Ground truth for "did the nightly backup run?" — works from any
+# environment without local flyctl auth. Manual-trigger only.
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: "Fly app (routewerk or routewerk-dev)"
+        required: true
+        default: "routewerk"
+
+jobs:
+  backup-list:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: List stored backups
+        env:
+          FLY_API_TOKEN: ${{ inputs.app == 'routewerk' && secrets.FLY_API_TOKEN_PROD || secrets.FLY_API_TOKEN_DEV }}
+        run: |
+          flyctl ssh console -a "${{ inputs.app }}" -C "/app/admin backup-list"

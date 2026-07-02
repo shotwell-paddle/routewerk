@@ -27,14 +27,19 @@ a `-Fc` dump restored with `pg_restore`.
   `BACKUP_RUN_ON_BOOT` (staging sets true so every deploy smoke-tests
   the pipeline end to end).
 - **Observability**: `/health` includes `last_backup` (RFC3339 of the
-  last success this process lifetime, or `none_this_process`). The
-  nightly run also logs `database backup complete` / `database backup
-  failed`. Check after any deploy day: a machine restarted at 09:05 UTC
-  simply runs again the next night — the key is date-stamped, so a
-  same-day re-run overwrites harmlessly.
+  most recent success; seeded from the newest bucket object at scheduler
+  start, so the signal survives deploys — `none` means the bucket has no
+  backups at all, or the seed hasn't finished). The nightly run also
+  logs `database backup complete` / `database backup failed`. A machine
+  restarted at 09:05 UTC simply runs again the next night — the key is
+  date-stamped, so a same-day re-run overwrites harmlessly.
 - **Manual run** (same pipeline):
   `fly ssh console -a routewerk -C "/app/admin backup"`
-- **List backups**: with the storage credentials (same as photos):
+- **List backups** (newest first, straight from the bucket):
+  `fly ssh console -a routewerk -C "/app/admin backup-list"`, or without
+  local flyctl auth: `gh workflow run fly-backup-check.yml --repo
+  shotwell-paddle/routewerk -f app=routewerk`. Raw S3 alternative with
+  the storage credentials (same as photos):
   `AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_REGION=auto aws s3 ls s3://<bucket>/backups/ --endpoint-url https://fly.storage.tigris.dev`
 - **Trade-off (accepted)**: backups share the app's storage credential,
   so this does not protect against that credential being compromised —

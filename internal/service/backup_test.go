@@ -44,6 +44,48 @@ func TestKeysToPrune(t *testing.T) {
 	}
 }
 
+func TestParseBackupDate(t *testing.T) {
+	tests := []struct {
+		key    string
+		prefix string
+		want   string
+		ok     bool
+	}{
+		{"backups/routewerk-2026-07-02.dump", "backups/", "2026-07-02", true},
+		{"routewerk-2026-07-02.dump", "", "2026-07-02", true},
+		{"backups/routewerk-garbage.dump", "backups/", "", false},
+		{"backups/other-file.txt", "backups/", "", false},
+		{"photos/route1/x.webp", "backups/", "", false},
+		// Wrong prefix: TrimPrefix no-ops, name keeps the foreign prefix.
+		{"backups-dev/routewerk-2026-07-02.dump", "backups/", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			got, ok := parseBackupDate(tt.key, tt.prefix)
+			if got != tt.want || ok != tt.ok {
+				t.Errorf("parseBackupDate(%q, %q) = %q, %v; want %q, %v",
+					tt.key, tt.prefix, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
+func TestSeedLastSuccess(t *testing.T) {
+	var b BackupService
+	older := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
+	newer := time.Date(2026, 7, 2, 9, 0, 0, 0, time.UTC)
+
+	b.seedLastSuccess(newer)
+	if ts, ok := b.LastSuccess(); !ok || !ts.Equal(newer) {
+		t.Fatalf("after seed = %v, %v; want %v, true", ts, ok, newer)
+	}
+	// Seeding an older value must never roll the signal back.
+	b.seedLastSuccess(older)
+	if ts, _ := b.LastSuccess(); !ts.Equal(newer) {
+		t.Errorf("older seed rolled back to %v; want %v", ts, newer)
+	}
+}
+
 func TestNextRunAt(t *testing.T) {
 	tests := []struct {
 		name string

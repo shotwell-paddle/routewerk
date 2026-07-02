@@ -4,7 +4,7 @@ Route setting management platform for climbing gyms. Multi-tenant SaaS: orgs own
 
 ## Stack
 
-- **Backend**: Go 1.24, chi router, pgx/v5 (PostgreSQL 16), golang-migrate
+- **Backend**: Go 1.24, chi router, pgx/v5 (PostgreSQL 17), golang-migrate
 - **Web frontend**: Server-rendered HTML with `html/template` + HTMX, embedded static assets
 - **Mobile**: Responsive web (mobile-first HTMX). REST API exists for future native app if needed (Capacitor/TWA wrapper or standalone Flutter).
 - **Hosting**: Fly.io (single region: iad), Dockerfile with multi-stage Alpine build
@@ -68,11 +68,11 @@ Admin CLI: `./bin/admin migrate`, `migrate-down`, `migrate-version`, `migrate-fo
 
 **Deploys are automated via GitHub Actions.** `.github/workflows/`:
 
-- `ci.yml` — runs `go vet`, unit + integration tests, and `go build` on every push and PR to `main`/`dev`. Required status checks for merging.
-- `deploy-dev.yml` — on push to `dev`, runs `flyctl deploy --remote-only --app routewerk-dev --config fly.dev.toml`.
+- `ci.yml` — runs `go vet`, unit + integration tests (against a Postgres 17 service), `go build`, and the SPA vitest suite on every push and PR to `main`. Required status checks for merging.
+- `deploy-dev.yml` — manual `workflow_dispatch` only (`-f ref=<branch>`); deploys that ref to staging. There is no `dev` branch.
 - `deploy-prod.yml` — fires when the `CI` workflow completes successfully on `main` (workflow_run gate, deploys the CI-validated SHA), runs `flyctl deploy --remote-only --app routewerk`, then verifies `https://routewerk.fly.dev/health`.
 
-So the canonical release flow is: merge PR into `dev` → staging auto-deploys; merge `dev → main` PR → production auto-deploys. Do not run `make deploy` unless GHA is broken or you're doing an emergency rollback — it bypasses CI and deploys from your local working directory, which is exactly how we once shipped an old `main` because the merge hadn't actually landed yet.
+So the canonical release flow is: squash-merge the feature PR into `main` → CI runs on main → production auto-deploys the CI-validated SHA. Do not run `make deploy` unless GHA is broken or you're doing an emergency rollback — it bypasses CI and deploys from your local working directory, which is exactly how we once shipped an old `main` because the merge hadn't actually landed yet.
 
 Config: `fly.toml` (prod, app `routewerk`), `fly.dev.toml` (staging, app `routewerk-dev`). Secrets set via `fly secrets set KEY=value -a <app>`.
 
@@ -89,19 +89,38 @@ fly releases --app routewerk
 fly logs --app routewerk
 ```
 
+## Backups
+
+The API backs itself up: a scheduler in the server runs `pg_dump` nightly
+at 09:00 UTC and uploads the archive (private) to the app's Tigris bucket
+under `backups/`, 35-day retention. Zero external setup — it reuses the
+`STORAGE_*` credentials. See `internal/service/backup.go` and
+`docs/backup-restore.md` (restore drills, env knobs, trade-offs).
+
+- **Freshness check**: `/health` includes `last_backup` (RFC3339, or
+  `none_this_process` right after a restart — prod only backs up on the
+  nightly schedule). Staging sets `BACKUP_RUN_ON_BOOT=true`, so every
+  staging deploy smoke-tests the pipeline end to end.
+- **Manual run**: `fly ssh console -a routewerk -C "/app/admin backup"`.
+- `scripts/backup-local.sh` is a manual extra-copy tool;
+  `.github/workflows/backup-db.yml` is a parked cloud mode for multi-gym.
+- **Logs without local flyctl**: `gh workflow run fly-logs.yml --repo
+  shotwell-paddle/routewerk -f app=routewerk -f grep=backup`.
+
 ## Two interfaces, one server
 
 The server serves both the HTMX web app and the REST API from a single binary:
 
 - **Web** (`/login`, `/dashboard`, `/routes`, `/sessions`, etc.): Cookie auth, CSRF, server-rendered HTML, rate limited at 120 req/min/IP
-- **API** (`/api/v1/...`): JWT auth, JSON responses, rate limited at 20 req/min/IP for auth endpoints
+- **API** (`/api/v1/...`): cookie-or-JWT auth, JSON responses; 20 req/min/IP on auth endpoints, 300 req/min/user on the authenticated API, 30 req/min/user on card-artifact renders. Client IP comes from `Fly-Client-IP` only (X-Forwarded-For is ignored).
 
 Both share the same repositories, services, and database. The web handler (`handler/web/`) renders templates; the API handler (`handler/`) returns JSON.
 
 ## Testing notes
 
-- No database available in CI/test sandbox. All tests are unit tests against pure functions, HTTP handlers with `httptest`, and middleware with context injection.
-- Repository layer (21 files) has no tests because it's all SQL against pgx. Integration tests would need a real Postgres instance.
+- `go test ./...` locally runs unit tests only (pure functions, `httptest` handlers, middleware with context injection). CI additionally runs `go test -tags=integration` against a real Postgres 17 service (`TEST_DATABASE_URL`), covering the repository integration tests.
+- Most of the repository layer is still untested SQL by design; put new logic in pure, table-testable helpers where possible.
+- The SPA has a vitest suite (`cd web/spa && npm run test`) covering the API client contract, the auth store retry logic, and role resolution; CI runs it as the `spa-test` job.
 - `internal/middleware/testing_helpers.go` exports context setters for cross-package test use.
 - Profanity filter uses whole-word tokenization (not substring matching) — "grass" is clean even though "ass" is blocked.
 

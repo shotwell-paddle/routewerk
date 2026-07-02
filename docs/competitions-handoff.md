@@ -61,7 +61,7 @@ After auditing the actual repo, these adjustments apply throughout this doc:
 
 | Area | Choice | Why |
 |---|---|---|
-| Backend | Go 1.24, chi, pgx/v5, Postgres 16 | Unchanged. No reason to switch. |
+| Backend | Go 1.24, chi, pgx/v5, Postgres 17 | Unchanged. No reason to switch. |
 | Frontend (new) | SvelteKit + TypeScript, static adapter | Smaller bundles, faster solo iteration, runes are a strong fit for live UI, no overlap with SendIt v2's React mental model. |
 | Frontend (legacy) | html/template + HTMX continues running | Not migrating other modules in this work. |
 | Hosting | Single Fly app. SvelteKit built to static, embedded into Go binary via `embed`, served alongside API. | Single deploy, no CORS, cookie auth keeps working. |
@@ -89,7 +89,7 @@ Go binary on Fly.io
   ├── REST API at /api/v1/*
   ├── SSE endpoints at /api/v1/*/stream
   ├── Existing HTMX routes at /login, /dashboard, /routes, etc.
-  └── Postgres 16
+  └── Postgres 17
 
 Domain:
 Competition (location, slug, format=single|series, aggregation jsonb,

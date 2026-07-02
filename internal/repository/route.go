@@ -451,8 +451,17 @@ func (r *RouteRepo) Update(ctx context.Context, rt *model.Route) error {
 	).Scan(&rt.UpdatedAt)
 }
 
+// UpdateStatus transitions a route's status. Archiving stamps date_stripped
+// (matching the whole-wall strip paths, which already do) so strip and labor
+// analytics count single-route archives too. An existing date_stripped is
+// never overwritten, and un-archiving leaves it in place — it's a historical
+// record of when the route first came off the wall.
 func (r *RouteRepo) UpdateStatus(ctx context.Context, id, status string) error {
-	query := `UPDATE routes SET status = $2 WHERE id = $1 AND deleted_at IS NULL`
+	query := `
+		UPDATE routes
+		SET status = $2,
+			date_stripped = CASE WHEN $2 = 'archived'::route_status THEN COALESCE(date_stripped, CURRENT_DATE) ELSE date_stripped END
+		WHERE id = $1 AND deleted_at IS NULL`
 	_, err := r.db.Exec(ctx, query, id, status)
 	if err != nil {
 		return fmt.Errorf("update route status: %w", err)
